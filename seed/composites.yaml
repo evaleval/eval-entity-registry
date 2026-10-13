@@ -211,6 +211,13 @@ aixamine-code-security:
   configs:
     - aixamine_code_security
   review_status: draft
+aixamine-cybersecurity-knowledge:
+  display: aiXamine Cybersecurity Knowledge
+  family_id: aixamine
+  category: security
+  configs:
+    - aixamine_cybersecurity_knowledge
+  review_status: draft
 aixamine-fairness-bias:
   display: aiXamine Fairness & Bias
   family_id: aixamine
