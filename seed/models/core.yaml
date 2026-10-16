@@ -1080,7 +1080,6 @@ entries:
   resolution_source: models_dev
   review_status: draft
   aliases:
-  - alibaba/qwen3-coder-480b-a35b-instruct-int4-mixed-ar
 - id: LLM360/K2-Think
   display_name: K2-Think
   org_id: LLM360
@@ -3108,7 +3107,6 @@ entries:
   metadata: '{}'
   review_status: reviewed
   aliases:
-  - alibaba/cogview4
   - thudm/cogview4
   - unknown/cogview4
   - cogview4
@@ -10735,7 +10733,6 @@ entries:
   review_status: draft
   aliases:
   - aion-labs-aion-2-0
-  - openai/aion-labs-aion-2-0
 - id: openai/babbage-001
   display_name: babbage 1.3B (GPT-3)
   org_id: openai
@@ -11100,7 +11097,6 @@ entries:
   resolution_source: models_dev
   review_status: draft
   aliases:
-  - openai/wizardlm-2-8x22b
 - id: openbmb/MiniCPM-Llama3-V-2_5
   display_name: openbmb/MiniCPM-Llama3-V-2_5
   org_id: openbmb
@@ -12945,7 +12941,6 @@ entries:
   review_status: reviewed
   aliases:
   - perplexity-sonar-reasoning
-  - unknown/perplexity-sonar-reasoning
 - id: unknown/r1-0528-qwen3-8b-thinking
   display_name: unknown/r1-0528-qwen3-8b-thinking
   org_id: null

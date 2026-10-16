@@ -815,6 +815,72 @@ def test_model_group_id_does_not_cross_developer_org(models_df):
 # --------------------------------------------------------------------------
 ORACLE_SNAPSHOT_DIR = REGISTRY_ROOT / "curation" / "oracle_snapshot"
 
+# Invented `{wrong-developer}/{slug}` ids the June 2026 generator minted for
+# community models (a Llama finetune keyed under `meta/`, a NIM-served model
+# under `nvidia/`, ...). They survived the real-HF-id rework as alias bridges in
+# enrichments/aliases.yaml and core.yaml, but none was ever a raw string in
+# the EEE data or a models.dev provider key, and each mislabels the developer.
+# Dropped 2026-10-16; the snapshots below still carry them, so the snapshot
+# gates skip them.
+_INVENTED_WRONG_ORG_IDS: frozenset = frozenset({
+    "alibaba/cogview4",
+    "alibaba/qwen3-coder-480b-a35b-instruct-int4-mixed-ar",
+    "alibaba/qwenlong-l1-32b",
+    "amazon/manta-flash-1-0",
+    "amazon/manta-mini-1-0",
+    "amazon/manta-pro-1-0",
+    "deepseek/aion-1-0-mini",
+    "deepseek/deepseek-v3-1-nex-n1",
+    "meta/aion-1-0",
+    "meta/dracarys-72b-instruct",
+    "meta/l3-1-70b-euryale-v2-2",
+    "meta/l3-1-euryale-70b",
+    "meta/l3-3-70b-loki-v2-0",
+    "meta/l3-3-euryale-70b",
+    "meta/l3-3-ms-evalebis-70b",
+    "meta/l3-3-ms-evayale-70b",
+    "meta/l3-3-ms-nevoria-70b",
+    "meta/l3-3-nevoria-r1-70b",
+    "meta/l3-8b-lunaris",
+    "meta/l3-8b-stheno-v3-2",
+    "meta/l3-euryale-70b",
+    "meta/l3-lunaris-8b",
+    "meta/llama-3-lumimaid-70b-v0-1",
+    "meta/lumimaid-v0-2-70b",
+    "meta/magnum-v2-72b",
+    "meta/magnum-v4-72b",
+    "meta/meta-llama-3-70b-instruct-abliterated-v3-5",
+    "meta/mythomax-l2-13b",
+    "meta/neuraldaredevil-8b-abliterated",
+    "meta/remm-slerp-l2-13b",
+    "meta/the-omega-abomination-l-70b-v1-0",
+    "mistralai/dolphin-mistral-24b-venice-edition",
+    "mistralai/e5-mistral-7b-instruct",
+    "mistralai/sorcererlm-8x22b",
+    "moonshotai/kimi-k2-5-nvfp4",
+    "nvidia/bge-m3",
+    "nvidia/esm2-650m",
+    "nvidia/esmfold",
+    "nvidia/google-paligemma",
+    "nvidia/llama-3-1-nemotron-70b-instruct-hf-abliterated",
+    "nvidia/mistral-nemotron",
+    "nvidia/mixtral-8x7b-instruct",
+    "nvidia/solar-10-7b-instruct",
+    "nvidia/whisper-large-v3",
+    "openai/aion-labs-aion-2-0",
+    "openai/dmind-1",
+    "openai/dmind-1-mini",
+    "openai/inflection-3-pi",
+    "openai/inflection-3-productivity",
+    "openai/mirothinker-v1-5-235b",
+    "openai/osmosis-structure-0-6b",
+    "openai/wizardlm-2-8x22b",
+    "unknown/perplexity-sonar-reasoning",
+    "voyageai/voyage-3-5",
+    "voyageai/voyage-3-5-lite",
+    "zai/intellect-3",
+})
+
 # Oracle-snapshot canonical ids whose resolution intentionally lands on a
 # different developer in a way the same-model leaf rule below can't auto-detect
 # (the snapshot id was MALFORMED — an embedded org or a placeholder host — so the
@@ -839,7 +905,7 @@ _ORACLE_CANON_EXEMPT: frozenset = frozenset({
     # also swaps the size token's position, so the same-model-leaf rule can't
     # auto-detect it. Resolving to sao10k/l3-lunaris-8b is correct.
     "meta/l3-8b-lunaris",
-})
+}) | _INVENTED_WRONG_ORG_IDS
 
 # Oracle-snapshot aliases intentionally NOT resolved — the snapshot's attribution
 # was itself wrong. Reviewed exceptions only.
@@ -851,7 +917,7 @@ _ORACLE_ALIAS_EXEMPT: frozenset = frozenset({
     # host is stripped, so resolving `vercel` as a developer org is correctly
     # no_match.
     ("org", "vercel"),
-})
+}) | _INVENTED_WRONG_ORG_IDS
 
 
 def _org_aware_equal(resolved_org: str, oracle_org: str, hf_to_dev: dict) -> bool:
@@ -1781,7 +1847,7 @@ _ADOPTION_REGRESSION_EXEMPT: frozenset = frozenset({
     # drop -instruct); the reasoning attribution named a different model.
     "Phi-4 Mini",
     "microsoft/phi-4-mini",
-})
+}) | _INVENTED_WRONG_ORG_IDS
 
 
 @pytest.mark.slow

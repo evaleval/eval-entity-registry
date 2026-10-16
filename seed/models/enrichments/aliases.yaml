@@ -86,9 +86,6 @@
 - id: CohereLabs/command-a-reasoning-08-2025
   aliases:
   - Command A Reasoning (2025-08)
-- id: CrucibleLab/l3-3-70b-loki-v2-0
-  aliases:
-  - meta/l3-3-70b-loki-v2-0
 - id: Daemontatox/MawaredT1
   aliases:
   - MawaredT1
@@ -153,9 +150,6 @@
 - id: GalrionSoftworks/MN-LooseCannon-12B-v1
   aliases:
   - mistralai/mn-loosecannon-12b-v1
-- id: gryphe/mythomax-l2-13b
-  aliases:
-  - meta/mythomax-l2-13b
 - id: HuggingFaceH4/starchat2-15b-v0.1
   aliases:
   - huggingface/starchat2-15b-v0.1
@@ -253,12 +247,6 @@
 - id: NbAiLab/nb-llama-3.1-8B-Instruct
   aliases:
   - nb-llama-3.1-8B-Instruct
-- id: NeverSleep/llama-3-lumimaid-70b-v0-1
-  aliases:
-  - meta/llama-3-lumimaid-70b-v0-1
-- id: NeverSleep/lumimaid-v0-2-70b
-  aliases:
-  - meta/lumimaid-v0-2-70b
 - id: NousResearch/Hermes-2-Pro-Mistral-7B
   aliases:
   - nous-research/Hermes-2-Pro-Mistral-7B
@@ -342,9 +330,6 @@
 - id: Pinkstack/SuperThoughts-CoT-14B-16k-o1-QwQ
   aliases:
   - SuperThoughts-CoT-14B-16k-o1-QwQ
-- id: PrimeIntellect/intellect-3
-  aliases:
-  - zai/intellect-3
 - id: Qwen/QVQ-72B-Preview
   aliases:
   - alibaba/qvq-72b-preview
@@ -627,19 +612,12 @@
   aliases:
   - meta/ms3-2-the-omega-directive-24b-unslop-v2-0
   - ms3-2-the-omega-directive-24b-unslop-v2-0
-- id: ReadyArt/the-omega-abomination-l-70b-v1-0
-  aliases:
-  - meta/the-omega-abomination-l-70b-v1-0
 - id: Salesforce/Llama-xLAM-2-70b-fc-r
   aliases:
   - meta/llama-xlam-2-70b-fc-r
 - id: Sao10K/L3-8B-Stheno-v3.2
   aliases:
   - Sao10K Stheno 8b
-  - meta/l3-8b-stheno-v3-2
-- id: Sao10K/l3-1-70b-euryale-v2-2
-  aliases:
-  - meta/l3-1-70b-euryale-v2-2
 - id: Sao10K/L3.1-70B-Hanami-x1
   aliases:
   - meta/l3-1-70b-hanami-x1
@@ -658,11 +636,9 @@
 - id: Steelskull/L3.3-MS-Nevoria-70b
   aliases:
   - Steelskull Nevoria 70b
-  - meta/l3-3-ms-nevoria-70b
 - id: Steelskull/L3.3-Nevoria-R1-70b
   aliases:
   - Steelskull Nevoria R1 70b
-  - meta/l3-3-nevoria-r1-70b
 - id: Steelskull/L3.3-Cu-Mai-R1-70b
   aliases:
   - meta/l3-3-cu-mai-r1-70b
@@ -672,11 +648,9 @@
 - id: Steelskull/l3-3-ms-evalebis-70b
   aliases:
   - l3-3-ms-evalebis-70b
-  - meta/l3-3-ms-evalebis-70b
 - id: Steelskull/l3-3-ms-evayale-70b
   aliases:
   - l3-3-ms-evayale-70b
-  - meta/l3-3-ms-evayale-70b
 - id: TheDrummer/Anubis-70B-v1
   aliases:
   - meta/anubis-70b-v1
@@ -710,9 +684,6 @@
 - id: TheDrummer/UnslopNemo-12B-v4.1
   aliases:
   - meta/unslopnemo-12b-v4-1
-- id: Tongyi-Zhiwen/qwenlong-l1-32b
-  aliases:
-  - alibaba/qwenlong-l1-32b
 - id: VongolaChouko/Starcannon-Unleashed-12B-v1.0
   aliases:
   - mistralai/starcannon-unleashed-12b-v1-0
@@ -722,9 +693,6 @@
 - id: Youlln/ECE-MIRAGE-1-12B
   aliases:
   - ECE-MIRAGE-1-12B
-- id: abacusai/Dracarys-72B-Instruct
-  aliases:
-  - meta/dracarys-72b-instruct
 - id: abacusai/Dracarys-Llama-3.1-70B-Instruct
   aliases:
   - nvidia/dracarys-llama-3-1-70b-instruct
@@ -756,11 +724,9 @@
   aliases:
   - Aion 1.0
   - aion-1-0
-  - meta/aion-1-0
 - id: aion-labs/aion-1.0-mini
   aliases:
   - aion-1-0-mini
-  - deepseek/aion-1-0-mini
 - id: aion-labs/Aion-RP-Llama-3.1-8B
   aliases:
   - meta/aion-rp-llama-3-1-8b
@@ -995,12 +961,6 @@
   - amazon/nova-pro-v1.0
   - aws/nova-pro-v1.0
   - nova-pro-v1-0
-- id: anthracite-org/magnum-v2-72b
-  aliases:
-  - meta/magnum-v2-72b
-- id: anthracite-org/magnum-v4-72b
-  aliases:
-  - meta/magnum-v4-72b
 - id: anthropic/claude-sonnet-3.7
   aliases:
   - Claude 3.7 Sonnet
@@ -1219,9 +1179,6 @@
   aliases:
   - Auto
   - morph/auto
-- id: baai/bge-m3
-  aliases:
-  - nvidia/bge-m3
 - id: BAAI/bge-multilingual-gemma2
   aliases:
   - google/bge-multilingual-gemma2
@@ -1378,7 +1335,6 @@
   aliases:
   - dolphin-mistral-24b-venice-edition
   - dphn/Dolphin-Mistral-24B-Venice-Edition
-  - mistralai/dolphin-mistral-24b-venice-edition
 - id: cohere/aya-vision-32b
   aliases:
   - c4ai-aya-vision-32b
@@ -1609,11 +1565,9 @@
 - id: dmind/dmind-1
   aliases:
   - DMind-1
-  - openai/dmind-1
 - id: dmind/dmind-1-mini
   aliases:
   - DMind-1-Mini
-  - openai/dmind-1-mini
 - id: duo-chat-gpt-5-1
   aliases:
   - openai/duo-chat-gpt-5-1
@@ -1675,9 +1629,6 @@
   aliases:
   - unknown/opt-cot-1-3b
   - unknown/opt-ft-1-3b
-- id: failspy/Meta-Llama-3-70B-Instruct-abliterated-v3.5
-  aliases:
-  - meta/meta-llama-3-70b-instruct-abliterated-v3-5
 - id: fluently-lm/FluentlyLM-Prinum
   aliases:
   - FluentlyLM-Prinum
@@ -1918,7 +1869,6 @@
 - id: google/google-paligemma
   aliases:
   - google-paligemma
-  - nvidia/google-paligemma
 - id: google/nano-banana
   aliases:
   - Gemini Nano Banana (image gen)
@@ -1947,7 +1897,6 @@
 - id: huihui-ai/llama-3-1-nemotron-70b-instruct-hf-abliterated
   aliases:
   - llama-3-1-nemotron-70b-instruct-hf-abliterated
-  - nvidia/llama-3-1-nemotron-70b-instruct-hf-abliterated
 - id: huihui-ai/Llama-3.3-70B-Instruct-abliterated
   aliases:
   - meta/llama-3-3-70b-instruct-abliterated
@@ -2009,15 +1958,10 @@
   aliases:
   - Inflection 3 Pi
   - inflection-3-pi
-  - openai/inflection-3-pi
 - id: inflection/inflection-3-productivity
   aliases:
   - Inflection 3 Productivity
   - inflection-3-productivity
-  - openai/inflection-3-productivity
-- id: intfloat/e5-mistral-7b-instruct
-  aliases:
-  - mistralai/e5-mistral-7b-instruct
 - id: jaspionjader/bh-58
   aliases:
   - bh-58
@@ -2157,17 +2101,14 @@
 - id: meganova-ai/manta-flash-1-0
   aliases:
   - Manta Flash 1.0
-  - amazon/manta-flash-1-0
   - manta-flash-1-0
 - id: meganova-ai/manta-mini-1-0
   aliases:
   - Manta Mini 1.0
-  - amazon/manta-mini-1-0
   - manta-mini-1-0
 - id: meganova-ai/manta-pro-1-0
   aliases:
   - Manta Pro 1.0
-  - amazon/manta-pro-1-0
   - manta-pro-1-0
 - id: meituan/longcat-flash-chat
   aliases:
@@ -2308,11 +2249,9 @@
 - id: meta/esm2-650m
   aliases:
   - esm2-650m
-  - nvidia/esm2-650m
 - id: meta/esmfold
   aliases:
   - esmfold
-  - nvidia/esmfold
 - id: meta-llama/Llama-3.1-405B-Instruct
   aliases:
   - meta-llama/Meta-Llama-3.1-405B-Instruct
@@ -2417,9 +2356,6 @@
   - unknown/minimax
   - minimax/minimax-text-01
   - unknown/minimax-text-01
-- id: miromind-ai/mirothinker-v1-5-235b
-  aliases:
-  - openai/mirothinker-v1-5-235b
 - id: mistral/magistral-medium-2509
   aliases:
   - Magistral Medium (2509)
@@ -2523,7 +2459,6 @@
 - id: mistralai/mistral-nemotron
   aliases:
   - mistral-nemotron
-  - nvidia/mistral-nemotron
 - id: mistralai/mistral-small
   aliases:
   - mistral-24b
@@ -2620,7 +2555,6 @@
 - id: mistralai/mixtral-8x7b-instruct
   aliases:
   - mixtral-8x7b-instruct
-  - nvidia/mixtral-8x7b-instruct
 - id: mistralai/pixtral-12b
   aliases:
   - unknown/pixtral
@@ -2628,9 +2562,6 @@
   aliases:
   - pixtral-124b
   - unknown/pixtral-124b
-- id: mlabonne/NeuralDaredevil-8B-abliterated
-  aliases:
-  - meta/neuraldaredevil-8b-abliterated
 - id: moonshotai/Kimi-K2-Instruct
   aliases:
   - moonshot.kimi-k2
@@ -2692,9 +2623,6 @@
   aliases:
   - HyperCLOVA-X Seed Think 32B
   - naver/hyperclova-x-seed-think
-- id: nex-agi/deepseek-v3.1-nex-n1
-  aliases:
-  - deepseek/deepseek-v3-1-nex-n1
 - id: nidum/Nidum-Limitless-Gemma-2B
   aliases:
   - Nidum-Limitless-Gemma-2B
@@ -2733,7 +2661,6 @@
   aliases:
   - Kimi K2.5 (NVFP4)
   - kimi-k2-5-nvfp4
-  - moonshotai/kimi-k2-5-nvfp4
 - id: nvidia/llama-3-1-nemotron-nano-4b-reasoning
   aliases:
   - Llama 3.1 Nemotron Nano 4B Reasoning
@@ -2943,9 +2870,6 @@
   - unknown/text-davinci-003-cot
   - unknown/text-davinci-003-cot-sc
   - unknown/text-davinci-003-few-shot
-- id: openai/whisper-large-v3
-  aliases:
-  - nvidia/whisper-large-v3
 - id: openbmb/MiniCPM-V-2_6
   aliases:
   - minicpm-llama3-v-2-5
@@ -2959,7 +2883,6 @@
 - id: osmosis/osmosis-structure-0-6b
   aliases:
   - Osmosis Structure 0.6B
-  - openai/osmosis-structure-0-6b
   - osmosis-structure-0-6b
 - id: pamanseau/OpenReasoning-Nemotron-32B
   aliases:
@@ -3016,7 +2939,6 @@
 - id: raifle/sorcererlm-8x22b
   aliases:
   - SorcererLM 8x22B
-  - mistralai/sorcererlm-8x22b
   - sorcererlm-8x22b
 - id: recraft/recraft-v2
   aliases:
@@ -3042,20 +2964,15 @@
   aliases:
   - l3-8b-lunaris
   - l3-lunaris-8b
-  - meta/l3-8b-lunaris
-  - meta/l3-lunaris-8b
 - id: sao10k/l3.1-euryale-70b
   aliases:
   - l3-1-euryale-70b
-  - meta/l3-1-euryale-70b
 - id: sao10k/l3.3-euryale-70b
   aliases:
   - l3-3-euryale-70b
-  - meta/l3-3-euryale-70b
 - id: sao10k/l3-euryale-70b
   aliases:
   - l3-euryale-70b
-  - meta/l3-euryale-70b
 - id: sarvamai/sarvam-m
   aliases:
   - nvidia/sarvam-m
@@ -3182,12 +3099,8 @@
   aliases:
   - Umans Flash
   - alibaba/umans-flash
-- id: undi95/remm-slerp-l2-13b
-  aliases:
-  - meta/remm-slerp-l2-13b
 - id: upstage/solar-10-7b-instruct
   aliases:
-  - nvidia/solar-10-7b-instruct
   - solar-10-7b-instruct
   - solar-10.7b-instruct
 - id: upstage/solar-open-100b-reasoning
@@ -3206,12 +3119,10 @@
   aliases:
   - voyage-3-5
   - voyage-3.5
-  - voyageai/voyage-3-5
 - id: voyage/voyage-3-5-lite
   aliases:
   - voyage-3-5-lite
   - voyage-3.5-lite
-  - voyageai/voyage-3-5-lite
 - id: voyageai/voyage-3-large
   aliases:
   - voyage-3-large
