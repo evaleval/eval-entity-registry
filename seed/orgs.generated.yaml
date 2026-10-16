@@ -6301,3 +6301,38 @@
   tags: '[]'
   metadata: '{}'
   review_status: reviewed
+- id: aisingapore
+  display_name: aisingapore
+  hf_org: aisingapore
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
+- id: heygen
+  display_name: heygen
+  hf_org: heygen
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
+- id: mindai
+  display_name: mindai
+  hf_org: mindai
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
+- id: moondream
+  display_name: moondream
+  hf_org: moondream
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
+- id: scaledown
+  display_name: scaledown
+  hf_org: scaledown
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
