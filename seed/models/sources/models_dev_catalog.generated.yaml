@@ -1545,6 +1545,17 @@
   weak:
     release_date: '2026-09-22'
     open_weights: true
+- id: XingChen-AGI/Xing4.0-29B-A4B
+  aliases:
+  - 'XingChen: Xing4.0 29B A4B (free)'
+  - xing4-0-29b-a4b
+  - xingchen-agi/xing4-0-29b-a4b
+  - xingchen-agi/xing4.0-29b-a4b
+  - xingchen-agi/xing4.0-29b-a4b:free
+  metadata: '{"alias_platforms": {"xing4-0-29b-a4b": "kilo", "xingchen-agi/xing4-0-29b-a4b": "kilo", "xingchen-agi/xing4.0-29b-a4b": "openrouter", "xingchen-agi/xing4.0-29b-a4b:free": "openrouter"}}'
+  weak:
+    release_date: '2026-10-16'
+    open_weights: true
 - id: abacusai/Dracarys-72B-Instruct
   aliases:
   - Llama 3.1 70B Dracarys 2
@@ -3875,7 +3886,7 @@
   - cat-jam-free
   metadata: '{"alias_platforms": {"cat-jam-free": "opencode-go"}}'
   weak:
-    release_date: '2025-08-26'
+    release_date: '2026-10-12'
     open_weights: false
 - id: celeris-1
   weak:
@@ -4617,6 +4628,14 @@
   weak:
     release_date: '2026-04-23'
     open_weights: true
+- id: deepseek/deepseek-v4.1-flash-1017
+  aliases:
+  - deepseek-v4-1-flash-1017
+  - deepseek/deepseek-v4-1-flash-1017
+  metadata: '{"alias_platforms": {"deepseek-v4-1-flash-1017": "nano-gpt", "deepseek/deepseek-v4-1-flash-1017": "nano-gpt"}}'
+  weak:
+    release_date: '2026-09-08'
+    open_weights: true
 - id: deepseek/deepseek-v4p1-flash
   aliases:
   - deepseek-v4p1-flash
@@ -4792,6 +4811,13 @@
   metadata: '{"alias_platforms": {"elevenlabs-v3": "poe"}}'
   weak:
     release_date: '2025-06-05'
+    open_weights: false
+- id: elorian/glimpse
+  aliases:
+  - glimpse
+  metadata: '{"alias_platforms": {"glimpse": "nano-gpt"}}'
+  weak:
+    release_date: '2026-10-16'
     open_weights: false
 - id: empiriolabs/deepseek-v4-flash-el
   aliases:
@@ -5448,11 +5474,12 @@
     - text
 - id: google/gemini-3.5-flash
   aliases:
+  - databricks-gemini-3-5-flash
   - gemini-3-5-flash
   - gemini-3.5-flash
   - gemini-3.5-flash@eu
   - google/gemini-3-5-flash
-  metadata: '{"alias_platforms": {"gemini-3-5-flash": "poe", "gemini-3.5-flash": "abacus", "gemini-3.5-flash@eu": "requesty", "google/gemini-3-5-flash": "poe"}}'
+  metadata: '{"alias_platforms": {"databricks-gemini-3-5-flash": "databricks", "gemini-3-5-flash": "poe", "gemini-3.5-flash": "abacus", "gemini-3.5-flash@eu": "requesty", "google/gemini-3-5-flash": "poe"}}'
   weak:
     release_date: '2026-05-19'
     open_weights: false
@@ -7690,7 +7717,7 @@
   - mistral-7b-instruct-v0.3
   - mistralai/mistral-7b-instruct-v0-3
   - mistralai/mistral-7b-instruct-v03
-  metadata: '{"alias_platforms": {"mistral-7b-instruct": "nano-gpt", "mistral-7b-instruct-v0-3": "nvidia", "mistral-7b-instruct-v0.3": "cortecs", "mistralai/mistral-7b-instruct-v0-3": "nvidia"}}'
+  metadata: '{"alias_platforms": {"mistral-7b-instruct": "nano-gpt", "mistral-7b-instruct-v0-3": "nvidia", "mistral-7b-instruct-v0.3": "digitalocean", "mistralai/mistral-7b-instruct-v0-3": "nvidia"}}'
   weak:
     release_date: '2024-05-22'
     open_weights: true
@@ -11314,6 +11341,23 @@
   weak:
     release_date: '2026-02-17'
     open_weights: false
+- id: reflection/Beam-1.0-501B-A23B
+  aliases:
+  - Beam 1.0 501B A23B
+  - Beam Free
+  - beam
+  - beam-1-0
+  - beam-1-0-501b-a23b
+  - beam-free
+  - reflection/beam
+  - reflection/beam-1-0
+  - reflection/beam-1-0-501b-a23b
+  - reflection/beam-1.0-501b-a23b
+  metadata: '{"alias_platforms": {"beam": "kilo", "beam-1-0": "nano-gpt", "beam-1-0-501b-a23b": "wandb", "beam-free": "opencode-go", "reflection/beam": "kilo", "reflection/beam-1-0": "nano-gpt", "reflection/beam-1-0-501b-a23b":
+    "wandb", "reflection/beam-1.0-501b-a23b": "openrouter"}}'
+  weak:
+    release_date: '2025-08-26'
+    open_weights: true
 - id: rekaai/reka-edge
   aliases:
   - reka-ai/reka-edge

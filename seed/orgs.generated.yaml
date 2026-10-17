@@ -6336,3 +6336,24 @@
   tags: '[]'
   metadata: '{}'
   review_status: reviewed
+- id: elorian
+  display_name: elorian
+  hf_org: elorian
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
+- id: reflection
+  display_name: reflection
+  hf_org: reflection
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
+- id: xingchen-agi
+  display_name: xingchen-agi
+  hf_org: xingchen-agi
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
