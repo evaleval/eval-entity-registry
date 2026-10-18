@@ -21,44 +21,36 @@ import threading
 from datetime import datetime, date
 from typing import Optional
 
-# Live-lookup source for the deployed Space's `HubStatsClient` ONLY. This is
-# the HF parquet-converter endpoint, which answers 400 for several minutes after
-# ANY commit to the upstream dataset (daily, ~13:18–13:36 UTC) while the
-# dataset-viewer rebuilds `refs/convert/parquet`. The bulk scripts (refresh /
-# index / freeze) therefore do NOT read it: they download a pinned snapshot of
-# `main/models.parquet` via `services/hub_stats_snapshot.py` (same bytes; see
-# specs/hub-stats-snapshot-fetch.md). The client tolerates the window because a
-# lookup failure degrades to "no enrichment".
-PARQUET_URL = (
-    "https://huggingface.co/api/datasets/cfahlgren1/hub-stats/parquet/models/train/0.parquet"
-)
+# Where hub-stats bytes come from — NEVER the HF parquet-converter endpoint
+# (the `/api/datasets/<repo>/parquet/<config>/<split>/<n>.parquet` URL), which
+# answers 400 for several minutes after ANY commit to the upstream dataset
+# (daily, ~13:18–13:36 UTC) while the dataset-viewer rebuilds
+# `refs/convert/parquet`. Every reader pins a commit sha of `main/models.parquet`
+# (same bytes) via `services/hub_stats_snapshot.py`: the bulk scripts download
+# it; the live `HubStatsClient` below range-reads the pinned `hf://` path. See
+# specs/hub-stats-snapshot-fetch.md.
 
 # Offline read path: when HUB_STATS_LOCAL_PARQUET points at a local hub-stats
-# parquet, every
-# hub-stats query (bulk refresh + live HubStatsClient lookup) reads that file
-# instead of streaming the live URL. CI / the deployed Space leave the env unset
-# and keep the live path. The env var is read at call time (not import time) so
+# parquet, every hub-stats query (bulk refresh + live HubStatsClient lookup)
+# reads that file instead of the pinned remote snapshot. CI / the deployed Space
+# leave the env unset. The env var is read at call time (not import time) so
 # tests can set/unset it per-test without reimporting the module.
 HUB_STATS_LOCAL_PARQUET_ENV = "HUB_STATS_LOCAL_PARQUET"
 
 
-def resolve_parquet_source(parquet_url: str = PARQUET_URL) -> str:
-    """Return the parquet source DuckDB should `read_parquet()` from.
-
-    Prefers the local file at `$HUB_STATS_LOCAL_PARQUET` when that env var is
-    set and the file exists (offline mode); otherwise the passed-in live URL.
-    A set-but-missing path falls through to the live URL so a stale env var
-    never silently breaks the live path."""
+def local_parquet_path() -> Optional[str]:
+    """The offline local parquet path when `$HUB_STATS_LOCAL_PARQUET` is set
+    AND the file exists; else None. A set-but-missing path is ignored so a
+    stale env var never silently breaks the live path."""
     local = os.environ.get(HUB_STATS_LOCAL_PARQUET_ENV)
     if local and os.path.exists(local):
         return local
-    return parquet_url
+    return None
 
 
 def is_local_parquet() -> bool:
     """True when the offline local-parquet read path is active."""
-    local = os.environ.get(HUB_STATS_LOCAL_PARQUET_ENV)
-    return bool(local and os.path.exists(local))
+    return local_parquet_path() is not None
 
 # Columns the queries fetch. Centralized so the bulk and lookup paths
 # parse the same row shape.
@@ -405,28 +397,35 @@ def extract_base_models(base_models) -> list[dict]:
 class HubStatsClient:
     """Single-id lookup against the hub-stats parquet via DuckDB.
 
-    Materializes the remote parquet into a local DuckDB table on first
-    use, then serves all subsequent lookups against the local copy.
-    Trade-off: one bulk fetch (large but a single HTTP transaction)
-    instead of N per-id range-fetch queries (small but rate-limit-prone
-    when N is in the thousands — `huggingface.co` 429s aggressively on
-    the parquet API even with auth, and DuckDB's range-fetch pattern
-    counts as multiple HTTP HEAD/GET requests per logical query).
+    Used only by draft enrichment (`_auto_create_entity`), i.e. in WRITE
+    mode — a `sync` run. The deployed read-only Space never instantiates it
+    (read-only resolves confirm HF ids against the published
+    `hub_stats_index` table instead).
 
-    On bulk-fetch failure, falls back to per-id remote queries (older
-    behaviour) so the client degrades gracefully rather than going
-    silent. Per-id fallback retains the same in-process cache.
+    Source: a PINNED commit of `cfahlgren1/hub-stats` `main/models.parquet`,
+    resolved on first use (`hf://datasets/<repo>@<sha>/models.parquet`), or
+    the local file at `$HUB_STATS_LOCAL_PARQUET`. Never the HF
+    parquet-converter endpoint (400s after every upstream commit — see the
+    module comment). Pinning means a mid-sync upstream commit cannot swap
+    the file under the bulk load.
 
-    Failure mode: any DuckDB error (network down, parquet schema drift,
-    etc.) returns None from `lookup()` and is logged. Callers must
+    Materializes the parquet into a local DuckDB table on first use, then
+    serves all subsequent lookups against the local copy. Trade-off: one
+    bulk fetch instead of N per-id range-fetch queries (rate-limit-prone when
+    N is in the thousands; the Hub's `ratelimit-policy` header gives the
+    per-bucket limits). On bulk-fetch failure, falls back to per-id remote
+    queries against the same pinned source so the client degrades gracefully
+    rather than going silent. Per-id fallback retains the same in-process
+    cache.
+
+    Failure mode: any DuckDB / network error (incl. failing to resolve the
+    snapshot) returns None from `lookup()` and is logged. Callers must
     handle None as "no enrichment data available" — never raise."""
 
-    def __init__(self, parquet_url: str = PARQUET_URL) -> None:
-        # Resolve the offline local-parquet path here (at construction) AND
-        # again at query time — the env-aware `resolve_parquet_source` makes the
-        # offline switch transparent to all the `read_parquet('{self.parquet_url}')`
-        # call sites below without touching their SQL.
-        self.parquet_url = resolve_parquet_source(parquet_url)
+    def __init__(self, parquet_url: Optional[str] = None) -> None:
+        # Explicit source > offline local file > (lazily, on first use) the
+        # pinned remote snapshot. Construction never touches the network.
+        self.parquet_url: Optional[str] = parquet_url or local_parquet_path()
         self._con = None
         self._local_table_ready: bool = False
         self._local_table_failed: bool = False
@@ -440,25 +439,29 @@ class HubStatsClient:
         # the duckdb import cost.
         import os
         import duckdb
+        from eval_entity_registry.services.hub_stats_snapshot import (
+            hf_source,
+            is_remote_source,
+            resolve_snapshot,
+        )
+
+        hf_token = os.environ.get("HF_TOKEN")
+        if self.parquet_url is None:
+            # One resolver-bucket HEAD; pins the sha for this client's lifetime.
+            self.parquet_url = hf_source(resolve_snapshot(token=hf_token))
         con = duckdb.connect()
         # Reading a LOCAL parquet needs no httpfs / HF auth — skip the network
         # extension install so the offline path works with no connectivity.
-        if is_local_parquet():
+        if not is_remote_source(self.parquet_url):
             self._con = con
             return con
         con.execute("INSTALL httpfs; LOAD httpfs;")
-        # Authenticate parquet fetches when HF_TOKEN is in the environment
-        # (typical on the deployed Space). Unauth limit is 500 req/5min;
-        # one DuckDB read_parquet against the remote file streams via
-        # several range requests and a sync that auto-creates many drafts
-        # can brush that ceiling. With auth the ceiling is ~30k/5min.
-        hf_token = os.environ.get("HF_TOKEN")
+        # Authenticate the `hf://` reads when HF_TOKEN is in the environment
+        # (typical on a sync host): DuckDB's HUGGINGFACE secret type sends the
+        # bearer to the resolve endpoint and not to the CDN redirect target.
         if hf_token:
             escaped = hf_token.replace("'", "''")
-            con.execute(
-                f"CREATE SECRET hf_auth (TYPE HTTP, BEARER_TOKEN '{escaped}', "
-                f"SCOPE 'https://huggingface.co');"
-            )
+            con.execute(f"CREATE SECRET hf_auth (TYPE HUGGINGFACE, TOKEN '{escaped}');")
         self._con = con
         return con
 

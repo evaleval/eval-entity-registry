@@ -1,19 +1,20 @@
 """Pinned, local snapshot of `cfahlgren1/hub-stats` for the bulk scripts.
 
 Why this exists (see specs/hub-stats-snapshot-fetch.md): the HF parquet-converter
-endpoint (`/api/datasets/<repo>/parquet/<config>/<split>/<n>.parquet`, the
-`PARQUET_URL` the live `HubStatsClient` still uses) answers 400 for several
-minutes after *any* commit to the upstream dataset — the dataset-viewer deletes
-and rebuilds the whole `refs/convert/parquet` branch. Upstream commits six files
-every day around 13:18–13:36 UTC, and the crons regularly fired inside that
-window. The raw `main/models.parquet` is byte-identical to the converted file
-and lives on a path the viewer never touches.
+endpoint (`/api/datasets/<repo>/parquet/<config>/<split>/<n>.parquet`) answers
+400 for several minutes after *any* commit to the upstream dataset — the
+dataset-viewer deletes and rebuilds the whole `refs/convert/parquet` branch.
+Upstream commits six files every day around 13:18–13:36 UTC, and the crons
+regularly fired inside that window. The raw `main/models.parquet` is
+byte-identical to the converted file and lives on a path the viewer never
+touches.
 
-The scripts therefore (1) resolve the dataset's current commit sha + the file's
+The bulk scripts (1) resolve the dataset's current commit sha + the file's
 content hash in ONE resolver-bucket request, (2) short-circuit on an unchanged
 hash, else (3) `hf_hub_download` the file at that pinned sha (one resumable,
-hash-verified stream) and query it locally. Nothing here is used by the
-deployed Space.
+hash-verified stream) and query it locally. The write-mode live
+`HubStatsClient` (draft enrichment during `sync`) resolves the same pinned sha
+and range-reads `hf_source(snap)` instead of downloading.
 """
 from __future__ import annotations
 

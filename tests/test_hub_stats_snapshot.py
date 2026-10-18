@@ -111,10 +111,13 @@ def test_hf_source_is_pinned_and_never_the_converter():
 
 
 def test_no_bulk_script_references_the_converter_endpoint():
-    """The converter URL (`PARQUET_URL`) is reserved for the Space's live
-    client. Scripts and workflows must go through the pinned snapshot."""
+    """Nothing in the package, the scripts or the workflows may name the
+    converter endpoint; every reader goes through the pinned snapshot."""
     offenders: list[str] = []
-    for path in sorted((REPO_ROOT / "scripts").glob("*.py")):
+    py_files = list((REPO_ROOT / "scripts").glob("*.py")) + list(
+        (REPO_ROOT / "src" / "eval_entity_registry").rglob("*.py")
+    )
+    for path in sorted(py_files):
         text = path.read_text()
         if re.search(r"\bPARQUET_URL\b", text) or "hub-stats/parquet/" in text:
             offenders.append(str(path.relative_to(REPO_ROOT)))
@@ -126,3 +129,68 @@ def test_no_bulk_script_references_the_converter_endpoint():
 
 def test_module_docstring_points_at_spec():
     assert "specs/hub-stats-snapshot-fetch.md" in (snapmod.__doc__ or "")
+
+
+# ---------- live HubStatsClient (write-mode draft enrichment) ----------
+
+class _Recorder:
+    def __init__(self):
+        self.sql: list[str] = []
+
+    def execute(self, sql, *a, **k):
+        self.sql.append(sql)
+        return self
+
+
+def test_live_client_pins_hf_source_and_uses_huggingface_secret(monkeypatch):
+    """Construction is network-free; first use resolves ONE pinned snapshot,
+    reads `hf://…@<sha>/models.parquet` with a HUGGINGFACE secret, and never
+    names the converter endpoint."""
+    from eval_entity_registry.services import hub_stats as hs
+
+    snap = HubStatsSnapshot(HUB_STATS_REPO, SHA, HUB_STATS_FILE, ETAG, 1)
+    calls = []
+    monkeypatch.setattr(snapmod, "resolve_snapshot", lambda token=None, **_: (calls.append(token), snap)[1])
+    rec = _Recorder()
+    import duckdb
+    monkeypatch.setattr(duckdb, "connect", lambda *a, **k: rec)
+    monkeypatch.setenv("HF_TOKEN", "tok")
+    monkeypatch.delenv(hs.HUB_STATS_LOCAL_PARQUET_ENV, raising=False)
+
+    client = hs.HubStatsClient()
+    assert client.parquet_url is None and calls == []  # nothing resolved yet
+    con = client._ensure_con()
+    assert con is rec
+    assert calls == ["tok"]
+    assert client.parquet_url == f"hf://datasets/{HUB_STATS_REPO}@{SHA}/{HUB_STATS_FILE}"
+    sql = "\n".join(rec.sql)
+    assert "LOAD httpfs" in sql
+    assert "TYPE HUGGINGFACE" in sql and "TOKEN 'tok'" in sql
+    assert "TYPE HTTP" not in sql and "huggingface.co/api" not in sql
+    # Second call reuses the connection; no re-resolve.
+    assert client._ensure_con() is rec and calls == ["tok"]
+
+
+def test_live_client_offline_path_skips_network(monkeypatch, tmp_path):
+    from eval_entity_registry.services import hub_stats as hs
+
+    local = tmp_path / "models.parquet"
+    local.write_bytes(b"")
+    monkeypatch.setenv(hs.HUB_STATS_LOCAL_PARQUET_ENV, str(local))
+    monkeypatch.setattr(snapmod, "resolve_snapshot", lambda **_: (_ for _ in ()).throw(AssertionError("no network")))
+    rec = _Recorder()
+    import duckdb
+    monkeypatch.setattr(duckdb, "connect", lambda *a, **k: rec)
+    client = hs.HubStatsClient()
+    assert client.parquet_url == str(local)
+    client._ensure_con()
+    assert rec.sql == []  # no httpfs, no secret
+
+
+def test_live_client_lookup_degrades_to_none_when_snapshot_unresolvable(monkeypatch):
+    from eval_entity_registry.services import hub_stats as hs
+
+    monkeypatch.delenv(hs.HUB_STATS_LOCAL_PARQUET_ENV, raising=False)
+    monkeypatch.setattr(snapmod, "resolve_snapshot", lambda **_: (_ for _ in ()).throw(RuntimeError("hub down")))
+    client = hs.HubStatsClient()
+    assert client.lookup("org/model") is None  # logged, never raised
