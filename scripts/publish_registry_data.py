@@ -2,10 +2,12 @@
 
   1. Run the seed CLI against `seed/`, materialising every canonical_* table
      to `fixtures/`.
-  2. Compute a content hash over the published bytes, the idempotency key:
-     when the previous publish on HF carries the same hash, skip the upload.
+  2. Compute a logical content hash plus the resolver and seed tree shas, the
+     idempotency key: when the previous publish on HF carries the same three
+     (or the same seed_git_sha), skip the upload.
   3. Write a `manifest.json` sidecar: schema_version (registry.<MAJOR>.<MINOR>),
-     content_hash, seed_git_sha, generated_at, per-table row counts.
+     content_hash, resolver_tree_sha, seed_tree_sha, seed_git_sha,
+     generated_at, per-table row counts.
   4. Upload `fixtures/` + `manifest.json` to the HF Dataset repo as a single
      revision.
 
@@ -152,10 +154,16 @@ def _assert_checkout_is_expected(expected: str) -> None:
         )
 
 
+_VOLATILE_COLUMNS = ("created_at", "updated_at")
+
+
 def _content_hash(fixtures_dir: Path) -> str:
-    """SHA-256 over the sorted published files (parquets + YAML overrides).
-    manifest.json is excluded because it contains the hash; file names are
-    hashed with the bytes so an added/missing file changes the hash."""
+    """SHA-256 over the published files' logical content: parquets are hashed
+    as Arrow data without `created_at`/`updated_at` (the only legitimately
+    volatile columns) or schema metadata; YAML files are hashed raw."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
     h = hashlib.sha256()
     files = sorted(
         [p for p in fixtures_dir.glob("*.parquet") if p.name not in _CRON_OWNED_PARQUETS]
@@ -164,9 +172,70 @@ def _content_hash(fixtures_dir: Path) -> str:
     for p in files:
         h.update(p.name.encode("utf-8"))
         h.update(b"\0")
-        h.update(p.read_bytes())
+        if p.suffix == ".parquet":
+            table = pq.read_table(p)
+            table = table.drop_columns(
+                [c for c in _VOLATILE_COLUMNS if c in table.column_names]
+            )
+            # Schema metadata carries the writer's pandas version, not data.
+            table = table.replace_schema_metadata(None).combine_chunks()
+            sink = pa.BufferOutputStream()
+            with pa.ipc.new_stream(sink, table.schema) as writer:
+                writer.write_table(table)
+            h.update(sink.getvalue().to_pybytes())
+        else:
+            h.update(p.read_bytes())
         h.update(b"\0")
     return h.hexdigest()
+
+
+def _git_out(*args: str) -> Optional[str]:
+    """Stdout of a git command at the repo root; None when it fails."""
+    try:
+        out = subprocess.run(
+            ["git", *args],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return out.stdout
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
+def _resolver_tree_sha() -> Optional[str]:
+    """Git tree sha of the resolver package at HEAD."""
+    out = _git_out("rev-parse", "HEAD:packages/eval-entity-resolver")
+    return out.strip() if out else None
+
+
+def _seed_tree_sha() -> Optional[str]:
+    """SHA-256 over `git ls-tree -r HEAD seed` minus `*.state.json` entries,
+    which are cron watermarks that change with no data change."""
+    out = _git_out("ls-tree", "-r", "HEAD", "seed")
+    if out is None:
+        return None
+    lines = sorted(
+        line for line in out.splitlines()
+        if line.strip() and not line.endswith(".state.json")
+    )
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+_SKIP_KEYS = ("schema_version", "content_hash", "resolver_tree_sha", "seed_tree_sha")
+
+
+def _skip_reason(local: dict, remote: Optional[dict]) -> Optional[str]:
+    """Why the upload can be skipped, or None to upload; a remote lacking any
+    skip key is a mismatch."""
+    if not remote:
+        return None
+    if remote.get("seed_git_sha") and remote.get("seed_git_sha") == local.get("seed_git_sha"):
+        return "seed_git_sha matches"
+    if all(k in remote and remote[k] is not None and remote[k] == local.get(k) for k in _SKIP_KEYS):
+        return "content and tree shas match"
+    return None
 
 
 def _row_counts(fixtures_dir: Path) -> dict[str, int]:
@@ -397,6 +466,8 @@ def main() -> int:
         "schema_version": SCHEMA_VERSION,
         "content_hash": content_hash,
         "seed_git_sha": _git_sha(),
+        "resolver_tree_sha": _resolver_tree_sha(),
+        "seed_tree_sha": _seed_tree_sha(),
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "row_counts": _row_counts(FIXTURES_DIR),
     }
@@ -409,6 +480,16 @@ def main() -> int:
 
     if args.dry_run:
         print("[4/4] --dry-run: skipping HF upload.", file=sys.stderr)
+        try:
+            remote = _read_remote_manifest()
+        except Exception as exc:
+            print(f"  [warn] remote manifest read failed: {exc}", file=sys.stderr)
+            remote = None
+        if remote is None:
+            print("  remote manifest: unavailable", file=sys.stderr)
+        reason = _skip_reason(manifest, remote)
+        verdict = f"would skip ({reason})" if reason else "would upload"
+        print(f"  dry-run verdict: {verdict}", file=sys.stderr)
         return 0
 
     if args.require_origin_main_head:
@@ -436,14 +517,9 @@ def main() -> int:
             return 0
 
     print("[4/4] Checking remote manifest for idempotency…", file=sys.stderr)
-    remote = _read_remote_manifest()
-    if remote and remote.get("seed_git_sha") == manifest.get("seed_git_sha"):
-        print("  remote seed_git_sha matches local; skipping push (no-op).",
-              file=sys.stderr)
-        return 0
-    if remote and remote.get("content_hash") == content_hash:
-        print("  remote content_hash matches local; skipping push (no-op).",
-              file=sys.stderr)
+    reason = _skip_reason(manifest, _read_remote_manifest())
+    if reason:
+        print(f"  {reason}; skipping push (no-op).", file=sys.stderr)
         return 0
 
     print(f"  pushing to {HF_DATASET_REPO}…", file=sys.stderr)
