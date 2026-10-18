@@ -88,8 +88,7 @@ ENTITY_SEEDS = ("metrics.yaml", "benchmarks.yaml", "harnesses.yaml", "orgs.yaml"
 @pytest.mark.parametrize("name", ENTITY_SEEDS)
 def test_every_entity_declares_a_review_status(name):
     """A missing review_status is stored as NULL, which matches neither
-    `draft` nor `reviewed`: the row drops out of the review queue and of
-    stale-removal alike."""
+    `draft` nor `reviewed`, so the row drops out of the review queue."""
     entries = yaml.safe_load((SEED / name).read_text()) or []
     missing = sorted(str(e.get("id")) for e in entries
                      if isinstance(e, dict) and e.get("review_status") not in ("draft", "reviewed"))

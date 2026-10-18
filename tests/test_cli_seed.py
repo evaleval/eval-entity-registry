@@ -324,6 +324,9 @@ def test_prune_stale_keeps_org_referenced_by_model(fresh_seed_env):
     """--prune-stale keeps an auto-created org still referenced by a model's
     org_id; pruning it would leave a dangling FK."""
     seed_dir, fixtures_dir = fresh_seed_env
+    (seed_dir / "orgs.yaml").write_text(yaml.safe_dump([
+        {"id": "acme", "display_name": "Acme", "kind": "lab", "review_status": "reviewed"},
+    ]))
     (seed_dir / "models" / "core.yaml").write_text(yaml.safe_dump([
         {
             "id": "novelorg/some-model",
@@ -939,3 +942,217 @@ def test_seeded_wildbench_folds_carry_both_source_conversions():
     # The published scale is (rating-5)*20: endpoints -80 and 100 map to the bounds.
     assert convert(-80.0) == pytest.approx(0.0, abs=1e-9)
     assert convert(100.0) == pytest.approx(1.0, abs=1e-9)
+
+
+# ------------------------------------------------------------------
+# Seed as a pure function of the YAML: row replacement, prune by claim,
+# deterministic alias ids and order.
+# ------------------------------------------------------------------
+
+def _write_models(seed_dir: Path, entries: list[dict]) -> None:
+    (seed_dir / "models" / "core.yaml").write_text(yaml.safe_dump(entries))
+
+
+def _seed_prune(seed_dir: Path) -> str:
+    runner = CliRunner()
+    result = runner.invoke(app, ["seed", "--seed-dir", str(seed_dir), "--prune-stale"])
+    assert result.exit_code == 0, f"seed --prune-stale failed: {result.output}"
+    return result.output
+
+
+def _write_table(fixtures_dir: Path, table: str, df) -> None:
+    hf_store._store = None
+    df.to_parquet(fixtures_dir / f"{table}.parquet", index=False)
+
+
+def test_reseed_nulls_field_dropped_from_yaml(fresh_seed_env):
+    seed_dir, fixtures_dir = fresh_seed_env
+    _write_models(seed_dir, [
+        {"id": "acme/thing", "display_name": "Thing", "review_status": "reviewed",
+         "params_billions": 7.0},
+    ])
+    _seed(seed_dir)
+    first = _read_models(fixtures_dir).set_index("id").loc["acme/thing"]
+    assert float(first["params_billions"]) == 7.0
+
+    _write_models(seed_dir, [
+        {"id": "acme/thing", "display_name": "Thing", "review_status": "reviewed"},
+    ])
+    _seed(seed_dir)
+    second = _read_models(fixtures_dir).set_index("id").loc["acme/thing"]
+    import pandas as pd
+    assert pd.isna(second["params_billions"]), (
+        f"field dropped from YAML survived the reseed: {second['params_billions']!r}"
+    )
+
+
+def test_prune_removes_stale_draft(fresh_seed_env):
+    seed_dir, fixtures_dir = fresh_seed_env
+    _write_models(seed_dir, [
+        {"id": "acme/keep", "display_name": "Keep", "review_status": "reviewed"},
+        {"id": "acme/old-draft", "display_name": "Old Draft", "review_status": "draft"},
+        {"id": "acme/no-status", "display_name": "No Status"},
+    ])
+    _seed(seed_dir)
+    assert set(_read_models(fixtures_dir)["id"]) == {"acme/keep", "acme/old-draft", "acme/no-status"}
+
+    _write_models(seed_dir, [
+        {"id": "acme/keep", "display_name": "Keep", "review_status": "reviewed"},
+    ])
+    _seed_prune(seed_dir)
+    models = _read_models(fixtures_dir)
+    aliases = _read_aliases(fixtures_dir)
+    assert set(models["id"]) == {"acme/keep"}
+    assert not aliases["canonical_id"].isin(["acme/old-draft", "acme/no-status"]).any()
+
+
+def test_prune_keeps_entity_referenced_by_eval_results(fresh_seed_env):
+    seed_dir, fixtures_dir = fresh_seed_env
+    from eval_entity_registry.store import schemas
+    import pandas as pd
+    _write_models(seed_dir, [
+        {"id": "acme/keep", "display_name": "Keep", "review_status": "reviewed"},
+        {"id": "acme/scored-draft", "display_name": "Scored Draft", "review_status": "draft"},
+    ])
+    _seed(seed_dir)
+    results = pd.concat([schemas.empty("eval_results"), pd.DataFrame([{
+        "id": "r1", "evaluation_id": "e1", "result_index": 0, "source_config": "cfg",
+        "model_id": "acme/scored-draft", "benchmark_id": "b", "score": 1.0,
+    }])], ignore_index=True)
+    _write_table(fixtures_dir, "eval_results", results)
+
+    _write_models(seed_dir, [
+        {"id": "acme/keep", "display_name": "Keep", "review_status": "reviewed"},
+    ])
+    out = _seed_prune(seed_dir)
+    assert "acme/scored-draft" in set(_read_models(fixtures_dir)["id"])
+    assert "referenced by eval_results" in out
+
+
+def test_prune_removes_sync_draft_once_seed_claims_all_its_aliases(fresh_seed_env):
+    """A sync-created draft whose every alias was repointed into YAML has no
+    claimant left and goes, regardless of review_status."""
+    seed_dir, fixtures_dir = fresh_seed_env
+    _write_models(seed_dir, [
+        {"id": "acme/thing", "display_name": "Thing", "review_status": "draft"},
+    ])
+    _seed(seed_dir)
+    aliases = _read_aliases(fixtures_dir)
+    mine = aliases["canonical_id"] == "acme/thing"
+    aliases.loc[mine, "strategy"] = "auto_draft"
+    aliases.loc[mine, "status"] = "auto"
+    _write_table(fixtures_dir, "aliases", aliases)
+
+    _write_models(seed_dir, [
+        {"id": "acme/thing-v2", "display_name": "Thing v2", "review_status": "reviewed",
+         "aliases": ["Thing", "acme/thing"]},
+    ])
+    _seed_prune(seed_dir)
+    models = _read_models(fixtures_dir)
+    aliases = _read_aliases(fixtures_dir)
+    assert set(models["id"]) == {"acme/thing-v2"}
+    assert set(aliases.loc[aliases["raw_value"].isin(["Thing", "acme/thing"]), "canonical_id"]) == {"acme/thing-v2"}
+
+
+def test_prune_keeps_sync_draft_with_a_non_seed_alias(fresh_seed_env):
+    seed_dir, fixtures_dir = fresh_seed_env
+    _write_models(seed_dir, [
+        {"id": "acme/thing", "display_name": "Thing", "review_status": "draft"},
+    ])
+    _seed(seed_dir)
+    aliases = _read_aliases(fixtures_dir)
+    mine = (aliases["canonical_id"] == "acme/thing") & (aliases["raw_value"] == "Thing")
+    aliases.loc[mine, "strategy"] = "auto_draft"
+    _write_table(fixtures_dir, "aliases", aliases)
+
+    _write_models(seed_dir, [{"id": "acme/keep", "display_name": "Keep", "review_status": "reviewed"}])
+    _seed_prune(seed_dir)
+    assert "acme/thing" in set(_read_models(fixtures_dir)["id"])
+
+
+def test_prune_drops_prefix_org_with_its_model_in_one_run(fresh_seed_env):
+    seed_dir, fixtures_dir = fresh_seed_env
+    (seed_dir / "orgs.yaml").write_text(yaml.safe_dump([
+        {"id": "acme", "display_name": "Acme", "kind": "lab", "review_status": "reviewed"},
+    ]))
+    _write_models(seed_dir, [
+        {"id": "novelorg/some-model", "display_name": "Some Model", "review_status": "reviewed"},
+    ])
+    _seed(seed_dir)
+    org_id = str(_read_models(fixtures_dir).set_index("id").loc["novelorg/some-model", "org_id"])
+    assert org_id in set(_read_orgs(fixtures_dir)["id"].astype(str))
+
+    _write_models(seed_dir, [{"id": "acme/keep", "display_name": "Keep", "review_status": "reviewed"}])
+    _seed_prune(seed_dir)
+    assert "novelorg/some-model" not in set(_read_models(fixtures_dir)["id"])
+    assert org_id not in set(_read_orgs(fixtures_dir)["id"].astype(str))
+
+
+def test_local_flag_prunes_by_default(fresh_seed_env):
+    seed_dir, fixtures_dir = fresh_seed_env
+    runner = CliRunner()
+    _write_models(seed_dir, [
+        {"id": "acme/old-draft", "display_name": "Old Draft", "review_status": "draft"},
+    ])
+    assert runner.invoke(app, ["seed", "--local", "--seed-dir", str(seed_dir)]).exit_code == 0
+    _write_models(seed_dir, [{"id": "acme/keep", "display_name": "Keep", "review_status": "reviewed"}])
+    assert runner.invoke(app, ["seed", "--local", "--seed-dir", str(seed_dir)]).exit_code == 0
+    assert "acme/old-draft" not in set(_read_models(fixtures_dir)["id"])
+    _write_models(seed_dir, [
+        {"id": "acme/old-draft", "display_name": "Old Draft", "review_status": "draft"},
+    ])
+    assert runner.invoke(app, ["seed", "--local", "--seed-dir", str(seed_dir)]).exit_code == 0
+    _write_models(seed_dir, [{"id": "acme/keep", "display_name": "Keep", "review_status": "reviewed"}])
+    r = runner.invoke(app, ["seed", "--local", "--no-prune-stale", "--seed-dir", str(seed_dir)])
+    assert r.exit_code == 0, r.output
+    assert "acme/old-draft" in set(_read_models(fixtures_dir)["id"])
+
+
+def test_seed_alias_rows_are_deterministic(fresh_seed_env, tmp_path, monkeypatch):
+    from eval_entity_registry.store import queries
+    seed_dir, fixtures_dir = fresh_seed_env
+    _write_models(seed_dir, [
+        {"id": "acme/thing", "display_name": "Thing", "review_status": "reviewed",
+         "aliases": ["zeta", "alpha", "Mid"], "scoped_aliases": {"cfg_a": ["s2", "s1"]}},
+        {"id": "acme/other", "display_name": "Other", "review_status": "reviewed",
+         "aliases": ["omega"]},
+    ])
+    _seed(seed_dir)
+    first = _read_aliases(fixtures_dir)
+
+    other_dir = tmp_path / "fixtures2"
+    other_dir.mkdir()
+    monkeypatch.setenv("FIXTURES_PATH", str(other_dir))
+    hf_store._store = None
+    _seed(seed_dir)
+    second = _read_aliases(other_dir)
+
+    volatile = ["created_at", "updated_at"]
+    import pandas as pd
+    pd.testing.assert_frame_equal(first.drop(columns=volatile), second.drop(columns=volatile))
+    row = first[(first["raw_value"] == "s1") & (first["source_config"] == "cfg_a")].iloc[0]
+    assert row["id"] == queries.seed_alias_id("model", "s1", "cfg_a")
+    assert list(first.loc[first["canonical_id"] == "acme/thing", "raw_value"]) == [
+        "Mid", "Thing", "acme/thing", "alpha", "zeta", "s2", "s1",
+    ]
+
+
+def test_derived_alias_id_falls_back_when_a_rejected_row_holds_it(fresh_seed_env):
+    seed_dir, fixtures_dir = fresh_seed_env
+    _write_models(seed_dir, [
+        {"id": "acme/thing", "display_name": "Thing", "review_status": "reviewed",
+         "aliases": ["nickname"]},
+    ])
+    _seed(seed_dir)
+    aliases = _read_aliases(fixtures_dir)
+    mine = aliases["raw_value"] == "nickname"
+    derived = aliases.loc[mine, "id"].iloc[0]
+    aliases.loc[mine, "status"] = "rejected"
+    _write_table(fixtures_dir, "aliases", aliases)
+
+    _seed(seed_dir)
+    aliases = _read_aliases(fixtures_dir)
+    rows = aliases[aliases["raw_value"] == "nickname"]
+    assert sorted(rows["status"]) == ["confirmed", "rejected"]
+    assert rows["id"].nunique() == 2
+    assert derived in set(rows["id"])

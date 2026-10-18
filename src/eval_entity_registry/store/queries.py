@@ -544,10 +544,17 @@ def get_alias(
     return None
 
 
+def seed_alias_id(entity_type: str, raw_value: str, source_config) -> str:
+    """Content-derived alias id over the uniqueness key, so a from-scratch seed
+    is reproducible; the caller must fall back to a random id when it is taken."""
+    key = f"{entity_type}\0{raw_value}\0{_source_config_key(source_config) or ''}"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:32]
+
+
 def add_alias(store: RegistryStore, data: dict, buffered: bool = False) -> dict:
     """Insert an alias row. Raises ValueError when a non-rejected alias already
     exists for (entity_type, raw_value, source_config). buffered=True defers
-    the write to flush_pending."""
+    the write to flush_pending. A caller-supplied `id` is used as-is."""
     raw_value = data["raw_value"]
     entity_type = data["entity_type"]
     source_config = _source_config_key(data.get("source_config"))
@@ -588,7 +595,7 @@ def add_alias(store: RegistryStore, data: dict, buffered: bool = False) -> dict:
     row = {
         **data,
         "source_config": source_config,
-        "id": str(uuid.uuid4()),
+        "id": data.get("id") or str(uuid.uuid4()),
         "created_at": now,
         "updated_at": now,
     }

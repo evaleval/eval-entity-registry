@@ -3,6 +3,7 @@ import json
 import math
 import re
 import unicodedata
+import uuid
 from numbers import Real
 from pathlib import Path
 from typing import Optional
@@ -16,6 +17,15 @@ import yaml
 # registry id, never normalised. A typo'd or path-like key fails the seed
 # instead of scoping an alias to a config that never calls.
 _SOURCE_SCOPE_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+# eval_results columns that hold a canonical id of each entity type; a stale
+# entity they still point at is kept by --prune-stale.
+_EVAL_RESULTS_FK = {
+    "model": ("model_id",),
+    "benchmark": ("benchmark_id", "parent_benchmark_id"),
+    "metric": ("metric_id",),
+    "harness": ("harness_id",),
+}
 
 
 def seed_collision_key(s: str) -> str:
@@ -45,7 +55,7 @@ def _legacy_parent_model_id_to_parents(entry: dict) -> None:
     if legacy:
         entry["parents"] = [{"id": legacy, "relationship": "variant", "axis": "size"}]
 
-from eval_entity_registry.store.hf_store import get_store
+from eval_entity_registry.store.hf_store import _local_mode, get_store
 from eval_entity_registry.store import queries, schemas
 from eval_entity_registry.lib import collision_fold, org_attribution
 from eval_entity_registry.lib.seed_io import WEAK_SCALAR_FIELDS, build_hf_to_dev_from_orgs_yaml
@@ -94,16 +104,20 @@ def _load_store():
 def seed(
     local: bool = typer.Option(False, "--local", help="Write to fixtures/ instead of HF Hub"),
     seed_dir: str = typer.Option("./seed", "--seed-dir"),
-    prune_stale: bool = typer.Option(
-        False,
+    prune_stale: Optional[bool] = typer.Option(
+        None,
         "--prune-stale/--no-prune-stale",
-        help="Remove reviewed seed entities and seed aliases absent from the current YAML snapshot.",
+        help="Remove entities and seed aliases absent from the current YAML snapshot "
+             "unless a non-seed alias or an eval_results row still references them. "
+             "Default on in local mode, off otherwise.",
     ),
 ):
     """Load known canonical entities from seed YAML files."""
     import os
     if local:
         os.environ["LOCAL_MODE"] = "true"
+    if prune_stale is None:
+        prune_stale = _local_mode()
 
     store = _load_store()
     seed_path = Path(seed_dir)
@@ -740,6 +754,10 @@ def seed(
     # O(N²) concat-per-row.
     queries._rebuild_alias_index(store)
 
+    # Derived alias ids must not collide with persisted rows (a rejected row
+    # may hold the same key) nor repeat within the run.
+    taken_alias_ids: set[str] = set(store.table("aliases")["id"].dropna().astype(str))
+
     for table, yaml_file, label, entity_type in seed_specs:
         table_columns = set(schemas.empty(table).columns)
         if yaml_file == "__merged_models__":
@@ -864,6 +882,15 @@ def seed(
                 if len(cids) == 1
             }
 
+        # A seed row is a function of its YAML entry alone: rows for YAML ids are
+        # dropped and re-inserted whole, so a field removed from YAML cannot linger.
+        yaml_item_ids = {it["id"] for it in items if isinstance(it, dict) and it.get("id")}
+        existing_df = store.table(table)
+        if len(existing_df) > 0:
+            reseeded = existing_df["id"].isin(yaml_item_ids)
+            if reseeded.any():
+                store.set_table(table, existing_df[~reseeded].reset_index(drop=True))
+
         for original_item in items:
             item = dict(original_item)
             extra_aliases = item.pop("aliases", []) or []
@@ -916,7 +943,7 @@ def seed(
                 global_aliases.discard(display_name)
 
             alias_specs: list[tuple[str, Optional[str]]] = [
-                (raw, None) for raw in global_aliases if raw
+                (raw, None) for raw in sorted(a for a in global_aliases if isinstance(a, str) and a)
             ]
             for source_cfg, raw_values in scoped_aliases.items():
                 if not isinstance(source_cfg, str) or not _SOURCE_SCOPE_KEY_RE.match(source_cfg):
@@ -957,8 +984,12 @@ def seed(
                         (raw_value, entity_type, _claim_key[2],
                          _prev[0], target_cid, _prev[1], canonical_id)
                     )
+                alias_id = queries.seed_alias_id(entity_type, raw_value, source_cfg)
+                if alias_id in taken_alias_ids:
+                    alias_id = str(uuid.uuid4())
                 try:
                     queries.add_alias(store, {
+                        "id": alias_id,
                         "raw_value": raw_value,
                         "entity_type": entity_type,
                         "canonical_id": target_cid,
@@ -969,6 +1000,7 @@ def seed(
                         "confidence": 1.0,
                         "notes": None,
                     }, buffered=True)
+                    taken_alias_ids.add(alias_id)
                     alias_count += 1
                 except ValueError:
                     # An existing row pointing at a different canonical is a YAML
@@ -1236,10 +1268,15 @@ def seed(
 
     removed_entities = 0
     removed_aliases = 0
+    kept_for_results = 0
     if prune_stale:
-        # Only seed-originated rows (strategy == "seed", reviewed entities)
-        # are pruned; sync-created aliases and auto-drafts are never touched.
-        for table, entity_type, yaml_ids, yaml_alias_keys in seed_snapshot:
+        # An entity absent from YAML survives only while another writer still
+        # claims it: a non-seed alias, an eval_results row, or (orgs) an FK
+        # from a surviving row. Orgs go last so the FK guard sees pruned models.
+        results_df = store.table("eval_results")
+        for table, entity_type, yaml_ids, yaml_alias_keys in sorted(
+            seed_snapshot, key=lambda t: t[0] == "canonical_orgs"
+        ):
             aliases_df = store.table("aliases")
             seed_mask = (aliases_df["strategy"] == "seed") & (aliases_df["entity_type"] == entity_type)
             if seed_mask.any():
@@ -1261,7 +1298,16 @@ def seed(
             entity_df = store.table(table)
             if len(entity_df) > 0:
                 stale = entity_df["id"].isin(yaml_ids)
-                stale_entities = entity_df[~stale & (entity_df["review_status"] == "reviewed")]
+                stale_entities = entity_df[~stale]
+                referenced_by_results: set[str] = set()
+                if results_df is not None and len(results_df) > 0:
+                    for col in _EVAL_RESULTS_FK.get(entity_type, ()):
+                        if col in results_df.columns:
+                            referenced_by_results |= set(results_df[col].dropna().astype(str))
+                if referenced_by_results:
+                    in_results = stale_entities["id"].astype(str).isin(referenced_by_results)
+                    kept_for_results += int(in_results.sum())
+                    stale_entities = stale_entities[~in_results]
                 # FK guard: an org auto-created from a model's id prefix is not
                 # in the orgs YAML, and pruning it would dangle the model's
                 # org_id; parent_org_id references are kept for the same reason.
@@ -1305,6 +1351,8 @@ def seed(
     )
     if removed_entities:
         typer.echo(f"  stale entities removed: {removed_entities}")
+    if kept_for_results:
+        typer.echo(f"  stale entities kept (referenced by eval_results): {kept_for_results}")
 
     store.push_to_hub()
     typer.echo("Seed complete.")
