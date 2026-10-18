@@ -453,3 +453,136 @@ def test_build_entry_skips_open_weights_when_no_artifacts(mod):
     e = mod.build_entry(row, ORG_ALIAS_MAP, ALIASES_TO_CANONICAL)
     assert e is not None
     assert "open_weights" not in e
+
+
+# ---------------------------------------------------------------------------
+# --live path: pinned snapshot download + sha256 watermark (offline; the
+# snapshot helpers are monkeypatched to a tiny parquet cut from the frozen
+# cache). Every file write is redirected to tmp_path; nothing touches the
+# real seed or the process environment.
+# ---------------------------------------------------------------------------
+
+import duckdb  # noqa: E402
+
+from eval_entity_registry.services.hub_stats_snapshot import HubStatsSnapshot  # noqa: E402
+
+_FROZEN = __import__("pathlib").Path(__file__).resolve().parent.parent / "curation" / "hub_stats_frozen.parquet"
+_SHA = "c2dc24e395df9df1052f067fcda6314e86ecd84c"
+_ETAG = "7fd4aaf31072a5f502622a629749177c03e7d620f8488977d8003a403e9a4974"
+
+
+class _RecordingCon:
+    """Wrap a DuckDB connection and record every SQL statement."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.sql: list[str] = []
+
+    def execute(self, sql, *a, **k):
+        self.sql.append(sql)
+        return self._inner.execute(sql, *a, **k)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+@pytest.fixture
+def live_env(mod, monkeypatch, tmp_path):
+    """Redirect outputs to tmp, cut a small parquet from the frozen cache and
+    patch resolve/download to hand it back as the 'snapshot'."""
+    small = tmp_path / "models.parquet"
+    duckdb.connect().execute(
+        f"COPY (SELECT * FROM read_parquet('{_FROZEN}') LIMIT 25) TO '{small}' (FORMAT PARQUET)"
+    )
+    snap = HubStatsSnapshot("cfahlgren1/hub-stats", _SHA, "models.parquet", _ETAG, small.stat().st_size)
+    calls = {"resolve": 0, "download": 0}
+
+    def fake_resolve(token=None, **_):
+        calls["resolve"] += 1
+        return snap
+
+    def fake_download(s, token=None, **_):
+        calls["download"] += 1
+        return HubStatsSnapshot(s.repo_id, s.revision, s.filename, s.sha256, s.size, local_path=small)
+
+    monkeypatch.setattr(mod, "resolve_snapshot", fake_resolve)
+    monkeypatch.setattr(mod, "download_snapshot", fake_download)
+    monkeypatch.setattr(mod, "MODELS_OUT_PATH", tmp_path / "hub_stats.generated.yaml")
+    monkeypatch.setattr(mod, "STATE_PATH", tmp_path / "hub_stats.state.json")
+    cons: list[_RecordingCon] = []
+    real_connect = duckdb.connect
+
+    def recording_connect(*a, **k):
+        c = _RecordingCon(real_connect(*a, **k))
+        cons.append(c)
+        return c
+
+    monkeypatch.setattr(mod.duckdb, "connect", recording_connect)
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv(mod.HUB_STATS_LOCAL_PARQUET_ENV, raising=False)
+    return dict(snap=snap, small=small, calls=calls, cons=cons, tmp=tmp_path)
+
+
+def test_live_reads_downloaded_snapshot_locally_and_writes_sha_watermark(mod, live_env, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["refresh_from_hub_stats.py", "--live"])
+    assert mod.main() == 0
+    assert live_env["calls"] == {"resolve": 1, "download": 1}
+    # The query ran against the downloaded local file; no httpfs, no secret.
+    sql = "\n".join(s for c in live_env["cons"] for s in c.sql)
+    assert str(live_env["small"]) in sql
+    assert "httpfs" not in sql and "CREATE SECRET" not in sql
+    assert "huggingface.co" not in sql
+    # Outputs landed in tmp, keyed by the snapshot's LFS sha256.
+    assert mod.MODELS_OUT_PATH.exists()
+    state = json.loads(mod.STATE_PATH.read_text())
+    assert state[mod.STATE_SHA_KEY] == _ETAG
+    assert isinstance(state[mod.STATE_ROWS_KEY], list) and state[mod.STATE_ROWS_KEY]
+    assert "parquet_etag" not in state
+    # Process env untouched.
+    import os
+    assert mod.HUB_STATS_LOCAL_PARQUET_ENV not in os.environ
+
+
+def test_live_short_circuits_on_unchanged_sha_before_download(mod, live_env, monkeypatch):
+    monkeypatch.setattr("sys.argv", ["refresh_from_hub_stats.py", "--live"])
+    assert mod.main() == 0  # first run: writes the watermark
+    assert live_env["calls"]["download"] == 1
+
+    def boom(*a, **k):
+        raise AssertionError("download must not run on a no-op cycle")
+
+    monkeypatch.setattr(mod, "download_snapshot", boom)
+    n_cons = len(live_env["cons"])
+    assert mod.main() == 0  # same sha + same candidates + YAML present → no-op
+    assert live_env["calls"]["resolve"] == 2
+    assert len(live_env["cons"]) == n_cons  # no DuckDB work either
+
+    # --force bypasses the watermark (and so would hit the download).
+    monkeypatch.setattr("sys.argv", ["refresh_from_hub_stats.py", "--live", "--force"])
+    with pytest.raises(AssertionError, match="must not run"):
+        mod.main()
+
+
+def test_legacy_etag_state_is_not_a_watermark(mod, live_env, monkeypatch):
+    mod.STATE_PATH.write_text(json.dumps({"parquet_etag": "c215dbd6", "rows_checked_at_etag": []}))
+    assert mod.load_state() == {}
+    mod.STATE_PATH.write_text(json.dumps({mod.STATE_SHA_KEY: _ETAG, mod.STATE_ROWS_KEY: ["a/b"]}))
+    assert mod.load_state() == {mod.STATE_SHA_KEY: _ETAG, mod.STATE_ROWS_KEY: ["a/b"]}
+    mod.STATE_PATH.write_text(json.dumps({mod.STATE_SHA_KEY: 5, mod.STATE_ROWS_KEY: ["a/b"]}))
+    assert mod.load_state() == {}
+    # A legacy-keyed file must NOT short-circuit a live run.
+    mod.STATE_PATH.write_text(json.dumps({"parquet_etag": _ETAG, "rows_checked_at_etag": []}))
+    monkeypatch.setattr("sys.argv", ["refresh_from_hub_stats.py", "--live"])
+    assert mod.main() == 0
+    assert live_env["calls"]["download"] == 1
+
+
+def test_offline_default_reads_frozen_cache_and_writes_no_watermark(mod, live_env, monkeypatch):
+    """No --live: the committed frozen cache is the source; no snapshot
+    resolution, no download, no state file."""
+    monkeypatch.setattr("sys.argv", ["refresh_from_hub_stats.py"])
+    assert mod.main() == 0
+    assert live_env["calls"] == {"resolve": 0, "download": 0}
+    sql = "\n".join(s for c in live_env["cons"] for s in c.sql)
+    assert str(mod.FROZEN_CACHE_PATH) in sql
+    assert not mod.STATE_PATH.exists()

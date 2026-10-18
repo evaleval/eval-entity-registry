@@ -21,6 +21,14 @@ import threading
 from datetime import datetime, date
 from typing import Optional
 
+# Live-lookup source for the deployed Space's `HubStatsClient` ONLY. This is
+# the HF parquet-converter endpoint, which answers 400 for several minutes after
+# ANY commit to the upstream dataset (daily, ~13:18–13:36 UTC) while the
+# dataset-viewer rebuilds `refs/convert/parquet`. The bulk scripts (refresh /
+# index / freeze) therefore do NOT read it: they download a pinned snapshot of
+# `main/models.parquet` via `services/hub_stats_snapshot.py` (same bytes; see
+# specs/hub-stats-snapshot-fetch.md). The client tolerates the window because a
+# lookup failure degrades to "no enrichment".
 PARQUET_URL = (
     "https://huggingface.co/api/datasets/cfahlgren1/hub-stats/parquet/models/train/0.parquet"
 )

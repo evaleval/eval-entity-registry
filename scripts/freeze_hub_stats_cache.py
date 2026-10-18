@@ -11,11 +11,17 @@ mis-classify real repos as absent, so a clean regen against live HF would
 silently lose lineage. Freezing the actual upstream rows (incl. baseModels) to a
 committed parquet lets `refresh_from_hub_stats.py` reproduce the SAME enrichment
 offline, byte-for-byte, via its existing local-parquet path
-(`HUB_STATS_LOCAL_PARQUET` / `is_local_parquet`).
+(`HUB_STATS_LOCAL_PARQUET`).
 
 This is a CACHE-REFRESH tool — run it occasionally (or in a dedicated cron) to
 re-pull the upstream rows for our covered canonicals. It is NETWORK; the normal
 `refresh_from_hub_stats.py` regen reads the frozen cache offline.
+
+Source: a PINNED, DOWNLOADED snapshot of `cfahlgren1/hub-stats`
+`main/models.parquet` (see `services/hub_stats_snapshot.py`) — never the HF
+parquet-converter endpoint. The snapshot's commit sha + content sha256 are
+written into the cache's parquet key-value metadata (`parquet_kv_metadata()`)
+so the committed file records what it froze.
 
 Output:
     curation/hub_stats_frozen.parquet  (committed; the durable offline cache)
@@ -23,6 +29,7 @@ Output:
 Usage:
     HF_TOKEN=... uv run python scripts/freeze_hub_stats_cache.py
     uv run python scripts/freeze_hub_stats_cache.py --out path/to.parquet
+    HUB_STATS_LOCAL_PARQUET=path uv run python scripts/freeze_hub_stats_cache.py   # from a local file
 """
 from __future__ import annotations
 
@@ -34,8 +41,13 @@ from pathlib import Path
 import duckdb
 
 from eval_entity_registry.lib.seed_io import build_hf_to_dev_from_orgs_yaml, load_entries_from_yaml
-
-from eval_entity_registry.services.hub_stats import PARQUET_URL, QUERY_COLUMNS
+from eval_entity_registry.services.hub_stats import HUB_STATS_LOCAL_PARQUET_ENV, QUERY_COLUMNS
+from eval_entity_registry.services.hub_stats_snapshot import (
+    HubStatsSnapshot,
+    download_snapshot,
+    is_remote_source,
+    resolve_snapshot,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ORGS_PATH = REPO_ROOT / "seed" / "orgs.yaml"
@@ -79,6 +91,17 @@ def build_candidate_ids() -> set[str]:
     return initial
 
 
+def select_source(token: str | None) -> tuple[str, HubStatsSnapshot | None]:
+    """Existing `$HUB_STATS_LOCAL_PARQUET` > pinned snapshot download."""
+    local = os.environ.get(HUB_STATS_LOCAL_PARQUET_ENV)
+    if local and os.path.exists(local):
+        return local, None
+    snap = resolve_snapshot(token=token)
+    print(f"[freeze] snapshot {snap.short}", file=sys.stderr)
+    snap = download_snapshot(snap, token=token)
+    return str(snap.local_path), snap
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--out", type=Path, default=FROZEN_CACHE_PATH)
@@ -90,20 +113,30 @@ def main() -> int:
         print("[freeze] ERROR: no candidates found — seed sources empty?", file=sys.stderr)
         return 1
 
-    con = duckdb.connect()
-    con.execute("INSTALL httpfs; LOAD httpfs;")
     tok = os.environ.get("HF_TOKEN")
-    if tok:
-        con.execute(
-            f"CREATE SECRET hf_auth (TYPE HTTP, BEARER_TOKEN '{tok.replace(chr(39), chr(39)*2)}', "
-            f"SCOPE 'https://huggingface.co');"
-        )
+    src, snap = select_source(tok)
+
+    con = duckdb.connect()
+    if is_remote_source(src):
+        con.execute("INSTALL httpfs; LOAD httpfs;")
+        if tok:
+            con.execute(
+                f"CREATE SECRET hf_auth (TYPE HTTP, BEARER_TOKEN '{tok.replace(chr(39), chr(39)*2)}', "
+                f"SCOPE 'https://huggingface.co');"
+            )
     quoted = ", ".join(f"'{i.replace(chr(39), chr(39) * 2)}'" for i in candidates)
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    # Record provenance in the parquet footer so the committed cache says what
+    # it froze (readable via `SELECT * FROM parquet_kv_metadata('<file>')`).
+    if snap is not None:
+        kv = {"source_repo": snap.repo_id, "source_revision": snap.revision, "source_sha256": snap.sha256}
+    else:
+        kv = {"source_path": src}
+    kv_sql = ", ".join(f"'{k}': '{v.replace(chr(39), chr(39) * 2)}'" for k, v in kv.items())
     # COPY the candidate subset (case-sensitive id match) to a local parquet.
     con.execute(
-        f"COPY (SELECT {QUERY_COLUMNS} FROM read_parquet('{PARQUET_URL}') "
-        f"WHERE id IN ({quoted})) TO '{args.out}' (FORMAT PARQUET)"
+        f"COPY (SELECT {QUERY_COLUMNS} FROM read_parquet('{src.replace(chr(39), chr(39) * 2)}') "
+        f"WHERE id IN ({quoted})) TO '{args.out}' (FORMAT PARQUET, KV_METADATA {{{kv_sql}}})"
     )
     n = con.execute(f"SELECT count(*) FROM read_parquet('{args.out}')").fetchone()[0]
     print(f"[freeze] wrote {n} rows -> {args.out}", file=sys.stderr)

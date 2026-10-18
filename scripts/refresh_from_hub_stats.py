@@ -16,11 +16,18 @@ NOT done here — initial scoping showed ~177k descendants of our
 4k HF ids, mostly LoRA adapters. The on-demand enrichment at draft
 creation handles those when EEE actually encounters them.
 
-Re-run efficiency: an etag-watermark in
-`seed/models/sources/hub_stats.state.json` records the parquet's
-content ETag and the candidate HF ids checked against it. When the
-upstream parquet hasn't republished AND the candidate set is unchanged,
-the script exits without querying — most cron cycles are no-ops.
+Re-run efficiency: a watermark in
+`seed/models/sources/hub_stats.state.json` records the upstream parquet's
+content sha256 and the candidate HF ids checked against it. When the
+upstream file hasn't changed AND the candidate set is unchanged, the
+script exits without downloading or querying.
+
+Live source (`--live`): a PINNED SNAPSHOT of `cfahlgren1/hub-stats`
+`main/models.parquet` — resolve the current commit sha + content hash in one
+request, `hf_hub_download` the file at that sha, query it locally. Never the
+HF parquet-converter endpoint, which 400s for minutes after every upstream
+commit (see specs/hub-stats-snapshot-fetch.md and
+`services/hub_stats_snapshot.py`).
 
 Output:
     seed/models/sources/hub_stats.generated.yaml — enrichment entries
@@ -32,13 +39,13 @@ Reproducibility: by DEFAULT this reads the committed offline cache
 parquet incl. the `baseModels` lineage column), so a clean regen reproduces
 lineage without depending on flaky live HF. Refresh that cache with
 `scripts/freeze_hub_stats_cache.py` (live); pass `--live` here to bypass the
-cache and query HF directly.
+cache and read a fresh pinned upstream snapshot.
 
 Usage:
     python scripts/refresh_from_hub_stats.py             # offline cache (reproducible)
-    python scripts/refresh_from_hub_stats.py --live      # query live HF directly
+    python scripts/refresh_from_hub_stats.py --live      # pinned upstream snapshot
     python scripts/refresh_from_hub_stats.py --dry-run   # preview only
-    python scripts/refresh_from_hub_stats.py --force     # ignore etag (live only)
+    python scripts/refresh_from_hub_stats.py --force     # ignore watermark (live only)
 """
 from __future__ import annotations
 
@@ -50,7 +57,6 @@ from pathlib import Path
 from typing import Optional
 
 import duckdb
-import httpx
 import yaml
 
 from eval_entity_registry.lib.seed_io import build_hf_to_dev_from_orgs_yaml, load_entries_from_yaml
@@ -60,7 +66,6 @@ from eval_entity_registry.lib.seed_io import build_hf_to_dev_from_orgs_yaml, loa
 # consistent on row-shape parsing.
 from eval_entity_registry.services.hub_stats import (
     HUB_STATS_LOCAL_PARQUET_ENV,
-    PARQUET_URL,
     QUERY_COLUMNS,
     approx_params_billions as _approx_params_billions,
     coerce_date as _coerce_date,
@@ -68,10 +73,14 @@ from eval_entity_registry.services.hub_stats import (
     extract_license as _extract_license,
     filter_useful_tags as _filter_useful_tags,
     hf_id_to_canonical_cased,
-    is_local_parquet,
     normalize as _normalize,
-    resolve_parquet_source,
     slugify as _slugify,
+)
+from eval_entity_registry.services.hub_stats_snapshot import (
+    HubStatsSnapshot,
+    download_snapshot,
+    is_remote_source,
+    resolve_snapshot,
 )
 
 # Single-sourced two-tier org map (same as `_auto_create_entity._build_hf_to_dev`
@@ -115,50 +124,45 @@ def build_hf_to_dev() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Etag watermark — short-circuits the daily cron on no-op cycles.
+# Snapshot watermark — short-circuits the daily cron on no-op cycles.
+# Keys: `parquet_sha256` (upstream file's LFS content sha256) and
+# `rows_checked_at_sha256`. The pre-snapshot keys (`parquet_etag` /
+# `rows_checked_at_etag`, which held the converter endpoint's ETag = the xet
+# hash) are a different value space and are treated as "no watermark".
 # ---------------------------------------------------------------------------
 
-def fetch_parquet_etag() -> Optional[str]:
-    """HEAD the hub-stats parquet and return its content ETag (a stable
-    SHA-256 of the file body). Returns None on any HTTP/network failure
-    so the caller can fall back to the unconditional re-fetch path."""
-    try:
-        with httpx.Client(follow_redirects=True, timeout=30.0) as c:
-            r = c.head(PARQUET_URL)
-            r.raise_for_status()
-            etag = r.headers.get("etag")
-            return etag.strip('"') if etag else None
-    except Exception as e:
-        print(f"[refresh] WARN: parquet HEAD failed ({e}); skipping etag check", file=sys.stderr)
-        return None
+STATE_SHA_KEY = "parquet_sha256"
+STATE_ROWS_KEY = "rows_checked_at_sha256"
 
 
 def load_state() -> dict:
     """Read the watermark state file. Returns an empty dict on missing,
-    unreadable, or schema-invalid input — degrades to "no state known,
-    re-check everything" so a corrupted/deleted file never makes the
-    script behave worse than today's unconditional behaviour."""
+    unreadable, legacy-keyed, or schema-invalid input — degrades to "no state
+    known, re-check everything" so a corrupted/deleted/old file never makes the
+    script behave worse than the unconditional behaviour."""
     if not STATE_PATH.exists():
         return {}
     try:
         data = json.loads(STATE_PATH.read_text())
         if not isinstance(data, dict):
             return {}
-        if not isinstance(data.get("rows_checked_at_etag"), list):
+        if not isinstance(data.get(STATE_SHA_KEY), str):
+            return {}
+        if not isinstance(data.get(STATE_ROWS_KEY), list):
             return {}
         return data
     except (OSError, ValueError):
         return {}
 
 
-def write_state(etag: str, rows_checked: list[str]) -> None:
+def write_state(sha256: str, rows_checked: list[str]) -> None:
     """Write the watermark. Sorted for diff-clean commits. Called LAST,
     after the YAML write succeeds — a crash before this line just means
     next cron run redoes the work, never that we mark rows checked
     without their data having landed in the YAML."""
     payload = {
-        "parquet_etag": etag,
-        "rows_checked_at_etag": sorted(set(rows_checked)),
+        STATE_SHA_KEY: sha256,
+        STATE_ROWS_KEY: sorted(set(rows_checked)),
     }
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     STATE_PATH.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
@@ -275,13 +279,16 @@ def load_canonical_id_norms() -> dict[str, str]:
 def query_hub_stats(
     con: duckdb.DuckDBPyConnection,
     candidate_hf_ids: set[str],
+    source: str,
 ) -> list[dict]:
-    """Fetch hub-stats rows whose `id` is in `candidate_hf_ids`. Single
-    pass — bounded by the size of our HF-aliased canonical set."""
+    """Fetch hub-stats rows whose `id` is in `candidate_hf_ids` from the
+    parquet at `source` (a local path, or a URL on a connection that already
+    has httpfs loaded). Single pass — bounded by the size of our HF-aliased
+    canonical set."""
     if not candidate_hf_ids:
         return []
     quoted = ", ".join(f"'{i.replace(chr(39), chr(39)*2)}'" for i in candidate_hf_ids)
-    source = resolve_parquet_source(PARQUET_URL)
+    source = source.replace("'", "''")
     sql = f"""
         SELECT {QUERY_COLUMNS}
         FROM read_parquet('{source}')
@@ -537,32 +544,45 @@ def write_models_yaml(entries: list[dict]) -> None:
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--dry-run", action="store_true", help="print summary; don't write files")
-    p.add_argument("--force", action="store_true", help="ignore the etag watermark; re-fetch unconditionally")
+    p.add_argument("--force", action="store_true", help="ignore the snapshot watermark; re-fetch unconditionally")
     p.add_argument(
         "--live",
         action="store_true",
-        help="query live cfahlgren1/hub-stats directly instead of the committed "
-        "offline cache (curation/hub_stats_frozen.parquet). Use to refresh; the "
-        "default is the reproducible offline cache. Refresh the cache itself with "
+        help="download a pinned snapshot of cfahlgren1/hub-stats main/models.parquet "
+        "instead of reading the committed offline cache "
+        "(curation/hub_stats_frozen.parquet). Use to refresh; the default is the "
+        "reproducible offline cache. Refresh the cache itself with "
         "scripts/freeze_hub_stats_cache.py.",
     )
     args = p.parse_args()
 
-    # Reproducible-by-default: read the committed offline cache unless the caller
-    # passed --live or set HUB_STATS_LOCAL_PARQUET explicitly. This decouples
-    # "fetch from HF" (the freeze tool / --live) from "derive enrichment" (this
-    # script), so a clean regen reproduces lineage without flaky live HF.
-    if (
-        not args.live
-        and not os.environ.get(HUB_STATS_LOCAL_PARQUET_ENV)
-        and FROZEN_CACHE_PATH.exists()
-    ):
-        os.environ[HUB_STATS_LOCAL_PARQUET_ENV] = str(FROZEN_CACHE_PATH)
-        print(
-            f"[refresh] reading frozen offline cache {FROZEN_CACHE_PATH} "
-            f"(pass --live to query HF directly)",
-            file=sys.stderr,
-        )
+    # Source selection. Reproducible-by-default: read the committed offline cache
+    # (or an explicit $HUB_STATS_LOCAL_PARQUET) unless the caller passed --live.
+    # This decouples "fetch from HF" (the freeze tool / --live) from "derive
+    # enrichment" (this script), so a clean regen reproduces lineage without
+    # flaky live HF. The live path is resolved further down (after the candidate
+    # set is known, so the watermark can short-circuit BEFORE any download).
+    snap: Optional[HubStatsSnapshot] = None
+    source: Optional[str] = None
+    if not args.live:
+        local = os.environ.get(HUB_STATS_LOCAL_PARQUET_ENV)
+        if local and os.path.exists(local):
+            source = local
+            print(f"[refresh] reading local parquet {source}", file=sys.stderr)
+        elif FROZEN_CACHE_PATH.exists():
+            source = str(FROZEN_CACHE_PATH)
+            print(
+                f"[refresh] reading frozen offline cache {FROZEN_CACHE_PATH} "
+                f"(pass --live for a fresh upstream snapshot)",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[refresh] ERROR: no offline source — {FROZEN_CACHE_PATH} missing and "
+                f"${HUB_STATS_LOCAL_PARQUET_ENV} unset; pass --live or freeze the cache.",
+                file=sys.stderr,
+            )
+            return 1
 
     org_alias_map = load_org_alias_to_canonical()
     aliases_to_canonical = load_existing_canonical_aliases()
@@ -603,57 +623,57 @@ def main() -> int:
                     initial.add(f"{hf_org}/{name_part}")
     print(f"[refresh] HF-id candidates to look up: {len(initial)}", file=sys.stderr)
 
-    # Etag short-circuit: if the parquet hasn't republished AND we've
-    # already checked every current candidate against this etag AND the
-    # YAML is still on disk, exit without doing any DuckDB work. Etag
-    # fetch failure → fall through to unconditional re-fetch (degrades
-    # to pre-watermark behaviour). The YAML-existence guard catches the
-    # case where someone deleted the YAML but the state file survived;
-    # without it we'd silently leave hub-stats enrichment missing from
-    # the seed merge.
-    # The etag watermark HEADs the live parquet URL — irrelevant (and a
-    # needless network call) when reading a LOCAL parquet. In offline mode we
-    # always re-run the local read; it's cheap and has no rate limit.
-    offline = is_local_parquet()
-    current_etag = None if offline else fetch_parquet_etag()
-    state = load_state()
-    can_short_circuit = (
-        not offline
-        and not args.force
-        and not args.dry_run
-        and current_etag is not None
-        and state.get("parquet_etag") == current_etag
-        and MODELS_OUT_PATH.exists()
-        and initial.issubset(set(state.get("rows_checked_at_etag", [])))
-    )
-    if can_short_circuit:
-        print(
-            f"[refresh] no-op: parquet etag unchanged ({current_etag[:12]}...) "
-            f"and all {len(initial)} candidates already checked",
-            file=sys.stderr,
+    # Live path: pin the upstream snapshot (one resolver-bucket HEAD), then
+    # short-circuit if the file's content hash is unchanged AND we've already
+    # checked every current candidate against it AND the YAML is still on
+    # disk — all BEFORE the 1.6 GB download. The YAML-existence guard catches
+    # the case where someone deleted the YAML but the state file survived;
+    # without it we'd silently leave hub-stats enrichment missing from the
+    # seed merge. Offline sources never consult the watermark: a local read is
+    # cheap and has no rate limit.
+    # Request budget per live run (per the Hub's `ratelimit-policy` header,
+    # observed unauth: api q=500/w=300, resolvers q=3000/w=300): one resolver
+    # HEAD here, one resolver HEAD + one api xet-token call inside
+    # hf_hub_download, then a single resumable stream. No range requests.
+    hf_token = os.environ.get("HF_TOKEN")
+    if args.live:
+        snap = resolve_snapshot(token=hf_token)
+        print(f"[refresh] snapshot {snap.short}", file=sys.stderr)
+        state = load_state()
+        can_short_circuit = (
+            not args.force
+            and not args.dry_run
+            and state.get(STATE_SHA_KEY) == snap.sha256
+            and MODELS_OUT_PATH.exists()
+            and initial.issubset(set(state.get(STATE_ROWS_KEY, [])))
         )
-        return 0
+        if can_short_circuit:
+            print(
+                f"[refresh] no-op: upstream sha256 unchanged ({snap.sha256[:12]}...) "
+                f"and all {len(initial)} candidates already checked",
+                file=sys.stderr,
+            )
+            return 0
+        # A download failure is a run failure (the cron's stall beacon fires;
+        # hf_hub_download already retries transient errors). No remote fallback:
+        # the converter URL is exactly what this path exists to avoid.
+        snap = download_snapshot(snap, token=hf_token)
+        source = str(snap.local_path)
+        print(f"[refresh] downloaded snapshot -> {source}", file=sys.stderr)
+    assert source is not None
 
     con = duckdb.connect()
-    if offline:
-        print(
-            f"[refresh] OFFLINE: reading local parquet {resolve_parquet_source(PARQUET_URL)}",
-            file=sys.stderr,
-        )
-    else:
+    if is_remote_source(source):
+        # Only reachable when a caller points $HUB_STATS_LOCAL_PARQUET at a URL;
+        # the crons always read the downloaded file.
         con.execute("INSTALL httpfs; LOAD httpfs;")
-        # Authenticate parquet fetches when HF_TOKEN is in the environment.
-        # Unauth limit is 500 requests / 5min; one DuckDB read_parquet streams
-        # the file via many range requests and can brush that ceiling on its
-        # own. With auth the limit is ~30k / 5min.
-        hf_token = os.environ.get("HF_TOKEN")
         if hf_token:
             escaped = hf_token.replace("'", "''")
             con.execute(
                 f"CREATE SECRET hf_auth (TYPE HTTP, BEARER_TOKEN '{escaped}', "
                 f"SCOPE 'https://huggingface.co');"
             )
-    rows = query_hub_stats(con, initial)
+    rows = query_hub_stats(con, initial, source)
     print(f"[refresh] hub-stats rows fetched: {len(rows)}", file=sys.stderr)
 
     entries: list[dict] = []
@@ -719,10 +739,10 @@ def main() -> int:
     print(f"[refresh] wrote {MODELS_OUT_PATH}", file=sys.stderr)
 
     # State write LAST: if anything above crashed, next run sees old
-    # state and redoes the work — safe. Skip when etag fetch failed so
-    # we don't pin a bogus watermark; next run will re-attempt cleanly.
-    if current_etag is not None:
-        write_state(current_etag, sorted(initial))
+    # state and redoes the work — safe. Only the live path carries a
+    # watermark (an offline read has nothing upstream to pin).
+    if snap is not None:
+        write_state(snap.sha256, sorted(initial))
         print(f"[refresh] wrote {STATE_PATH}", file=sys.stderr)
     return 0
 

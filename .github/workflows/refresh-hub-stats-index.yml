@@ -21,8 +21,8 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    # The DuckDB COPY over the remote parquet (851K rows) can take several
-    # minutes; 20 is generous and bounded.
+    # Download of the pinned ~1.6 GB snapshot (tens of seconds to low minutes
+    # on a runner) + a local DuckDB COPY (~1 min); 20 is generous and bounded.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -35,8 +35,11 @@ jobs:
 
       - name: Build hub-stats id index
         env:
-          # Authenticated HF requests get ~30k/5min vs 500/5min unauth — the
-          # DuckDB COPY streams the parquet via many range requests.
+          # Authenticated resolver HEAD + xet-token call + download. The script
+          # reads cfahlgren1/hub-stats main/models.parquet PINNED to one commit
+          # sha via hf_hub_download, then runs the COPY locally — never the HF
+          # parquet-converter endpoint, which 400s for minutes after every
+          # upstream commit (specs/hub-stats-snapshot-fetch.md).
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: uv run python scripts/build_hub_stats_index.py
 

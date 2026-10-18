@@ -2,12 +2,16 @@ name: Refresh hub-stats source
 
 on:
   schedule:
-    # Daily at 09:37 UTC. The 30-minute gap after refresh-models is only a
-    # hint: scheduled runs have drifted by hours and the two crons regularly
-    # overlapped. The shared registry-seed-writer concurrency group below is
-    # what actually serialises the two writers. Both minutes sit off the hour
-    # because GitHub documents on-the-hour schedules as the most delayed.
-    - cron: "37 9 * * *"
+    # Daily at 11:37 UTC. GitHub delays this cron by 3–9 h (observed), so the
+    # run lands ~14:30–20:30 UTC — AFTER upstream cfahlgren1/hub-stats pushes
+    # its daily files (~13:18–13:36 UTC). The pinned-snapshot read makes that
+    # window irrelevant for correctness; the late slot is for FRESHNESS (a run
+    # that fires before the upload reads yesterday's file and catches up the
+    # next day). The gap after refresh-models (09:07) is only a hint; the
+    # shared registry-seed-writer concurrency group below is what actually
+    # serialises the two writers. Minutes sit off the hour because GitHub
+    # documents on-the-hour schedules as the most delayed.
+    - cron: "37 11 * * *"
   workflow_dispatch: {}
 
 # Direct-commit auto-sync (no PR review). Switch to PR mode if human review of
@@ -51,14 +55,17 @@ jobs:
 
       - name: Refresh hub-stats generated source
         env:
-          # Authenticated HF requests get ~30k/5min vs 500/5min unauth.
-          # The script's DuckDB query streams parquet via many range
-          # requests; without auth a single cycle can brush the limit
-          # and another cron firing in the same window will trip it.
+          # Authenticated resolver HEAD + xet-token call + download (the Hub's
+          # per-bucket limits are in its `ratelimit-policy` response header).
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        # --live: the cron's job is FRESHNESS, so it queries HF directly rather
-        # than the committed offline cache (the script's default, used for
-        # reproducible regens).
+        # --live: the cron's job is FRESHNESS, so it reads a fresh upstream
+        # snapshot rather than the committed offline cache (the script's
+        # default, used for reproducible regens). The snapshot is
+        # cfahlgren1/hub-stats main/models.parquet PINNED to one commit sha,
+        # downloaded once with hf_hub_download (~1.6 GB) and queried locally.
+        # It never touches the HF parquet-converter endpoint, which 400s for
+        # minutes after every upstream commit (specs/hub-stats-snapshot-fetch.md).
+        # An unchanged upstream sha256 short-circuits before the download.
         run: uv run python scripts/refresh_from_hub_stats.py --live
 
       # SMOKE tier (must pass — RED on failure). The YAML must parse, the seed
@@ -101,7 +108,7 @@ jobs:
         run: |
           # Two output flags:
           #   data_changed → YAML changed; downstream seed.yml dispatch needed.
-          #   state_changed → only the etag watermark moved (no parquet diff
+          #   state_changed → only the snapshot watermark moved (no parquet diff
           #                   matched our candidate set this cycle); commit it
           #                   alone so tomorrow's run can short-circuit.
           if git diff --quiet "$GENERATED_PATH"; then
@@ -130,7 +137,7 @@ jobs:
           if [ "${{ steps.diff.outputs.data_changed }}" = "true" ]; then
             msg="chore(seed): refresh hub-stats source ($(date -u +%Y-%m-%d))"
           else
-            msg="chore(seed): bump hub-stats etag watermark ($(date -u +%Y-%m-%d))"
+            msg="chore(seed): bump hub-stats snapshot watermark ($(date -u +%Y-%m-%d))"
           fi
           git commit -m "$msg"
           # Never rebase after the gate: that would push a tree we did not test.
