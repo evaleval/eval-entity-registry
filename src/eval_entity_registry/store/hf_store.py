@@ -5,6 +5,7 @@ via push_to_hub().
 """
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -15,6 +16,8 @@ import pandas as pd
 
 from eval_entity_registry.config import settings
 from eval_entity_registry.store import schemas
+
+log = logging.getLogger(__name__)
 
 
 def _local_mode() -> bool:
@@ -96,9 +99,8 @@ QUERY_TABLE_NAMES = [
     "hub_stats_index",
 ]
 
-# Read by load() but written only by a dedicated cron. push_to_hub() and
-# _flush_to_fixtures() must skip them: a best-effort load substitutes an empty
-# table on any download error and would clobber the cron data with 0 rows.
+# Written only by a dedicated cron; push_to_hub() and _flush_to_fixtures()
+# must not overwrite them.
 _CRON_OWNED_TABLES = frozenset({"hub_stats_index"})
 
 
@@ -131,44 +133,72 @@ class RegistryStore:
                 self._tables[table] = schemas.empty(table)
 
     def _load_from_hf(self, repo_id: str, names: list[str]) -> None:
-        from huggingface_hub import hf_hub_download
+        from huggingface_hub import HfApi, hf_hub_download
+        from huggingface_hub.errors import RemoteEntryNotFoundError
+
+        token = settings.hf_token or None
+        # One sha for every table: the tables then come from a single revision,
+        # and a cache hit at an exact sha is current by construction (at a moving
+        # ref, the client silently serves the cached copy when the Hub is down).
+        try:
+            sha = HfApi(token=token).dataset_info(repo_id).sha
+        except Exception as exc:
+            raise RuntimeError(f"could not resolve {repo_id} HEAD: {exc!r}; aborting") from exc
 
         for table in names:
+            filename = f"{table}/part-0.parquet"
             try:
                 local = hf_hub_download(
                     repo_id=repo_id,
-                    filename=f"{table}/part-0.parquet",
+                    filename=filename,
                     repo_type="dataset",
-                    token=settings.hf_token or None,
+                    revision=sha,
+                    token=token,
                 )
-                self._tables[table] = _reconcile_schema(table, pd.read_parquet(local))
-            except Exception:
+                df = pd.read_parquet(local)
+            except RemoteEntryNotFoundError:
+                # Only the Hub's own "file does not exist" starts a table empty
+                # (a table nobody has written yet). Any other failure, including
+                # the client's LocalEntryNotFoundError for an unreachable Hub,
+                # must abort, or push_to_hub would overwrite the remote with it.
+                log.warning("%s@%s has no %s; starting with an empty table", repo_id, sha[:12], filename)
                 self._tables[table] = schemas.empty(table)
+                continue
+            except Exception as exc:
+                raise RuntimeError(
+                    f"could not load {filename} from {repo_id}@{sha[:12]}: {exc!r}; "
+                    "aborting so no empty table can be pushed back"
+                ) from exc
+            self._tables[table] = _reconcile_schema(table, df)
 
     def push_to_hub(self) -> None:
-        """Push all in-memory tables to HF Hub. Called at end of sync run only."""
+        """Push all in-memory tables to HF Hub as one commit, so readers never
+        see a revision with tables from two different runs."""
         if _local_mode():
             self._flush_to_fixtures(_fixtures_path())
             return
 
         import tempfile
-        from huggingface_hub import HfApi
+        from huggingface_hub import CommitOperationAdd, HfApi
 
         api = HfApi(token=settings.hf_token or None)
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
+            operations = []
             for table, df in self._tables.items():
                 if table in _CRON_OWNED_TABLES:
                     continue
                 p = tmp / f"{table}.parquet"
                 df.to_parquet(p, index=False)
-                api.upload_file(
-                    path_or_fileobj=str(p),
-                    path_in_repo=f"{table}/part-0.parquet",
-                    repo_id=settings.hf_dataset_repo,
-                    repo_type="dataset",
-                    token=settings.hf_token or None,
-                )
+                operations.append(CommitOperationAdd(
+                    path_in_repo=f"{table}/part-0.parquet", path_or_fileobj=str(p),
+                ))
+            api.create_commit(
+                repo_id=settings.hf_dataset_repo,
+                repo_type="dataset",
+                operations=operations,
+                commit_message=f"Push {len(operations)} registry tables",
+            )
 
     def _flush_to_fixtures(self, path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)
