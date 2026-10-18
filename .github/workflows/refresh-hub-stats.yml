@@ -2,16 +2,20 @@ name: Refresh hub-stats source
 
 on:
   schedule:
-    # Daily at 11:37 UTC. GitHub delays this cron by 3–9 h (observed), so the
-    # run lands ~14:30–20:30 UTC — AFTER upstream cfahlgren1/hub-stats pushes
-    # its daily files (~13:18–13:36 UTC). The pinned-snapshot read makes that
-    # window irrelevant for correctness; the late slot is for FRESHNESS (a run
-    # that fires before the upload reads yesterday's file and catches up the
-    # next day). The gap after refresh-models (09:07) is only a hint; the
-    # shared registry-seed-writer concurrency group below is what actually
-    # serialises the two writers. Minutes sit off the hour because GitHub
-    # documents on-the-hour schedules as the most delayed.
+    # Twice daily. Upstream cfahlgren1/hub-stats pushes its daily files at
+    # ~13:18–13:59 UTC. GitHub delays these crons by 3–9 h (observed), so a
+    # single slot cannot be placed reliably after the upload. Two slots make
+    # same-day freshness a guarantee, not a bet: 11:37 lands ~14:30–20:30
+    # (usually after the upload); 21:37 lands ~00:30–06:30 and always sees it.
+    # The pinned-snapshot read makes the upload window irrelevant for
+    # correctness, and a run whose upstream sha256 is unchanged short-circuits
+    # before the download (only the smoke + gate steps run). The gap after
+    # refresh-models (09:07) is only a hint; the shared registry-seed-writer
+    # concurrency group below is what serialises the two writers. Minutes sit
+    # off the hour because GitHub documents on-the-hour schedules as the most
+    # delayed.
     - cron: "37 11 * * *"
+    - cron: "37 21 * * *"
   workflow_dispatch: {}
 
 # Direct-commit auto-sync (no PR review). Switch to PR mode if human review of
