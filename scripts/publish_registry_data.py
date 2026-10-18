@@ -141,13 +141,11 @@ def _assert_checkout_is_current_main(skip_if_superseded: bool = False) -> str:
     origin/main.
 
     With ``skip_if_superseded``, returns ``"superseded"`` when origin/main has
-    moved FORWARD past HEAD (our commit is an ancestor of the new head). That
-    is safe to treat as a no-op: every forward move of main is covered by its
-    own publish — a human push triggers publish-registry-data.yml, and a cron
-    push dispatches its correlated seed.yml child — and that newer publish
-    carries a superset of this tree. Any other mismatch (diverged / force-push
-    / unverifiable) raises, so a delayed older workflow can never roll dataset
-    HEAD back."""
+    moved forward past HEAD. That is a safe no-op: every forward move of main
+    carries its own publish (a push triggers publish-registry-data.yml; a cron
+    push dispatches its seed.yml child) with a superset of this tree. Any
+    other mismatch raises, so a delayed older run can never roll dataset HEAD
+    back."""
     local_sha = _git_sha()
     remote_sha = _origin_main_sha()
     if not local_sha or not remote_sha:

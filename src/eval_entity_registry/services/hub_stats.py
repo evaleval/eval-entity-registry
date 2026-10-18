@@ -21,27 +21,15 @@ import threading
 from datetime import datetime, date
 from typing import Optional
 
-# Where hub-stats bytes come from — NEVER the HF parquet-converter endpoint
-# (the `/api/datasets/<repo>/parquet/<config>/<split>/<n>.parquet` URL), which
-# answers 400 for several minutes after ANY commit to the upstream dataset
-# (daily, ~13:18–13:36 UTC) while the dataset-viewer rebuilds
-# `refs/convert/parquet`. Every reader pins a commit sha of `main/models.parquet`
-# (same bytes) via `services/hub_stats_snapshot.py`: the bulk scripts download
-# it; the live `HubStatsClient` below range-reads the pinned `hf://` path. See
-# specs/hub-stats-snapshot-fetch.md.
-
 # Offline read path: when HUB_STATS_LOCAL_PARQUET points at a local hub-stats
-# parquet, every hub-stats query (bulk refresh + live HubStatsClient lookup)
-# reads that file instead of the pinned remote snapshot. CI / the deployed Space
-# leave the env unset. The env var is read at call time (not import time) so
-# tests can set/unset it per-test without reimporting the module.
+# parquet, every hub-stats query reads that file instead of the pinned remote
+# snapshot (services/hub_stats_snapshot.py). Read at call time so tests can
+# set/unset it per test.
 HUB_STATS_LOCAL_PARQUET_ENV = "HUB_STATS_LOCAL_PARQUET"
 
 
 def local_parquet_path() -> Optional[str]:
-    """The offline local parquet path when `$HUB_STATS_LOCAL_PARQUET` is set
-    AND the file exists; else None. A set-but-missing path is ignored so a
-    stale env var never silently breaks the live path."""
+    """`$HUB_STATS_LOCAL_PARQUET` when set and the file exists; else None."""
     local = os.environ.get(HUB_STATS_LOCAL_PARQUET_ENV)
     if local and os.path.exists(local):
         return local
@@ -397,34 +385,22 @@ def extract_base_models(base_models) -> list[dict]:
 class HubStatsClient:
     """Single-id lookup against the hub-stats parquet via DuckDB.
 
-    Used only by draft enrichment (`_auto_create_entity`), i.e. in WRITE
-    mode — a `sync` run. The deployed read-only Space never instantiates it
-    (read-only resolves confirm HF ids against the published
-    `hub_stats_index` table instead).
+    Used by draft enrichment in write mode (a `sync` run); the read-only Space
+    confirms HF ids against the published `hub_stats_index` table instead.
 
-    Source: a PINNED commit of `cfahlgren1/hub-stats` `main/models.parquet`,
-    resolved on first use (`hf://datasets/<repo>@<sha>/models.parquet`), or
-    the local file at `$HUB_STATS_LOCAL_PARQUET`. Never the HF
-    parquet-converter endpoint (400s after every upstream commit — see the
-    module comment). Pinning means a mid-sync upstream commit cannot swap
-    the file under the bulk load.
+    Source: a pinned commit of `main/models.parquet` resolved on first use
+    (`hf://datasets/<repo>@<sha>/...`), or `$HUB_STATS_LOCAL_PARQUET`.
+    The parquet is materialized into a local DuckDB table on first use (one
+    bulk fetch instead of thousands of per-id range reads); if that fails,
+    lookups fall back to per-id remote queries against the same pinned source.
 
-    Materializes the parquet into a local DuckDB table on first use, then
-    serves all subsequent lookups against the local copy. Trade-off: one
-    bulk fetch instead of N per-id range-fetch queries (rate-limit-prone when
-    N is in the thousands; the Hub's `ratelimit-policy` header gives the
-    per-bucket limits). On bulk-fetch failure, falls back to per-id remote
-    queries against the same pinned source so the client degrades gracefully
-    rather than going silent. Per-id fallback retains the same in-process
-    cache.
-
-    Failure mode: any DuckDB / network error (incl. failing to resolve the
-    snapshot) returns None from `lookup()` and is logged. Callers must
-    handle None as "no enrichment data available" — never raise."""
+    Any DuckDB or network error, including failing to resolve the snapshot,
+    makes `lookup()` return None and log. Callers treat None as "no
+    enrichment available"; it never raises."""
 
     def __init__(self, parquet_url: Optional[str] = None) -> None:
-        # Explicit source > offline local file > (lazily, on first use) the
-        # pinned remote snapshot. Construction never touches the network.
+        # Explicit source > local file > pinned snapshot resolved lazily in
+        # _ensure_con. Construction never touches the network.
         self.parquet_url: Optional[str] = parquet_url or local_parquet_path()
         self._con = None
         self._local_table_ready: bool = False
@@ -447,18 +423,12 @@ class HubStatsClient:
 
         hf_token = os.environ.get("HF_TOKEN")
         if self.parquet_url is None:
-            # One resolver-bucket HEAD; pins the sha for this client's lifetime.
             self.parquet_url = hf_source(resolve_snapshot(token=hf_token))
         con = duckdb.connect()
-        # Reading a LOCAL parquet needs no httpfs / HF auth — skip the network
-        # extension install so the offline path works with no connectivity.
         if not is_remote_source(self.parquet_url):
-            self._con = con
+            self._con = con  # local file: no httpfs, no auth
             return con
         con.execute("INSTALL httpfs; LOAD httpfs;")
-        # Authenticate the `hf://` reads when HF_TOKEN is in the environment
-        # (typical on a sync host): DuckDB's HUGGINGFACE secret type sends the
-        # bearer to the resolve endpoint and not to the CDN redirect target.
         if hf_token:
             escaped = hf_token.replace("'", "''")
             con.execute(f"CREATE SECRET hf_auth (TYPE HUGGINGFACE, TOKEN '{escaped}');")

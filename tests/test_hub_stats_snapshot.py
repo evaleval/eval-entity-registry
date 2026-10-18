@@ -127,9 +127,6 @@ def test_no_bulk_script_references_the_converter_endpoint():
     assert offenders == [], f"converter endpoint referenced by: {offenders}"
 
 
-def test_module_docstring_points_at_spec():
-    assert "specs/hub-stats-snapshot-fetch.md" in (snapmod.__doc__ or "")
-
 
 # ---------- live HubStatsClient (write-mode draft enrichment) ----------
 

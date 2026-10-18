@@ -62,12 +62,7 @@ jobs:
     # another live publisher and then consume its own 60-minute budget.
     timeout-minutes: 180
     steps:
-      # Check out the LIVE tip of the branch, not github.sha. GitHub pins
-      # github.sha when the run is CREATED, and the shared concurrency group can
-      # hold this run for the whole duration of the other seed writer; the
-      # default checkout would then regenerate against a head that is already
-      # behind main and have its push rejected after the gate. A branch ref
-      # resolves at fetch time. See refresh-hub-stats.yml for the incident log.
+      # Live branch tip, not github.sha; see refresh-hub-stats.yml.
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.ref }}
@@ -77,7 +72,7 @@ jobs:
           head="$(git rev-parse HEAD)"
           echo "checked-out HEAD=${head} event sha=${{ github.sha }}"
           if [ "$head" != "${{ github.sha }}" ]; then
-            echo "::notice::run was created for ${{ github.sha }} but main had moved; regenerating against live tip ${head}"
+            echo "::notice::main moved while queued; regenerating against ${head}"
           fi
 
       - name: Install uv
@@ -182,9 +177,8 @@ jobs:
           git add "$GENERATED_PATH" "$CATALOG_PATH" "$ORGS_GEN_PATH" $EXTRA_ORG_SYNC_PATHS
           git commit -m "chore(seed): refresh models.dev source + catalog ($(date -u +%Y-%m-%d))"
           # Never rebase after the gate: that would push a tree we did not test.
-          # The checkout is the live tip taken AFTER the writer queue released
-          # us, so only a human push during the gate window can reject this;
-          # that fails safely and the next cron regenerates against the new head.
+          # A push during the gate window rejects this safely; the next run
+          # regenerates against the new head.
           git push origin "HEAD:${GITHUB_REF_NAME}"
           echo "pushed_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 

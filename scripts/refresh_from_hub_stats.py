@@ -22,12 +22,8 @@ content sha256 and the candidate HF ids checked against it. When the
 upstream file hasn't changed AND the candidate set is unchanged, the
 script exits without downloading or querying.
 
-Live source (`--live`): a PINNED SNAPSHOT of `cfahlgren1/hub-stats`
-`main/models.parquet` — resolve the current commit sha + content hash in one
-request, `hf_hub_download` the file at that sha, query it locally. Never the
-HF parquet-converter endpoint, which 400s for minutes after every upstream
-commit (see specs/hub-stats-snapshot-fetch.md and
-`services/hub_stats_snapshot.py`).
+Live source (`--live`): a pinned snapshot of `main/models.parquet`,
+downloaded and queried locally (see `services/hub_stats_snapshot.py`).
 
 Output:
     seed/models/sources/hub_stats.generated.yaml — enrichment entries
@@ -125,21 +121,16 @@ def build_hf_to_dev() -> dict[str, str]:
 
 # ---------------------------------------------------------------------------
 # Snapshot watermark — short-circuits the daily cron on no-op cycles.
-# Keys: `parquet_sha256` (upstream file's LFS content sha256) and
-# `rows_checked_at_sha256`. The pre-snapshot keys (`parquet_etag` /
-# `rows_checked_at_etag`, which held the converter endpoint's ETag = the xet
-# hash) are a different value space and are treated as "no watermark".
 # ---------------------------------------------------------------------------
 
-STATE_SHA_KEY = "parquet_sha256"
+STATE_SHA_KEY = "parquet_sha256"  # upstream file's LFS content sha256
 STATE_ROWS_KEY = "rows_checked_at_sha256"
 
 
 def load_state() -> dict:
     """Read the watermark state file. Returns an empty dict on missing,
-    unreadable, legacy-keyed, or schema-invalid input — degrades to "no state
-    known, re-check everything" so a corrupted/deleted/old file never makes the
-    script behave worse than the unconditional behaviour."""
+    unreadable, or schema-invalid input (including a file with other keys),
+    which means "re-check everything"."""
     if not STATE_PATH.exists():
         return {}
     try:
@@ -556,12 +547,10 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    # Source selection. Reproducible-by-default: read the committed offline cache
-    # (or an explicit $HUB_STATS_LOCAL_PARQUET) unless the caller passed --live.
-    # This decouples "fetch from HF" (the freeze tool / --live) from "derive
-    # enrichment" (this script), so a clean regen reproduces lineage without
-    # flaky live HF. The live path is resolved further down (after the candidate
-    # set is known, so the watermark can short-circuit BEFORE any download).
+    # Source selection. Default is the committed offline cache (or an explicit
+    # $HUB_STATS_LOCAL_PARQUET) so a clean regen is reproducible. The --live
+    # source is resolved after the candidate set is known, so the watermark can
+    # short-circuit before any download.
     snap: Optional[HubStatsSnapshot] = None
     source: Optional[str] = None
     if not args.live:
@@ -623,18 +612,11 @@ def main() -> int:
                     initial.add(f"{hf_org}/{name_part}")
     print(f"[refresh] HF-id candidates to look up: {len(initial)}", file=sys.stderr)
 
-    # Live path: pin the upstream snapshot (one resolver-bucket HEAD), then
-    # short-circuit if the file's content hash is unchanged AND we've already
-    # checked every current candidate against it AND the YAML is still on
-    # disk — all BEFORE the 1.6 GB download. The YAML-existence guard catches
-    # the case where someone deleted the YAML but the state file survived;
-    # without it we'd silently leave hub-stats enrichment missing from the
-    # seed merge. Offline sources never consult the watermark: a local read is
-    # cheap and has no rate limit.
-    # Request budget per live run (per the Hub's `ratelimit-policy` header,
-    # observed unauth: api q=500/w=300, resolvers q=3000/w=300): one resolver
-    # HEAD here, one resolver HEAD + one api xet-token call inside
-    # hf_hub_download, then a single resumable stream. No range requests.
+    # Live path: pin the upstream snapshot, then short-circuit before the
+    # download if its content hash is unchanged, every current candidate was
+    # already checked against it, and the YAML is still on disk (a deleted YAML
+    # with a surviving state file must regenerate, not skip). Offline sources
+    # never consult the watermark.
     hf_token = os.environ.get("HF_TOKEN")
     if args.live:
         snap = resolve_snapshot(token=hf_token)
@@ -654,18 +636,14 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 0
-        # A download failure is a run failure (the cron's stall beacon fires;
-        # hf_hub_download already retries transient errors). No remote fallback:
-        # the converter URL is exactly what this path exists to avoid.
+        # A download failure fails the run; there is no remote fallback.
         snap = download_snapshot(snap, token=hf_token)
         source = str(snap.local_path)
         print(f"[refresh] downloaded snapshot -> {source}", file=sys.stderr)
     assert source is not None
 
     con = duckdb.connect()
-    if is_remote_source(source):
-        # Only reachable when a caller points $HUB_STATS_LOCAL_PARQUET at a URL;
-        # the crons always read the downloaded file.
+    if is_remote_source(source):  # only when $HUB_STATS_LOCAL_PARQUET is a URL
         con.execute("INSTALL httpfs; LOAD httpfs;")
         if hf_token:
             escaped = hf_token.replace("'", "''")
@@ -739,8 +717,7 @@ def main() -> int:
     print(f"[refresh] wrote {MODELS_OUT_PATH}", file=sys.stderr)
 
     # State write LAST: if anything above crashed, next run sees old
-    # state and redoes the work — safe. Only the live path carries a
-    # watermark (an offline read has nothing upstream to pin).
+    # state and redoes the work — safe. Only the live path has a watermark.
     if snap is not None:
         write_state(snap.sha256, sorted(initial))
         print(f"[refresh] wrote {STATE_PATH}", file=sys.stderr)

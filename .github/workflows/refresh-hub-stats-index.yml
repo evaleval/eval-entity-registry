@@ -2,12 +2,9 @@ name: Refresh hub-stats id index
 
 on:
   schedule:
-    # Twice daily. Upstream cfahlgren1/hub-stats pushes ~13:18–13:59 UTC and
-    # GitHub delays these crons by 3–9 h, so one slot cannot be placed reliably
-    # after the upload. 10:23 lands ~13:30–19:30 (usually after); 22:23 lands
-    # ~01:30–07:30 and always sees the day's file. A rebuild costs ~1 minute
-    # and republishes the same rows when nothing changed. Off the hour because
-    # GitHub documents on-the-hour schedules as the most delayed.
+    # Twice daily: upstream uploads ~13:18–13:59 UTC and GitHub delays these
+    # crons by hours, so the evening slot guarantees a run that sees the day's
+    # file. A rebuild costs about a minute.
     - cron: "23 10 * * *"
     - cron: "23 22 * * *"
   workflow_dispatch: {}
@@ -27,8 +24,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    # Download of the pinned ~1.6 GB snapshot (tens of seconds to low minutes
-    # on a runner) + a local DuckDB COPY (~1 min); 20 is generous and bounded.
+    # ~1.6 GB snapshot download + a local DuckDB COPY; 20 is generous.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -41,11 +37,6 @@ jobs:
 
       - name: Build hub-stats id index
         env:
-          # Authenticated resolver HEAD + xet-token call + download. The script
-          # reads cfahlgren1/hub-stats main/models.parquet PINNED to one commit
-          # sha via hf_hub_download, then runs the COPY locally — never the HF
-          # parquet-converter endpoint, which 400s for minutes after every
-          # upstream commit (specs/hub-stats-snapshot-fetch.md).
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: uv run python scripts/build_hub_stats_index.py
 

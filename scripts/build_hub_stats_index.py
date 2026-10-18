@@ -9,10 +9,8 @@ confirmation in the standard ResolveResponse shape) — without minting or
 persisting anything. This script materializes that index: one DuckDB `COPY`
 over cfahlgren1/hub-stats, filtered to repos with downloadable weights.
 
-Source: a PINNED, DOWNLOADED snapshot of `cfahlgren1/hub-stats`
-`main/models.parquet` (see `services/hub_stats_snapshot.py` and
-specs/hub-stats-snapshot-fetch.md) — never the HF parquet-converter endpoint,
-which 400s for minutes after every upstream commit.
+Source: a pinned, downloaded snapshot of `main/models.parquet`
+(see `services/hub_stats_snapshot.py`).
 
 Output:
     fixtures/hub_stats_index.parquet  (single file; published to the dataset's
@@ -120,9 +118,7 @@ def main() -> int:
     src = select_source(args.source, tok)
 
     con = duckdb.connect()
-    if is_remote_source(src):
-        # Only when a caller passes a URL via --source / the env var; the cron
-        # reads the downloaded file.
+    if is_remote_source(src):  # only when --source / the env var is a URL
         con.execute("INSTALL httpfs; LOAD httpfs;")
         if tok:
             con.execute(

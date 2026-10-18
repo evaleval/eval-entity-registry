@@ -55,10 +55,8 @@ jobs:
       # A dispatch resolves `--ref main` to whatever branch head GitHub sees at
       # that instant, which can predate the caller's just-landed push. When the
       # caller pins expected_sha, check out that commit by SHA instead.
-      # A pinned caller gets exactly its commit. An unpinned manual dispatch gets
-      # the LIVE tip of the branch (github.ref), never github.sha: that sha is
-      # resolved when the run is created and goes stale while the run waits in
-      # the registry-data-publish queue.
+      # A pinned caller gets exactly its commit; an unpinned dispatch gets the
+      # live branch tip (github.sha goes stale while queued).
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.expected_sha || github.ref }}
@@ -83,11 +81,8 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
-      # Superseded = main moved FORWARD past this checkout while we queued. The
-      # newer head's own publish (a human push triggers
-      # publish-registry-data.yml; a cron push dispatches its own seed child)
-      # carries a superset of this tree, so skip the seed + test minutes and
-      # finish green. A diverged or unverifiable head still fails here.
+      # Superseded (main moved forward past this checkout) is a green skip: the
+      # newer head's own publish covers this tree. Diverged still fails.
       - name: Skip if superseded
         id: fresh
         env:
@@ -110,9 +105,7 @@ jobs:
         run: LOCAL_MODE=true uv run pytest -q
 
       # Publish the exact fixtures just tested. A second seed here would change
-      # generated ids/timestamps and invalidate the evidence from pytest. The
-      # guard re-runs at upload time with the same superseded-means-skip rule
-      # for a head that moved DURING the tests.
+      # generated ids/timestamps and invalidate the evidence from pytest.
       - name: Publish tested registry data
         if: steps.fresh.outputs.superseded != 'true'
         env:

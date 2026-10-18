@@ -17,11 +17,9 @@ This is a CACHE-REFRESH tool — run it occasionally (or in a dedicated cron) to
 re-pull the upstream rows for our covered canonicals. It is NETWORK; the normal
 `refresh_from_hub_stats.py` regen reads the frozen cache offline.
 
-Source: a PINNED, DOWNLOADED snapshot of `cfahlgren1/hub-stats`
-`main/models.parquet` (see `services/hub_stats_snapshot.py`) — never the HF
-parquet-converter endpoint. The snapshot's commit sha + content sha256 are
-written into the cache's parquet key-value metadata (`parquet_kv_metadata()`)
-so the committed file records what it froze.
+Source: a pinned, downloaded snapshot of `main/models.parquet`
+(see `services/hub_stats_snapshot.py`). Its commit sha and content sha256 are
+written into the cache's parquet key-value metadata.
 
 Output:
     curation/hub_stats_frozen.parquet  (committed; the durable offline cache)
@@ -126,8 +124,6 @@ def main() -> int:
             )
     quoted = ", ".join(f"'{i.replace(chr(39), chr(39) * 2)}'" for i in candidates)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    # Record provenance in the parquet footer so the committed cache says what
-    # it froze (readable via `SELECT * FROM parquet_kv_metadata('<file>')`).
     if snap is not None:
         kv = {"source_repo": snap.repo_id, "source_revision": snap.revision, "source_sha256": snap.sha256}
     else:

@@ -2,18 +2,10 @@ name: Refresh hub-stats source
 
 on:
   schedule:
-    # Twice daily. Upstream cfahlgren1/hub-stats pushes its daily files at
-    # ~13:18–13:59 UTC. GitHub delays these crons by 3–9 h (observed), so a
-    # single slot cannot be placed reliably after the upload. Two slots make
-    # same-day freshness a guarantee, not a bet: 11:37 lands ~14:30–20:30
-    # (usually after the upload); 21:37 lands ~00:30–06:30 and always sees it.
-    # The pinned-snapshot read makes the upload window irrelevant for
-    # correctness, and a run whose upstream sha256 is unchanged short-circuits
-    # before the download (only the smoke + gate steps run). The gap after
-    # refresh-models (09:07) is only a hint; the shared registry-seed-writer
-    # concurrency group below is what serialises the two writers. Minutes sit
-    # off the hour because GitHub documents on-the-hour schedules as the most
-    # delayed.
+    # Twice daily: upstream uploads ~13:18–13:59 UTC and GitHub delays these
+    # crons by hours, so the evening slot guarantees a run that sees the day's
+    # file. An unchanged upstream short-circuits before the download. The
+    # registry-seed-writer group below serialises this with refresh-models.
     - cron: "37 11 * * *"
     - cron: "37 21 * * *"
   workflow_dispatch: {}
@@ -49,13 +41,9 @@ jobs:
     # another live publisher and then consume its own 60-minute budget.
     timeout-minutes: 180
     steps:
-      # Check out the LIVE tip of the branch, not github.sha. GitHub pins
-      # github.sha when the run is CREATED, and the concurrency group above can
-      # hold this run for the whole duration of the other seed writer. The
-      # default checkout would then regenerate against a head that is already
-      # behind main, pass the gate, and have its push rejected ("fetch first")
-      # 30 minutes later — the serialisation worked, the stale checkout defeated
-      # it (observed 2026-09-13, 2026-10-16). A branch ref resolves at fetch time.
+      # Check out the live branch tip, not github.sha: that sha is pinned when
+      # the run is created, and the concurrency group can hold the run behind
+      # the other writer until it is stale, which gets the push rejected.
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.ref }}
@@ -65,7 +53,7 @@ jobs:
           head="$(git rev-parse HEAD)"
           echo "checked-out HEAD=${head} event sha=${{ github.sha }}"
           if [ "$head" != "${{ github.sha }}" ]; then
-            echo "::notice::run was created for ${{ github.sha }} but main had moved; regenerating against live tip ${head}"
+            echo "::notice::main moved while queued; regenerating against ${head}"
           fi
 
       - name: Install uv
@@ -76,17 +64,10 @@ jobs:
 
       - name: Refresh hub-stats generated source
         env:
-          # Authenticated resolver HEAD + xet-token call + download (the Hub's
-          # per-bucket limits are in its `ratelimit-policy` response header).
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        # --live: the cron's job is FRESHNESS, so it reads a fresh upstream
-        # snapshot rather than the committed offline cache (the script's
-        # default, used for reproducible regens). The snapshot is
-        # cfahlgren1/hub-stats main/models.parquet PINNED to one commit sha,
-        # downloaded once with hf_hub_download (~1.6 GB) and queried locally.
-        # It never touches the HF parquet-converter endpoint, which 400s for
-        # minutes after every upstream commit (specs/hub-stats-snapshot-fetch.md).
-        # An unchanged upstream sha256 short-circuits before the download.
+        # --live: read a fresh pinned upstream snapshot (~1.6 GB download,
+        # queried locally) instead of the committed offline cache the script
+        # defaults to for reproducible regens.
         run: uv run python scripts/refresh_from_hub_stats.py --live
 
       # SMOKE tier (must pass — RED on failure). The YAML must parse, the seed
@@ -162,10 +143,8 @@ jobs:
           fi
           git commit -m "$msg"
           # Never rebase after the gate: that would push a tree we did not test.
-          # The checkout is the live tip taken AFTER the writer queue released
-          # us, so the only way this push can be rejected is a human push
-          # during the ~10-minute gate window; that fails safely and the next
-          # cron regenerates against the new head.
+          # A push during the gate window rejects this safely; the next run
+          # regenerates against the new head.
           git push origin "HEAD:${GITHUB_REF_NAME}"
           echo "pushed_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 

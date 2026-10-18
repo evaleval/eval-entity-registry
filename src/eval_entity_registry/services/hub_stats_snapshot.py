@@ -1,20 +1,14 @@
-"""Pinned, local snapshot of `cfahlgren1/hub-stats` for the bulk scripts.
+"""Pinned snapshot of `cfahlgren1/hub-stats` `main/models.parquet`.
 
-Why this exists (see specs/hub-stats-snapshot-fetch.md): the HF parquet-converter
-endpoint (`/api/datasets/<repo>/parquet/<config>/<split>/<n>.parquet`) answers
-400 for several minutes after *any* commit to the upstream dataset — the
-dataset-viewer deletes and rebuilds the whole `refs/convert/parquet` branch.
-Upstream commits six files every day around 13:18–13:36 UTC, and the crons
-regularly fired inside that window. The raw `main/models.parquet` is
-byte-identical to the converted file and lives on a path the viewer never
-touches.
+All hub-stats readers go through here instead of the HF parquet-converter
+endpoint (`/api/datasets/<repo>/parquet/...`): the dataset-viewer rebuilds that
+endpoint after every upstream commit and it answers 400 meanwhile, which hit
+the daily crons. The raw file is byte-identical and never rebuilt.
 
-The bulk scripts (1) resolve the dataset's current commit sha + the file's
-content hash in ONE resolver-bucket request, (2) short-circuit on an unchanged
-hash, else (3) `hf_hub_download` the file at that pinned sha (one resumable,
-hash-verified stream) and query it locally. The write-mode live
-`HubStatsClient` (draft enrichment during `sync`) resolves the same pinned sha
-and range-reads `hf_source(snap)` instead of downloading.
+`resolve_snapshot` pins a commit sha and the file's content hash in one
+request; `download_snapshot` fetches that exact revision for local queries;
+`hf_source` is the equivalent pinned `hf://` path for a caller that prefers
+range reads.
 """
 from __future__ import annotations
 
@@ -47,8 +41,7 @@ def resolve_snapshot(
     token: Optional[str] = None,
 ) -> HubStatsSnapshot:
     """One HEAD on `resolve/main/<filename>` → commit sha, LFS sha256, size.
-    Raises RuntimeError if the Hub stops reporting either (a layout change we
-    want to see loudly, not paper over)."""
+    Raises RuntimeError if any of them is missing."""
     from huggingface_hub import get_hf_file_metadata, hf_hub_url
 
     url = hf_hub_url(repo_id, filename, repo_type="dataset")
@@ -72,9 +65,8 @@ def download_snapshot(
     token: Optional[str] = None,
     cache_dir: Optional[str | os.PathLike] = None,
 ) -> HubStatsSnapshot:
-    """`hf_hub_download` the file at the snapshot's pinned sha. The hub client
-    checks free disk space first and xet verifies content by hash; we add a
-    size check as a cheap belt-and-braces guard."""
+    """`hf_hub_download` the file at the snapshot's pinned sha, then check its
+    size against the snapshot."""
     from huggingface_hub import hf_hub_download
 
     path = Path(
@@ -96,10 +88,8 @@ def download_snapshot(
 
 
 def hf_source(snap: HubStatsSnapshot) -> str:
-    """DuckDB-native pinned remote source (`hf://datasets/<repo>@<sha>/<file>`)
-    for a caller that chooses to range-read instead of downloading. Needs
-    `CREATE SECRET (TYPE HUGGINGFACE, TOKEN ...)` for authenticated reads. The
-    crons do not use this; they download."""
+    """Pinned DuckDB source `hf://datasets/<repo>@<sha>/<file>`. Authenticated
+    reads need `CREATE SECRET (TYPE HUGGINGFACE, TOKEN ...)`."""
     return f"hf://datasets/{snap.repo_id}@{snap.revision}/{snap.filename}"
 
 
