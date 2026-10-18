@@ -2,10 +2,8 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 
-# Metric bounds: an infinite float means "unbounded on that side by
-# definition" (seed `.inf`), null means "not stated". JSON has no infinity
-# literal, so the wire form is the string "Infinity" / "-Infinity" on both
-# input (pydantic parses it) and output (RegistryJSONResponse renders it).
+# JSON has no infinity literal: pydantic parses the string form on input and
+# main.RegistryJSONResponse renders it on output.
 _BOUND_DESCRIPTION = (
     "Metric bound. null = not stated; the string \"Infinity\" / \"-Infinity\" = "
     "unbounded on that side by definition (JSON wire form of an infinite float)."
@@ -40,30 +38,24 @@ class ResolveRequest(BaseModel):
     entity_type: EntityType
     source_config: Optional[str] = None
     source_field: Optional[str] = None
-    # "resolve" (default) runs the full chain incl. fuzzy inference and — in
-    # write mode — auto-creates a draft on no_match. "exact" stops after the
-    # exact/normalized alias and HF-id-check steps: no fuzzy guessing, no
-    # draft creation, no alias writes — a miss is an honest no_match.
+    # "resolve" runs the full chain (fuzzy inference; draft auto-create in write
+    # mode). "exact" stops after exact/normalized alias and HF-id-check: no
+    # fuzzy guessing, no draft creation, no alias writes.
     mode: ResolveMode = "resolve"
 
 
 # --- Lean resolve contract ---
-# The HTTP resolve response is a TYPE-AGNOSTIC CORE (identical shape for
-# all entity types) + an ordered `ancestry` chain + a typed
-# `resolution_detail` sub-object. Type-specific ENTITY structure
-# (group/family/lineage/params for models; family_key/composite_keys/
-# category for benchmarks; members for families/composites) lives on the
-# entity GET endpoints — never on resolve. The in-process
-# `ResolutionResult` stays the rich union (producer path-dep); the route
-# projects it down to this lean shape.
+# One shape for every entity type: core match fields + ordered `ancestry` +
+# typed `resolution_detail`. Type-specific entity fields (model group/family/
+# lineage/params; benchmark family_key/composite_keys/category; family and
+# composite members) live only on the entity GET endpoints. The in-process
+# `ResolutionResult` stays the rich union.
 
 AncestryLevel = Literal["group", "family", "composite", "benchmark", "slice"]
 
 
 class AncestryEntry(BaseModel):
-    """One hop in the ancestry chain — a parent canonical and the level it
-    sits at, ordered from the matched entity's immediate parent up to the
-    root."""
+    """One parent canonical and its level; the chain runs from the matched entity's immediate parent up to the root."""
     canonical_id: str
     level: AncestryLevel
 
@@ -71,28 +63,21 @@ class AncestryEntry(BaseModel):
 class ModelResolutionDetail(BaseModel):
     """Type-specific resolution detail for a model match."""
     granularity: Optional[str] = None  # variant | group | family
-    # The matched canonical's Hugging Face repo id when the registry can ATTEST
-    # it at runtime — sourced from the HF oracle (resolution_source == "hf") or
-    # hub-stats-confirmed (metadata.hf_id == canonical_id). Lets a caller see a
-    # confirmed HF match (and which id) without an N+1 fetch to the entity GET.
-    # null is CONSERVATIVE: off-HF / closed models, but ALSO genuine HF repos
-    # whose provenance isn't runtime-verifiable (models.dev-only / name-inferred
-    # entries). So non-null is reliable; null means "not attested", not "not on HF".
+    # Hugging Face repo id only when runtime-attestable: HF oracle
+    # (resolution_source == "hf") or hub-stats-confirmed (metadata.hf_id ==
+    # canonical_id). null means "not attested", not "not on HF": models.dev-only
+    # and name-inferred entries are null even when the repo exists.
     hf_repo_id: Optional[str] = None
 
 
 class BenchmarkResolutionDetail(BaseModel):
     """Type-specific resolution detail for a benchmark match.
 
-    `level` reports where the matched canonical sits in the benchmark tree:
-    `composite` / `family` / `benchmark`, or `slice` when the matched
-    benchmark itself carries a `parent_benchmark_id` (a decomposed subset
-    of a parent, e.g. `rewardbench-chat` under `rewardbench`).
-
-    `matched_subset` is INDEPENDENT of `level`: it echoes the raw surface
-    form that matched whenever it differs from the canonical id (more than
-    case), e.g. `"MATH Level 5"` -> `math-level-5`. So a plain
-    `level=benchmark` match can still carry a `matched_subset`."""
+    `level`: where the matched canonical sits in the benchmark tree;
+    `slice` when it carries a `parent_benchmark_id` (e.g. `rewardbench-chat`
+    under `rewardbench`). `matched_subset` is independent of `level`: the
+    raw surface form whenever it differs from the canonical id by more than
+    case (e.g. `"MATH Level 5"` -> `math-level-5`)."""
     level: Optional[str] = None  # composite | family | benchmark | slice
     matched_subset: Optional[str] = None
 
@@ -100,8 +85,7 @@ class BenchmarkResolutionDetail(BaseModel):
 class ResolveResponse(BaseModel):
     # Echo of the raw input.
     raw_value: Optional[str] = None
-    # Echo of the requested entity type — tells the caller which entity
-    # endpoint(s) to follow for detail.
+    # Echo of the requested entity type; selects the entity GET endpoint for detail.
     entity_type: Optional[str] = None
     # The matched canonical id (None on no_match). For models this is the
     # exact matched leaf; group/family membership is carried in `ancestry`.
@@ -111,18 +95,15 @@ class ResolveResponse(BaseModel):
     created_new: bool
     resolution_source: Optional[str] = None
     review_status: Optional[str] = None
-    # Ordered hierarchy chain from the matched entity's IMMEDIATE PARENT up
-    # to the root. `[]` when self is a root. An ordered chain is the only
-    # genuinely type-agnostic way to carry both a 1-hop model edge AND a
-    # multi-level benchmark tree in one field.
+    # Ordered from the matched entity's immediate parent up to the root; `[]`
+    # when self is a root.
     #   model     -> e.g. [{group}, {family}]
     #   benchmark -> e.g. [{family}, {composite}]
     ancestry: list[AncestryEntry] = []
-    # Typed resolution detail, schema selected by `entity_type`. `{}` for
-    # composite / family / metric / org (reserved). `harness` carries
-    # `{harness_version_stripped, bare_name, bare_tier}` — additively, and
-    # ONLY when the resolver reached the match by stripping a trailing
-    # version token (`lm_eval 0.4.12`); `{}` otherwise.
+    # Schema selected by `entity_type`; `{}` for composite / family / metric /
+    # org. `harness` carries `{harness_version_stripped, bare_name, bare_tier}`
+    # only when the match came from stripping a trailing version token
+    # (`lm_eval 0.4.12`).
     resolution_detail: dict[str, Any] = {}
 
 

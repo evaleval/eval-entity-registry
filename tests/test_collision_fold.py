@@ -25,10 +25,8 @@ def test_folds_separator_spellings_into_one_winner():
 
 
 def test_fold_keeps_loser_display_name_as_alias():
-    """Fold keeps EVERY resolvable surface form: the loser's display_name is a
-    loader-promoted global alias, so it must land on the winner's aliases (the
-    Veo class — `google/veo-3-1` display `Veo-3.1-Fast` folding into
-    `google/veo3-1` must not delete `Veo-3.1-Fast`)."""
+    """The loser's display_name is a loader-promoted alias, so folding must
+    carry it onto the winner rather than delete a resolvable surface form."""
     entries = [
         _e("google/veo3-1", "models_dev", display_name="veo3-1"),
         _e("google/veo-3-1", "models_dev", ["veo-3-1"], display_name="Veo-3.1-Fast"),
@@ -69,8 +67,7 @@ def test_prefer_pins_winner():
 
 
 def test_malformed_org_and_placeholder_fold_into_real_org():
-    # Same model spelled three ways: org-less, unresolved-org draft, and the real
-    # org/slug. All collapse into the real-org canonical.
+    # Org-less, placeholder-org, and real-org spellings collapse onto the real org.
     entries = [
         _e("perplexity-sonar-reasoning", "inferred"),               # org-less
         _e("unknown/perplexity-sonar-reasoning", None, ["raw-x"]),  # placeholder org
@@ -85,7 +82,7 @@ def test_malformed_org_and_placeholder_fold_into_real_org():
 
 
 def test_singleton_malformed_org_is_left_alone():
-    # No real-org twin exists (the deepseek-coder trap) -> not folded.
+    # No real-org twin exists, so nothing folds.
     entries = [_e("deepseek-coder", "inferred"), _e("deepseek/deepseek-v2", "inferred")]
     out, remap = fold_collisions(entries)
     assert len(out) == 2 and remap == {}

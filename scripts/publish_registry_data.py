@@ -1,35 +1,23 @@
 """Publish the registry's canonical_* parquets to evaleval/entity-registry-data.
 
-Replaces the inline Python in `.github/workflows/seed.yml` with a
-dedicated, testable publish path:
-
-  1. Run the seed CLI end-to-end against `seed/`, materialising every
-     canonical_* table to `fixtures/`.
-  2. Compute a content hash over the parquet bytes — used as the
-     idempotency key. If the previous publish on HF carries the same
-     hash, skip the upload (a no-op merge to main shouldn't churn the
-     dataset history).
-  3. Write a `manifest.json` sidecar carrying:
-       - schema_version (registry.<MAJOR>.<MINOR>; major bump on
-         removed/renamed columns, minor on additions).
-       - content_hash.
-       - seed_git_sha — the registry repo's HEAD SHA at publish time.
-       - generated_at — ISO timestamp.
-       - per-table row counts (sanity surface for consumers).
-  4. Upload `fixtures/` + `manifest.json` to the HF Dataset repo as a
-     single revision via HfApi.upload_folder.
+  1. Run the seed CLI against `seed/`, materialising every canonical_* table
+     to `fixtures/`.
+  2. Compute a content hash over the published bytes, the idempotency key:
+     when the previous publish on HF carries the same hash, skip the upload.
+  3. Write a `manifest.json` sidecar: schema_version (registry.<MAJOR>.<MINOR>),
+     content_hash, seed_git_sha, generated_at, per-table row counts.
+  4. Upload `fixtures/` + `manifest.json` to the HF Dataset repo as a single
+     revision.
 
 Usage:
     uv run python scripts/publish_registry_data.py [--dry-run]
 
 `--dry-run` writes the manifest and skips the push. ``--skip-seed`` is for CI
-after it has already seeded and tested ``fixtures/``; it guarantees the bytes
-validated by the workflow are the bytes offered to the Hub.
+after it has already seeded and tested ``fixtures/``, so the bytes validated by
+the workflow are the bytes offered to the Hub.
 
-Backend consumers (eval_card_backend) should assert
-`manifest.json.schema_version`'s major matches their expected major.
-That guards against a registry breaking change that ships before the
-producer is updated.
+Consumers assert that `manifest.json.schema_version`'s major matches the major
+they expect.
 """
 
 from __future__ import annotations
@@ -46,14 +34,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional, TypeVar
 
-# Bump when removing/renaming columns in any canonical_* table.
-# Bump minor when ADDING columns (backward-compatible). The producer
-# asserts the major matches what it expects.
-# 3.1: added canonical_orgs.logo_url (org brand-mark pointer).
-# 3.2: added canonical_benchmarks.preferred_metric_id + the
-#      benchmark_metric_folds table (merged benchmark view).
-# 3.3: added canonical_benchmarks.preferred_metric_llm_judged +
-#      benchmark_metric_folds.source_config and scale_offset.
+# Major: removed/renamed columns in any canonical_* table; minor: added
+# columns. The producer asserts the major matches what it expects.
 SCHEMA_VERSION = "registry.3.3"
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -62,25 +44,16 @@ FIXTURES_DIR = REPO_ROOT / "fixtures"
 MANIFEST_PATH = FIXTURES_DIR / "manifest.json"
 HF_DATASET_REPO = "evaleval/entity-registry-data"
 
-# Cron-owned artifacts that must NEVER ride this flat publish — they are
-# produced + published by their own dedicated cron (e.g. hub_stats_index by
-# refresh-hub-stats-index). CI seeds into empty fixtures so they are absent
-# here anyway, but a dev who ran the build script locally would otherwise leak
-# a stray copy into the producer layout. (Mirrors hf_store._CRON_OWNED_TABLES.)
+# Published by their own cron, never by this flat publish; a local build would
+# otherwise leak a stray copy. Mirrors hf_store._CRON_OWNED_TABLES.
 _CRON_OWNED_PARQUETS = {"hub_stats_index.parquet"}
 
-# YAML overrides that ship alongside the parquets. The producer reads
-# these when present in the registry data cache (slice_overrides drives
-# slice→benchmark promotion; display_overrides feeds the display name
-# polish layer). Storing them in the published dataset removes the
-# producer's dependency on a sibling registry checkout.
+# Shipped alongside the parquets so the producer needs no registry checkout.
 SHIPPED_YAML = ("slice_overrides.yaml", "display_overrides.yaml")
 
 
 def _git_sha() -> Optional[str]:
-    """HEAD SHA of the registry repo at publish time. None when not in
-    a git checkout (fresh CI runner with shallow clone? handled
-    gracefully)."""
+    """HEAD SHA of the registry repo; None outside a git checkout."""
     try:
         out = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -95,9 +68,8 @@ def _git_sha() -> Optional[str]:
 
 
 def _origin_main_sha() -> Optional[str]:
-    """Current ``origin/main`` SHA, read from the remote immediately before
-    production mutation. ``None`` means the freshness check could not be made
-    and must fail closed when requested by CI."""
+    """Current ``origin/main`` SHA read from the remote; ``None`` when it cannot
+    be read (callers fail closed)."""
     try:
         out = subprocess.run(
             ["git", "ls-remote", "--exit-code", "origin", "refs/heads/main"],
@@ -112,11 +84,9 @@ def _origin_main_sha() -> Optional[str]:
 
 
 def _is_ancestor(local_sha: str, remote_sha: str) -> bool:
-    """True when ``remote_sha`` descends from ``local_sha`` (main moved FORWARD
-    past our checkout). Fails closed (False) when history cannot be fetched.
-
-    CI checkouts are shallow, so first fetch the remote commit with enough
-    depth to reach our checkout; GitHub serves reachable SHAs directly."""
+    """True when ``remote_sha`` descends from ``local_sha``; False when history
+    cannot be fetched. CI checkouts are shallow, so the remote commit is fetched
+    first with enough depth to reach our checkout."""
     try:
         subprocess.run(
             ["git", "fetch", "--quiet", "--depth=200", "origin", remote_sha],
@@ -137,15 +107,11 @@ def _is_ancestor(local_sha: str, remote_sha: str) -> bool:
 
 
 def _assert_checkout_is_current_main(skip_if_superseded: bool = False) -> str:
-    """Production freshness guard. Returns ``"current"`` when HEAD is
-    origin/main.
-
-    With ``skip_if_superseded``, returns ``"superseded"`` when origin/main has
-    moved forward past HEAD. That is a safe no-op: every forward move of main
-    carries its own publish (a push triggers publish-registry-data.yml; a cron
-    push dispatches its seed.yml child) with a superset of this tree. Any
-    other mismatch raises, so a delayed older run can never roll dataset HEAD
-    back."""
+    """Freshness guard: ``"current"`` when HEAD is origin/main; with
+    ``skip_if_superseded``, ``"superseded"`` when origin/main moved forward past
+    HEAD (safe to skip: every forward move of main carries its own publish of a
+    superset of this tree). Any other mismatch raises, so a delayed older run
+    can never roll dataset HEAD back."""
     local_sha = _git_sha()
     remote_sha = _origin_main_sha()
     if not local_sha or not remote_sha:
@@ -187,14 +153,9 @@ def _assert_checkout_is_expected(expected: str) -> None:
 
 
 def _content_hash(fixtures_dir: Path) -> str:
-    """SHA-256 over the deterministically-sorted file bytes for every
-    artifact we publish.
-
-    Includes parquets and YAML overrides; excludes manifest.json (would
-    create a circular dependency: hash depends on manifest, manifest
-    contains hash). Hashes file PATH + file BYTES so a missing/added
-    file changes the hash and the next publish doesn't get skipped.
-    """
+    """SHA-256 over the sorted published files (parquets + YAML overrides).
+    manifest.json is excluded because it contains the hash; file names are
+    hashed with the bytes so an added/missing file changes the hash."""
     h = hashlib.sha256()
     files = sorted(
         [p for p in fixtures_dir.glob("*.parquet") if p.name not in _CRON_OWNED_PARQUETS]
@@ -209,9 +170,7 @@ def _content_hash(fixtures_dir: Path) -> str:
 
 
 def _row_counts(fixtures_dir: Path) -> dict[str, int]:
-    """Per-table row counts for the manifest sanity surface. Uses
-    pyarrow's metadata-only read so we don't materialise the whole
-    parquet for a count."""
+    """Per-table row counts for the manifest, from parquet metadata only."""
     import pyarrow.parquet as pq
 
     out: dict[str, int] = {}
@@ -222,15 +181,13 @@ def _row_counts(fixtures_dir: Path) -> dict[str, int]:
             md = pq.read_metadata(p)
             out[p.stem] = md.num_rows
         except Exception as exc:
-            # Don't let a broken parquet block publish — log and skip.
+            # A broken parquet must not block the publish.
             print(f"  [warn] couldn't read row count for {p.name}: {exc}", file=sys.stderr)
     return out
 
 
 def _run_seed() -> int:
-    """Invoke the seed CLI in LOCAL_MODE so it writes to fixtures/
-    without pushing. This script handles the upload to HF itself
-    (see upload step in main)."""
+    """Run the seed CLI in LOCAL_MODE so it writes fixtures/ without pushing."""
     env = dict(os.environ)
     env["LOCAL_MODE"] = "true"
     proc = subprocess.run(
@@ -245,9 +202,8 @@ _T = TypeVar("_T")
 
 
 def _is_retryable_http(exc: Exception) -> bool:
-    """True for transient HF errors worth a longer wait: rate limits (429)
-    and server errors (5xx). Auth/permission (401/403) and missing-repo (404)
-    won't heal on retry, so we let those propagate immediately."""
+    """True for transient HF errors (429, 5xx); 401/403/404 do not heal on
+    retry and propagate immediately."""
     resp = getattr(exc, "response", None)
     code = getattr(resp, "status_code", None)
     return code == 429 or (isinstance(code, int) and 500 <= code < 600)
@@ -261,11 +217,9 @@ def _with_backoff(
     base_seconds: float = 15.0,
     sleep: Callable[[float], None] = time.sleep,
 ) -> _T:
-    """Run fn(), retrying transient HF rate-limit / server errors with a long
-    exponential backoff (15s, 30s, 60s, …). huggingface_hub already retries
-    internally, but its backoff caps at 8s and gives up after a few tries —
-    too shallow for a sustained 429 burst (which is what fails the publish
-    when several push runs hit HF at once). This gives HF time to recover."""
+    """Run fn(), retrying transient HF errors with a long exponential backoff
+    (15s, 30s, 60s, …). huggingface_hub's own retry caps at 8s and gives up
+    after a few tries, too shallow for a sustained 429 burst."""
     from huggingface_hub.errors import HfHubHTTPError
 
     for attempt in range(1, attempts + 1):
@@ -286,10 +240,8 @@ def _with_backoff(
 
 
 def _read_remote_manifest() -> Optional[dict]:
-    """Pull the existing manifest.json from HF (if any) so we can
-    compare content_hash and skip no-op publishes. Returns None when
-    the dataset hasn't been published before, the manifest doesn't
-    exist yet (legacy revisions), or any HF call fails."""
+    """The remote manifest.json, or None when the dataset or manifest does not
+    exist yet or any HF call fails."""
     try:
         from huggingface_hub import hf_hub_download
         from huggingface_hub.errors import (
@@ -319,18 +271,16 @@ def _read_remote_manifest() -> Optional[dict]:
         OSError,
         ValueError,
     ) as exc:
-        # Only reached for a genuine not-found / persistent failure: a
-        # transient 429 or 5xx is retried by _with_backoff first. Failing
-        # open here means we publish rather than skip — safe, just not a no-op.
+        # Transient errors were already retried; failing open here means we
+        # publish rather than skip.
         print(f"  [info] no remote manifest available ({type(exc).__name__}); will publish",
               file=sys.stderr)
         return None
 
 
 def _push(fixtures_dir: Path, manifest: dict) -> None:
-    """Upload fixtures/ + manifest.json to HF as a single dataset
-    revision. Commit message includes the seed git SHA so consumers
-    can pin to a specific registry source state."""
+    """Upload fixtures/ + manifest.json to HF as a single dataset revision; the
+    commit message carries the seed git SHA so consumers can pin to it."""
     from huggingface_hub import HfApi
 
     api = HfApi()
@@ -341,12 +291,7 @@ def _push(fixtures_dir: Path, manifest: dict) -> None:
         repo_id=HF_DATASET_REPO,
         repo_type="dataset",
         commit_message=commit_msg,
-        # Ship parquets + manifest + the YAML overrides that the
-        # producer reads alongside (slice_overrides.yaml,
-        # display_overrides.yaml). Excluding everything else keeps
-        # the dataset small and the artifact list reviewable.
         allow_patterns=["*.parquet", "manifest.json", "*.yaml"],
-        # Cron-owned artifacts are published by their own cron, never here.
         ignore_patterns=sorted(_CRON_OWNED_PARQUETS),
     )
 

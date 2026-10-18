@@ -20,7 +20,7 @@ from eval_entity_resolver.models import HfIdHit
 
 def _store_with_aliases(*rows) -> AliasStore:
     """Build an AliasStore from (raw_value, entity_type, canonical_id,
-    source_config, status) tuples. Mirrors test_resolver.py."""
+    source_config, status) tuples."""
     now = datetime.now(timezone.utc).isoformat()
     records = []
     for raw_value, entity_type, canonical_id, source_config, status in rows:
@@ -63,8 +63,8 @@ def test_no_checker_behaves_classically():
 
 
 def test_verbatim_hit_beats_disagreeing_exact_alias():
-    # Curated alias folds the real HF repo id into a different canonical;
-    # the verbatim HF confirmation must win (owner decision).
+    # A curated alias folds the real HF repo id into a different canonical;
+    # the verbatim HF confirmation must still win.
     store = _store_with_aliases(
         ("acme/Widget-7B-FP8", "model", "acme/widget-7b", None, "confirmed"))
     checker = CountingChecker({

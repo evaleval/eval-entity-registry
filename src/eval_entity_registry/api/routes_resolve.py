@@ -18,11 +18,8 @@ def _log_writer(request: Request) -> ResolveLogWriter:
     return request.app.state.log_writer
 
 
-# Type-agnostic CORE fields carried verbatim from the rich service dict
-# onto the lean HTTP ResolveResponse. Everything else (group/family/
-# lineage/params for models; family_key/composite_keys/category for
-# benchmarks) is type-specific ENTITY structure and lives on the entity
-# GET endpoints — never on resolve.
+# Type-agnostic fields copied verbatim from the service dict; type-specific
+# entity fields live only on the entity GET endpoints (see schemas.ResolveResponse).
 _CORE_FIELDS = (
     "canonical_id", "strategy", "confidence", "created_new",
     "resolution_source", "review_status",
@@ -30,10 +27,7 @@ _CORE_FIELDS = (
 
 
 def _project_response(req: ResolveRequest, result: dict) -> ResolveResponse:
-    """Project the rich in-process resolve dict down to the lean,
-    type-agnostic HTTP contract: core match facts + an ordered `ancestry`
-    chain + a typed `resolution_detail`. The full `ResolutionResult` stays
-    rich for the in-process producer path; this is the HTTP lean shape."""
+    """Project the rich in-process resolve dict down to the lean HTTP ResolveResponse."""
     detail = result.get("resolution_detail")
     if not isinstance(detail, dict):
         detail = {}
@@ -53,8 +47,6 @@ def _log_resolve(
     req: ResolveRequest,
     result: dict,
 ) -> None:
-    # Capture the hierarchy contract (ancestry levels + resolution_detail)
-    # for resolution analytics, not just the bare match scalars.
     ancestry = result.get("ancestry") or []
     log_writer.append({
         "request_id": request_id,

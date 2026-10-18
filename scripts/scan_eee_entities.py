@@ -34,10 +34,10 @@ def scan_all_configs() -> dict:
     """Scan all EEE configs. Returns {benchmarks, metrics, harnesses} counters."""
     config_names = datasets.get_dataset_config_names("evaleval/EEE_datastore")
 
-    benchmarks: Counter = Counter()      # evaluation_name → count
-    metrics: Counter = Counter()         # stripped metric desc → count
-    harnesses: Counter = Counter()       # harness name → count
-    bench_configs: dict[str, set] = defaultdict(set)   # entity → set of configs it appears in
+    benchmarks: Counter = Counter()
+    metrics: Counter = Counter()
+    harnesses: Counter = Counter()
+    bench_configs: dict[str, set] = defaultdict(set)
     metric_configs: dict[str, set] = defaultdict(set)
     harness_configs: dict[str, set] = defaultdict(set)
 
@@ -52,14 +52,12 @@ def scan_all_configs() -> dict:
         for i in range(len(ds)):
             record = dict(ds[i])
 
-            # Harness
             eval_lib = record.get("eval_library") or {}
             harness_raw = eval_lib.get("name") or eval_lib.get("library_name")
             if harness_raw and harness_raw.strip():
                 harnesses[harness_raw.strip()] += 1
                 harness_configs[harness_raw.strip()].add(cfg)
 
-            # Benchmarks + Metrics
             eval_results = record.get("evaluation_results") or []
             if not isinstance(eval_results, list):
                 continue

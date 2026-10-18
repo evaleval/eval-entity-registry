@@ -3,9 +3,8 @@ name: Deploy HF Space
 on:
   push:
     branches: [main]
-    # Only redeploy when files that actually ship to the Space change.
-    # Data lives in evaleval/entity-registry-data and is updated out-of-band
-    # by sync runs, not by this workflow.
+    # seed/** is absent on purpose: data reaches the Space via
+    # evaleval/entity-registry-data, not via the image.
     paths:
       - "src/**"
       - "packages/eval-entity-resolver/src/**"
@@ -26,7 +25,6 @@ on:
 permissions:
   contents: read
 
-# Cancel an in-flight deploy if a newer commit lands on main.
 concurrency:
   group: deploy-space
   cancel-in-progress: true

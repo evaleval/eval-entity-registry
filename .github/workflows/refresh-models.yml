@@ -2,64 +2,37 @@ name: Refresh models.dev source
 
 on:
   schedule:
-    # Daily at 09:07 UTC. The minute sits off the hour because GitHub documents
-    # on-the-hour schedules as the most delayed; that is a hint only, and the
-    # shared writer group below (not the clock) is what keeps the two refresh
-    # crons from overlapping.
-    # Runs the full models.dev refresh: the non-catalog
-    # re-cased rewrite of models_dev.generated.yaml, the additive catalog
-    # split, then the union-wide org reconcile. The rewrites are CORE-AWARE
-    # (they suppress/repoint mints colliding with an existing canonical incl.
-    # core.yaml), CARRY the committed output FORWARD (an upstream removal
-    # retains the committed entry/aliases instead of deleting resolvable
-    # surface forms), and the generator is deterministic across runs. All are
-    # gated by the invariant suite below — a regen that regresses a known
-    # resolution outcome / re-mints a shadow canonical / re-splits an org
-    # ABORTS before commit, so a bad upstream day skips rather than corrupts.
+    # Off the hour: GitHub delays on-the-hour schedules most. The shared writer
+    # lane below, not the clock, keeps the two refresh crons apart.
     - cron: "7 9 * * *"
   workflow_dispatch: {}
 
-# Direct-commit auto-sync (no PR review). Switch to PR mode if human review of
-# refreshes becomes warranted.
 permissions:
   contents: write
-  # `gh workflow run seed.yml` (downstream dispatch step below) requires
-  # actions:write — the default GITHUB_TOKEN only has actions:read, which
-  # would fail silently via the `||` fallback.
+  # `gh workflow run seed.yml` needs actions:write; the default token has read.
   actions: write
-  # The stall beacon (final steps) opens/closes a single sticky tracking issue.
   issues: write
 
 env:
   GENERATED_PATH: seed/models/sources/models_dev.generated.yaml
   CATALOG_PATH: seed/models/sources/models_dev_catalog.generated.yaml
   ORGS_GEN_PATH: seed/orgs.generated.yaml
-  # Step 3's org canonicalization may rewrite org_id fields in the GENERATED
-  # model sources; these are included in the diff/commit set so the committed
-  # state always matches the state the gate suite passed on. core.yaml is
-  # deliberately NOT here: the cron never writes the hand-curated file (it
-  # reads it for authority and warns when a core spelling needs a manual fix).
+  # The org reconcile may rewrite org_id in these generated sources, so they
+  # join the commit set. core.yaml is never written by the cron.
   EXTRA_ORG_SYNC_PATHS: >-
     seed/models/sources/hf_oracle.generated.yaml
     seed/models/sources/hub_stats.generated.yaml
     seed/models/sources/tier3_inferred.generated.yaml
 
-# One writer to main at a time. The group name is hard-coded and SHARED with
-# refresh-hub-stats.yml on purpose: it must NOT include github.workflow, or the
-# two writers get separate lanes and can again race each other's push and
-# seed.yml dispatch when the crons drift into the same window.
+# Shared writer lane with refresh-hub-stats.yml; the invariant is stated there.
 concurrency:
   group: registry-seed-writer
   cancel-in-progress: false
-  # Hold every arrival; the default 'single' cancels the waiting writer, and a
-  # run that never starts cannot raise its own stall beacon.
   queue: max
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    # Include headroom for the correlated seed/publish child to queue behind
-    # another live publisher and then consume its own 60-minute budget.
     timeout-minutes: 180
     steps:
       # Live branch tip, not github.sha; see refresh-hub-stats.yml.
@@ -81,37 +54,22 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
-      # Step 1 — full re-cased rewrite of models_dev.generated.yaml. Core-aware:
-      # suppresses/repoints any mint whose id collides (normalized or org-aware)
-      # with an existing canonical (incl. core.yaml + the catalog), so it is
-      # ADDITIVE and never clobbers curated ids. Fetches + caches the models.dev
-      # snapshot for step 2 to reuse (so both run against the SAME pull).
+      # Steps 1–3 run against one models.dev pull: step 1 fetches and caches
+      # the snapshot, the rest reuse it with --no-fetch.
       - name: Refresh models.dev source (full re-cased, core-aware)
         run: uv run python scripts/refresh_from_modelsdev.py
 
-      # Step 2 — additive catalog split, reusing step 1's cached snapshot
-      # (--no-fetch): existing canonical universe incl. core.yaml + the freshly
-      # rewritten models_dev wins; mint only models.dev-only entries; reconcile
-      # HF-derived community orgs.
       - name: Refresh models.dev catalog (additive, core-deduped)
         run: uv run python scripts/refresh_from_modelsdev.py --catalog --no-fetch
 
-      # Step 3 — universal org reconcile (mirrors regenerate_sources.sh step 7a):
-      # mint a community canonical_orgs row for every org_id referenced by ANY
-      # model source that lacks one. Step 2's own reconciliation only covers its
-      # fresh catalog mints, so a step-1 mint referencing a brand-new org (e.g.
-      # a new models.dev provider) would otherwise leave a dangling org FK and
-      # red the gate. Also canonicalizes org_id spellings across the GENERATED
-      # model sources, hence EXTRA_ORG_SYNC_PATHS in the commit set (core.yaml
-      # is read for authority, never written by the cron).
+      # Step 2 reconciles only its own mints; a step-1 mint naming a new org
+      # would otherwise leave a dangling org FK.
       - name: Reconcile orgs (union of all model sources)
         run: uv run python scripts/refresh_from_modelsdev.py --reconcile-orgs
 
-      # The full and catalog partitions cross-reference one another. Give that
-      # bounded two-partition system one convergence pass against TODAY'S
-      # cached snapshot, then run it once more and require byte-identical
-      # outputs. This catches live-only path dependence without relying on the
-      # pinned regression corpus or committing an intermediate pass.
+      # The two partitions cross-reference each other: one convergence pass,
+      # then a second run must be byte-identical, so live-only path dependence
+      # fails here instead of being committed.
       - name: Converge and verify live refresh fixpoint
         run: |
           uv run python scripts/refresh_from_modelsdev.py --no-fetch
@@ -123,10 +81,7 @@ jobs:
           uv run python scripts/refresh_from_modelsdev.py --reconcile-orgs
           sha256sum --check /tmp/models-refresh.sha256
 
-      # SMOKE tier (must pass — RED on failure). The regenerated YAML must parse,
-      # the seed loader must run, and the gate suite must COLLECT cleanly (catches
-      # import / path / module-load breakage). A failure here is pipeline breakage,
-      # not a data issue, so it stays loud RED to stand out from a routine skip.
+      # Infra tier: a failure here is pipeline breakage, not a data regression.
       - name: Smoke checks (pipeline integrity)
         run: |
           uv run python -c "import yaml; yaml.safe_load(open('$GENERATED_PATH'))"
@@ -140,19 +95,9 @@ jobs:
           LOCAL_MODE=true uv run eval-entity-registry seed --local
           LOCAL_MODE=true uv run pytest tests/test_gate_invariants.py --collect-only -q
 
-      # REGRESSION gate — the invariant suite over the fixtures that the smoke
-      # step's `seed --local` just wrote to fixtures/ (this step CONSUMES that
-      # output; keep it after the smoke step). A regen that re-mints a shadow,
-      # re-splits an org, or regresses a known resolution outcome FAILS here and
-      # the named step turns the job RED, so a stalled refresh is visible (not
-      # silently skipped). It is distinguishable from pipeline breakage by WHICH
-      # step failed: a smoke-step failure is infra; this step failing means
-      # "today's upstream would regress data, so nothing was committed." A failure
-      # here halts the job before Detect, so the commit/deploy steps never run.
-      # The dedup suite exercises a PINNED snapshot as a deterministic
-      # regression corpus. It does not compare that historical input with
-      # today's live output: refreshes are guarded by the source-shape and
-      # identity invariants, while fixture refreshes remain deliberate reviews.
+      # Data tier, over the fixtures the smoke step just seeded (keep it after
+      # that step); tiers as in refresh-hub-stats.yml. The dedup suite runs on a
+      # pinned snapshot, not today's output.
       - name: Regression gate (blocks commit on data regression)
         run: LOCAL_MODE=true uv run pytest tests/test_gate_invariants.py tests/test_refresh_modelsdev_dedup.py -q
 
@@ -182,8 +127,8 @@ jobs:
           git push origin "HEAD:${GITHUB_REF_NAME}"
           echo "pushed_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      # Retry a previous publish failure even when today's generated files are
-      # unchanged; the sticky issue is the durable recovery signal.
+      # Also publish while a stall issue is open: a prior publish may have failed
+      # with unchanged data.
       - name: Decide whether registry publish is needed
         id: deploy
         env:
@@ -196,9 +141,6 @@ jobs:
             echo "needed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # A dispatch acknowledgement is not a deployment. Correlate this refresh
-      # with one seed run and wait for its final conclusion; only then may the
-      # stall beacon be cleared.
       - name: Publish and wait for verified completion
         if: steps.deploy.outputs.needed == 'true'
         env:
@@ -230,15 +172,7 @@ jobs:
           fi
           gh run watch "$run_id" --exit-status
 
-      # Stall beacon — ONE sticky tracking issue (deduplicated by the
-      # `refresh-models-stalled` label), never a new issue per run. ANY failure
-      # or cancellation (infra / data-regression / timeout / commit / downstream publish) opens-or-comments the
-      # single issue. It is CLEARED only after a correlated downstream publish
-      # finishes successfully — never on dispatch acknowledgement alone. A
-      # committed-but-unpublished refresh is retried while the issue remains.
-      # All `gh` calls are
-      # best-effort (|| true) so a beacon-side API hiccup can't flip the run's
-      # real status.
+      # Stall beacon contract: see refresh-hub-stats.yml.
       - name: Raise/refresh stall beacon
         if: failure() || cancelled()
         env:

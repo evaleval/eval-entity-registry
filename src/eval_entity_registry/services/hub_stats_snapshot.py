@@ -1,14 +1,9 @@
 """Pinned snapshot of `cfahlgren1/hub-stats` `main/models.parquet`.
 
-All hub-stats readers go through here instead of the HF parquet-converter
-endpoint (`/api/datasets/<repo>/parquet/...`): the dataset-viewer rebuilds that
-endpoint after every upstream commit and it answers 400 meanwhile, which hit
-the daily crons. The raw file is byte-identical and never rebuilt.
-
-`resolve_snapshot` pins a commit sha and the file's content hash in one
-request; `download_snapshot` fetches that exact revision for local queries;
-`hf_source` is the equivalent pinned `hf://` path for a caller that prefers
-range reads.
+All hub-stats readers go through here, never the HF parquet-converter
+endpoint (`/api/datasets/<repo>/parquet/...`): the dataset-viewer rebuilds
+that endpoint after every upstream commit and answers 400 meanwhile. The raw
+file is byte-identical and never rebuilt.
 """
 from __future__ import annotations
 

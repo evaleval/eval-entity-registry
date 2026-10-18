@@ -1,10 +1,6 @@
-"""Tests for CanonicalStore + Resolver enrichment.
-
-Locks in the standalone-vs-API parity: when a resolver is given a
-CanonicalStore, its `ResolutionResult` carries the same fields the HTTP
-API returns (root-collapse for quantized chains, parent_canonical_id,
-parents list, lineage_origin_org_id, open_weights, release_date,
-params_billions, etc.)."""
+"""CanonicalStore enrichment: a Resolver given a CanonicalStore returns the
+same rich fields the HTTP API does (leaf id, group root, parents, lineage,
+open_weights, release_date, params_billions, ancestry, resolution_detail)."""
 from __future__ import annotations
 
 import json
@@ -41,9 +37,8 @@ def _alias_store(*rows) -> AliasStore:
 
 
 def _models_df(*rows) -> pd.DataFrame:
-    """Build a canonical_models DataFrame with the columns the resolver
-    reads. Each row is a dict — caller passes only the fields they care
-    about; missing fields are None / NA."""
+    """canonical_models DataFrame with the columns the resolver reads;
+    unspecified fields are None."""
     cols = [
         "id", "display_name", "org_id", "parents", "model_group_id",
         "lineage_origin_model_org_id", "open_weights", "release_date",
@@ -59,9 +54,7 @@ def _models_df(*rows) -> pd.DataFrame:
 # ---------- bare resolver (no canonical_store) — fields stay None ----------
 
 def test_bare_resolver_returns_only_basic_fields():
-    """Without a CanonicalStore, the resolver returns just the matching
-    fields; rich-shape fields are all None. Backwards-compatible with
-    the original API."""
+    """Without a CanonicalStore every enrichment field is None."""
     store = _alias_store(("meta/llama-3-8b", "model", "meta/llama-3-8b", None, "confirmed"))
     resolver = Resolver(store)  # no canonical_store
     r = resolver.resolve("meta/llama-3-8b", "model")
@@ -76,9 +69,7 @@ def test_bare_resolver_returns_only_basic_fields():
 # ---------- enriched resolver matches API shape ----------
 
 def test_enriched_resolver_populates_model_metadata():
-    """A model resolution with canonical_store attached carries the
-    matched canonical's metadata: parents, lineage_origin_org_id,
-    open_weights, release_date, params_billions, review_status."""
+    """With a CanonicalStore the result carries the matched row's metadata."""
     aliases = _alias_store(("Llama-3.1-8B", "model", "meta/llama-3.1-8b", None, "confirmed"))
     canonicals = CanonicalStore(models_df=_models_df({
         "id": "meta/llama-3.1-8b",
@@ -104,27 +95,20 @@ def test_enriched_resolver_populates_model_metadata():
 
 
 def test_enriched_resolver_flips_quantized_chain_to_leaf_with_group_root():
-    """Resolving a quantized leaf returns the LEAF as
-    `canonical_id` (the precise quant artifact); the identity root moves to
-    `model_group_id` (and `root_model_id` for compat). `resolved_leaf_id ==
-    canonical_id`. Metadata now comes from the matched LEAF row — at seed
-    `derive_model_lineage_fields` would inherit open_weights onto the leaf,
-    but this unit fixture sets values only on the root and runs no derive
-    pass, so the leaf's own (unset) metadata is what surfaces."""
+    """A quantized leaf resolves to the LEAF as `canonical_id`; the identity
+    root lives in `model_group_id` (and `root_model_id`), and metadata reads
+    off the leaf row."""
     aliases = _alias_store(
         ("meta/llama-3.1-8b-instruct-turbo", "model", "meta/llama-3.1-8b-instruct-turbo", None, "confirmed"),
     )
     canonicals = CanonicalStore(models_df=_models_df(
-        # Root: open-weight base instruct
         {
             "id": "meta/llama-3.1-8b-instruct",
             "org_id": "meta", "parents": "[]", "open_weights": True,
             "release_date": "2024-07-18", "params_billions": 8.0,
             "lineage_origin_model_org_id": "meta", "review_status": "reviewed",
         },
-        # Leaf: quantized variant pointing at the root. Metadata is set on
-        # the leaf row directly (as the seed-time derive pass would
-        # materialise) so the flipped response is internally consistent.
+        # Leaf metadata is set directly: no seed-time derive pass runs here.
         {
             "id": "meta/llama-3.1-8b-instruct-turbo",
             "org_id": "meta",
@@ -138,25 +122,19 @@ def test_enriched_resolver_flips_quantized_chain_to_leaf_with_group_root():
     ))
     resolver = Resolver(aliases, canonical_store=canonicals)
     r = resolver.resolve("meta/llama-3.1-8b-instruct-turbo", "model")
-    # canonical_id is now the LEAF
     assert r.canonical_id == "meta/llama-3.1-8b-instruct-turbo"
-    # resolved_leaf_id == canonical_id
     assert r.resolved_leaf_id == "meta/llama-3.1-8b-instruct-turbo"
-    # the identity root moves to model_group_id (and root_model_id for compat)
     assert r.model_group_id == "meta/llama-3.1-8b-instruct"
     assert r.root_model_id == "meta/llama-3.1-8b-instruct"
-    # Metadata sourced from the matched LEAF row
     assert r.open_weights is True
     assert r.release_date == "2024-07-18"
     assert r.params_billions == 8.0
-    # Parents reflect the matched leaf's edges
     assert r.parents == [{"id": "meta/llama-3.1-8b-instruct", "relationship": "quantized"}]
 
 
 def test_enriched_resolver_benchmark_surfaces_parent():
-    """For benchmarks the parent_canonical_id comes from the
-    `parent_benchmark_id` scalar column. Other rich fields are
-    correctly None for non-models."""
+    """Benchmark parent_canonical_id comes from `parent_benchmark_id`;
+    model-only fields stay None."""
     aliases = _alias_store(("MATH Level 5", "benchmark", "math-level-5", None, "confirmed"))
     bm_df = pd.DataFrame([{
         "id": "math-level-5", "display_name": "MATH Level 5",
@@ -168,15 +146,13 @@ def test_enriched_resolver_benchmark_surfaces_parent():
     assert r.canonical_id == "math-level-5"
     assert r.parent_canonical_id == "math"
     assert r.review_status == "reviewed"
-    # Model-only fields stay None
     assert r.resolved_leaf_id is None
     assert r.parents is None
     assert r.open_weights is None
 
 
 def test_no_match_carries_no_enrichment():
-    """A no_match result returns None for canonical_id and all
-    enrichment fields stay None — there's nothing to enrich."""
+    """A no_match carries no enrichment."""
     canonicals = CanonicalStore(models_df=_models_df())
     resolver = Resolver(_alias_store(), canonical_store=canonicals)
     r = resolver.resolve("totally-unknown-model", "model")
@@ -190,8 +166,7 @@ def test_no_match_carries_no_enrichment():
 # ---------- CanonicalStore directly ----------
 
 def test_canonical_store_lookup_returns_dict_with_na_coerced():
-    """CanonicalStore.lookup returns a row dict with NaN/NA coerced to
-    None so callers don't have to handle pd.NA at every access."""
+    """lookup coerces NaN/NA to None so callers never see pd.NA."""
     df = pd.DataFrame([
         {"id": "x/y", "open_weights": True, "release_date": None, "params_billions": float("nan")},
     ])
@@ -200,7 +175,7 @@ def test_canonical_store_lookup_returns_dict_with_na_coerced():
     assert row is not None
     assert row["open_weights"] is True
     assert row["release_date"] is None
-    assert row["params_billions"] is None  # NaN coerced
+    assert row["params_billions"] is None
 
 
 def test_canonical_store_lookup_missing_id_returns_none():
@@ -212,44 +187,35 @@ def test_canonical_store_lookup_missing_id_returns_none():
 # ---------- backwards compat ----------
 
 def test_resolver_positional_two_arg_constructor():
-    """The original `Resolver(store, config)` two-arg form must keep
-    working — downstream pipelines (AutoBenchmarkCard etc.) construct
-    this way. Adding `canonical_store` as a third optional kwarg must
-    not break positional callers."""
+    """The positional `Resolver(store, config)` form must keep working:
+    downstream pipelines construct it that way."""
     store = _alias_store(("MATH", "benchmark", "math", None, "confirmed"))
     resolver = Resolver(store, ResolverConfig(threshold=0.85))
     r = resolver.resolve("MATH", "benchmark")
-    # Bare matcher behavior — basic fields populated, enrichment None
     assert r.canonical_id == "math"
     assert r.strategy == "exact"
     assert r.confidence == 1.0
-    assert r.review_status is None  # no canonical_store → no enrichment
+    assert r.review_status is None
     assert r.parents is None
 
 
 def test_flip_handles_dangling_group_root_fk():
-    """If the matched canonical's `model_group_id` points at an id that
-    isn't in the canonical store (e.g. broken FK), enrichment must not
-    crash. The canonical_id is the matched LEAF (which always
-    exists), so the response is well-formed regardless of the dangling
-    group root; the dangling root is still surfaced in model_group_id, and
-    metadata reads off the present leaf row."""
+    """A `model_group_id` pointing at an id absent from the store must not
+    crash enrichment: canonical_id is the present leaf and the dangling
+    root still surfaces in model_group_id."""
     aliases = _alias_store(("orphan/leaf", "model", "orphan/leaf", None, "confirmed"))
     canonicals = CanonicalStore(models_df=_models_df({
         "id": "orphan/leaf",
         "org_id": "orphan",
         "parents": json.dumps([{"id": "orphan/missing-root", "relationship": "quantized"}]),
-        "model_group_id": "orphan/missing-root",  # FK to non-existent canonical
+        "model_group_id": "orphan/missing-root",
         "review_status": "draft",
     }))
     resolver = Resolver(aliases, canonical_store=canonicals)
     r = resolver.resolve("orphan/leaf", "model")
-    # canonical_id is the LEAF (present); the dangling root only
-    # appears in model_group_id. No crash.
     assert r.canonical_id == "orphan/leaf"
     assert r.resolved_leaf_id == "orphan/leaf"
     assert r.model_group_id == "orphan/missing-root"
-    # Metadata reads off the leaf row, which set none → None.
     assert r.open_weights is None
     assert r.release_date is None
 
@@ -289,9 +255,8 @@ def test_model_ancestry_and_detail():
 
 
 def test_model_detail_hf_repo_id():
-    """resolution_detail.hf_repo_id surfaces the real HF repo id for an
-    HF-backed canonical (resolution_source==hf OR metadata.hf_id==id), and
-    None for an off-HF slug whose metadata.hf_id points elsewhere (shadow)."""
+    """hf_repo_id is set only for an HF-backed canonical (resolution_source==hf
+    or metadata.hf_id==id); a shadow slug whose hf_id points elsewhere gets None."""
     aliases = _alias_store(
         ("meta/llama", "model", "meta/llama", None, "confirmed"),
         ("acme/mistral", "model", "acme/mistral", None, "confirmed"),

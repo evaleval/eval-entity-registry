@@ -1,28 +1,21 @@
 #!/usr/bin/env python3
 """
-Build the local hub-stats id INDEX consulted by the read-only resolve path.
+Build the local hub-stats id index consulted by the read-only resolve path.
 
-The registry resolves raw model strings to canonical entities. For an HF model
-id that was never minted into the registry, the read-only API still wants to
-CONFIRM that the exact id is a real HF repo (returning a `hub_stats_index`
-confirmation in the standard ResolveResponse shape) — without minting or
-persisting anything. This script materializes that index: one DuckDB `COPY`
-over cfahlgren1/hub-stats, filtered to repos with downloadable weights.
+The index lets the read-only API confirm that an unminted HF id is a real repo
+with downloadable weights, without minting or persisting anything: one DuckDB
+`COPY` over cfahlgren1/hub-stats, filtered to repos with safetensors or gguf.
 
 Source: a pinned, downloaded snapshot of `main/models.parquet`
 (see `services/hub_stats_snapshot.py`).
 
 Output:
-    fixtures/hub_stats_index.parquet  (single file; published to the dataset's
+    fixtures/hub_stats_index.parquet  (published to the dataset's
     `hub_stats_index/part-0.parquet` subdir by the refresh-hub-stats-index cron)
 
 Columns (mirror store/schemas.py `hub_stats_index`):
     id (HF-true), id_norm, release_date, pipeline_tag, params_billions,
     open_weights (always true), downloads
-
-`id_norm` is computed in SQL to mirror `services.hub_stats.normalize` EXACTLY:
-    lower(id) -> collapse runs of [/_.:-] to a single '-' -> trim leading/
-    trailing '-'.
 
 Usage:
     HF_TOKEN=... uv run python scripts/build_hub_stats_index.py        # pinned snapshot download
@@ -52,11 +45,8 @@ OUT_PATH = REPO_ROOT / "fixtures" / "hub_stats_index.parquet"
 # writing. The full safetensors/gguf-filtered set is well over 500k rows.
 ROW_FLOOR = 500_000
 
-# id_norm mirrors services.hub_stats.normalize:
-#   re.sub(r"[/_.:\-]+", "-", s.lower()).strip("-")
-# DuckDB equivalent: lower -> regexp_replace collapses any run of separator
-# chars [/_.:-] (mixed runs included) to a single dash -> trim leading/trailing
-# dashes. Equivalence is asserted by tests/test_hub_stats_index_confirm.py.
+# Must match services.hub_stats.normalize exactly (asserted by
+# tests/test_hub_stats_index_confirm.py).
 _ID_NORM_SQL = "trim(regexp_replace(lower(id), '[/_.:-]+', '-', 'g'), '-')"
 
 
@@ -118,7 +108,7 @@ def main() -> int:
     src = select_source(args.source, tok)
 
     con = duckdb.connect()
-    if is_remote_source(src):  # only when --source / the env var is a URL
+    if is_remote_source(src):
         con.execute("INSTALL httpfs; LOAD httpfs;")
         if tok:
             con.execute(
@@ -130,7 +120,7 @@ def main() -> int:
 
     query = build_query(src, args.limit)
 
-    # Count first so the floor check can abort WITHOUT writing a partial index.
+    # Count first so the floor check can abort without writing a partial index.
     n = con.execute(f"SELECT count(*) FROM ({query})").fetchone()[0]
     print(f"[index] rows matched: {n}", file=sys.stderr)
     if args.limit is None and n < ROW_FLOOR:

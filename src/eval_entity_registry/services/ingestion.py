@@ -1,26 +1,8 @@
-"""
-EEE sync pipeline.
-
-Per-record processing → sub-category detection → resolution → eval_results table.
-Pushes HF Hub at end of run.
-
-Known data-quality issues
----------------------------------------------------
-Some configs use a metric keyword as ``evaluation_name`` for aggregate /
-summary rows instead of a real benchmark name.  These create problematic benchmark
-entities (``score``, ``overall``, ``mean-score``, ``mean-win-rate``).
-
-* ``reward-bench``: ``"Score"`` — composite metric across rewardbench
-  subcategories (chat, chat-hard, safety, reasoning).
-* ``ace``: ``"Overall"`` / ``"overall"`` — rollup across ACE/APEX
-  sub-evaluations.
-* ``helm_capabilities``: ``"Mean score"`` — mean across all HELM capability
-  benchmarks for a model.
-* ``helm_instruct``: ``"Mean win rate"`` — mean win rate across all HELM
-  instruct benchmarks.
-
-Fix should happen upstream as part of wider discussion on schema design.
-"""
+"""EEE sync pipeline: per-record sub-category detection, resolution, and
+eval_results rows. Upstream quirk: some configs put a metric keyword in
+``evaluation_name`` for aggregate rows (``reward-bench`` "Score", ``ace``
+"Overall", ``helm_capabilities`` "Mean score", ``helm_instruct`` "Mean win
+rate"), which would mint bogus benchmark entities."""
 from __future__ import annotations
 
 import json
@@ -48,13 +30,9 @@ def _iter_eee_config(source_config: str) -> Iterator[dict]:
 def _detect_sub_categories(
     evaluation_results: list[dict],
 ) -> dict[str, Optional[str]]:
-    """
-    Inspect all evaluation_results in a record.
-    Returns {evaluation_name: parent_dataset_name or None}.
-
-    If multiple evaluation_name values share the same dataset_name → sub-category pattern.
-    The dataset_name becomes the parent benchmark; each evaluation_name is a child.
-    """
+    """{evaluation_name: parent dataset_name or None}. Several evaluation_names
+    sharing one dataset_name is the sub-category pattern: the dataset is the
+    parent benchmark, each evaluation_name a child."""
     dataset_to_eval_names: dict[str, list[str]] = defaultdict(list)
     for result in evaluation_results:
         eval_name = result.get("evaluation_name", "")
@@ -62,7 +40,6 @@ def _detect_sub_categories(
         if eval_name and dataset_name:
             dataset_to_eval_names[dataset_name].append(eval_name)
 
-    # Build mapping: eval_name → parent dataset_name (if sub-category) or None
     eval_to_parent: dict[str, Optional[str]] = {}
     for result in evaluation_results:
         eval_name = result.get("evaluation_name", "")
@@ -83,11 +60,8 @@ def process_record(
     sync_run_id: str,
     rerun: bool,
 ) -> Optional[list[dict]]:
-    """
-    Resolve all entities in one EEE record.
-    Returns a flat list of result rows (one per evaluation result) or None if
-    the record has no model info.
-    """
+    """Resolve all entities in one EEE record into result rows (one per
+    evaluation result); None when the record has no model info."""
     # --- Model ---
     model_info = record.get("model_info") or {}
     model_raw = model_info.get("id") or model_info.get("model_name") or model_info.get("name")
@@ -124,7 +98,6 @@ def process_record(
 
     eval_to_parent = _detect_sub_categories(evaluation_results)
 
-    # Resolve parent benchmarks once
     parent_cache: dict[str, str] = {}
     for dataset_name in set(v for v in eval_to_parent.values() if v is not None):
         parent_res = svc.resolve(
@@ -137,9 +110,8 @@ def process_record(
         )
         parent_cache[dataset_name] = parent_res["canonical_id"]
 
-    # Build evaluation_id — must be deterministic for stable eval_results row keys.
-    # The EEE schema requires evaluation_id, but we fall back to a hash of
-    # model + source_config if missing, to avoid non-deterministic id(record).
+    # evaluation_id keys eval_results rows, so the fallback for a missing one
+    # must be deterministic.
     source_meta = record.get("source_metadata") or {}
     eval_id = record.get("evaluation_id") or source_meta.get("evaluation_id") or source_meta.get("id")
     if not eval_id:
@@ -166,10 +138,8 @@ def process_record(
             rerun=rerun,
         )
 
-        # Metric — try metric_name first (human-readable, e.g. "Win Rate"),
-        # then metric_id (may be dot-notation like "bfcl.live.accuracy"),
-        # then evaluation_description (verbose, e.g. "Accuracy on IFEval").
-        # extract_metric normalises all three forms to a reusable metric name.
+        # Human-readable metric_name first, then dot-notation metric_id, then
+        # the verbose evaluation_description; extract_metric normalises all three.
         metric_config = er.get("metric_config") or {}
         metric_raw = extract_metric(
             metric_config.get("metric_name")
@@ -188,7 +158,7 @@ def process_record(
                 rerun=rerun,
             )
 
-        # Score — use `is not None` checks to preserve valid 0 / 0.0 scores.
+        # `is not None` checks keep valid 0 / 0.0 scores.
         score_details_raw = er.get("score_details") or er.get("details") or {}
         score = None
         if isinstance(score_details_raw, dict):
@@ -213,9 +183,7 @@ def process_record(
                 "benchmark_card_id": None,
                 "score": score,
                 "score_details": json.dumps(score_details_raw) if score_details_raw else None,
-                # Per-run serving platform captured from the model spelling
-                # (e.g. a `-together`/`-bedrock` suffix); the eval_results schema
-                # has this column, so carry it through rather than dropping it.
+                # Serving platform captured from the model spelling (e.g. `-bedrock`).
                 "inference_platform": model_res.get("inference_platform"),
             }
         )
@@ -228,18 +196,14 @@ def run_sync(
     registry_store: RegistryStore,
     rerun: bool = False,
 ) -> dict:
-    """
-    Sync one EEE config. Returns counts dict.
-    Does NOT push to HF Hub — caller is responsible for calling push_to_hub()
-    once after all configs are done.
-    """
+    """Sync one EEE config and return a counts dict. Does not push to the Hub;
+    the caller calls push_to_hub() once after all configs."""
     svc = ResolutionService(registry_store)
 
-    # Reset module-level caches from any prior (possibly crashed) sync
+    # A prior sync may have crashed with these populated.
     queries._alias_index.clear()
     queries._pending_result_ids.clear()
 
-    # Build alias index for fast lookups during sync
     queries._rebuild_alias_index(registry_store)
 
     run_id = queries.start_sync_run(registry_store, source_config, rerun)
@@ -252,7 +216,6 @@ def run_sync(
     }
     errors = []
 
-    # Snapshot table lengths before sync to count actual changes
     aliases_before = len(registry_store.table("aliases")) + len(queries._get_pending(registry_store, "aliases"))
     models_before = len(registry_store.table("canonical_models"))
     benchmarks_before = len(registry_store.table("canonical_benchmarks"))
@@ -274,17 +237,14 @@ def run_sync(
             if record_count % 500 == 0:
                 print(f"  [{source_config}] {record_count} records processed...", file=sys.stderr)
     finally:
-        # Always flush pending rows — even on crash, preserve successfully
-        # processed records rather than silently losing them.
+        # Flush even on crash so successfully processed records survive.
         queries.flush_pending(registry_store)
 
-        # Reset module-level caches for next sync run
         queries._alias_index.clear()
         queries._pending_result_ids.clear()
 
     print(f"  [{source_config}] {record_count} records total, flushed.", file=sys.stderr)
 
-    # Count changes by comparing table lengths
     entities_after = (
         len(registry_store.table("canonical_models"))
         + len(registry_store.table("canonical_benchmarks"))

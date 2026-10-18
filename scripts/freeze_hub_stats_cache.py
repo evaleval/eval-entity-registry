@@ -1,28 +1,21 @@
 #!/usr/bin/env python3
 """
 Freeze the candidate subset of cfahlgren1/hub-stats into a committed, offline
-parquet cache so the lineage/enrichment layer regenerates REPRODUCIBLY without
-hitting live HuggingFace.
+parquet cache so `refresh_from_hub_stats.py` regenerates lineage/enrichment
+reproducibly without hitting live HuggingFace.
 
-Why this exists: ~2000+ HF-bulk rows' `parents` / `model_group_id` /
-`model_family_id` / `lineage_origin` are derived (in `enrich_draft_from_row`)
-from the parquet's `baseModels` column. Live HF queries are flaky and can
-mis-classify real repos as absent, so a clean regen against live HF would
-silently lose lineage. Freezing the actual upstream rows (incl. baseModels) to a
-committed parquet lets `refresh_from_hub_stats.py` reproduce the SAME enrichment
-offline, byte-for-byte, via its existing local-parquet path
-(`HUB_STATS_LOCAL_PARQUET`).
-
-This is a CACHE-REFRESH tool — run it occasionally (or in a dedicated cron) to
-re-pull the upstream rows for our covered canonicals. It is NETWORK; the normal
-`refresh_from_hub_stats.py` regen reads the frozen cache offline.
+Lineage fields (`parents` / `model_group_id` / `model_family_id` /
+`lineage_origin`) are derived from the parquet's `baseModels` column, and live
+HF queries can mis-classify real repos as absent, which would silently drop
+lineage on a regen. The normal regen reads this cache offline via
+`HUB_STATS_LOCAL_PARQUET`; this script is the network step that refreshes it.
 
 Source: a pinned, downloaded snapshot of `main/models.parquet`
 (see `services/hub_stats_snapshot.py`). Its commit sha and content sha256 are
 written into the cache's parquet key-value metadata.
 
 Output:
-    curation/hub_stats_frozen.parquet  (committed; the durable offline cache)
+    curation/hub_stats_frozen.parquet  (committed)
 
 Usage:
     HF_TOKEN=... uv run python scripts/freeze_hub_stats_cache.py
@@ -51,7 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ORGS_PATH = REPO_ROOT / "seed" / "orgs.yaml"
 FROZEN_CACHE_PATH = REPO_ROOT / "curation" / "hub_stats_frozen.parquet"
 
-# Same model sources refresh_from_hub_stats.py reads candidates from.
+# Must match the sources refresh_from_hub_stats.py reads candidates from.
 _MODEL_SOURCES = (
     REPO_ROOT / "seed" / "models" / "core.yaml",
     REPO_ROOT / "seed" / "models" / "sources" / "models_dev.generated.yaml",
@@ -63,10 +56,9 @@ _MODEL_SOURCES = (
 
 
 def build_candidate_ids() -> set[str]:
-    """Every HF-shaped (`org/name`) id + alias on a known canonical, plus the
-    big-dev re-mapped repo id (`meta/Llama-3.1-8B` -> `meta-llama/Llama-3.1-8B`)
-    so the parquet lookup finds the real-namespace row. Mirrors the candidate
-    construction in refresh_from_hub_stats.main()."""
+    """HF-shaped ids and aliases across all model sources, plus the real-namespace
+    repo id for a big-dev remapped org (`meta/X` -> `meta-llama/X`). Mirrors
+    refresh_from_hub_stats.main()."""
     hf_to_dev = build_hf_to_dev_from_orgs_yaml(ORGS_PATH)
     dev_to_hf_orgs: dict[str, set[str]] = {}
     for hf_org, dev in hf_to_dev.items():
@@ -129,7 +121,6 @@ def main() -> int:
     else:
         kv = {"source_path": src}
     kv_sql = ", ".join(f"'{k}': '{v.replace(chr(39), chr(39) * 2)}'" for k, v in kv.items())
-    # COPY the candidate subset (case-sensitive id match) to a local parquet.
     con.execute(
         f"COPY (SELECT {QUERY_COLUMNS} FROM read_parquet('{src.replace(chr(39), chr(39) * 2)}') "
         f"WHERE id IN ({quoted})) TO '{args.out}' (FORMAT PARQUET, KV_METADATA {{{kv_sql}}})"

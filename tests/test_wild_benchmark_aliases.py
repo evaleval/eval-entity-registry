@@ -1,6 +1,6 @@
-"""WILD benchmark slugs resolve to the right canonical (added aliases + new
-canonicals). Guards the ARC disambiguation (AI2 Reasoning Challenge, not ARC-AGI).
-Skips if fixtures aren't built (run `eval-entity-registry seed --local`)."""
+"""WILD / openeval benchmark and metric slugs resolve to the right canonical,
+including the ARC disambiguation (AI2 Reasoning Challenge, not ARC-AGI) and
+the scoped openeval metric channels. Skips without fixtures."""
 from pathlib import Path
 
 import pytest
@@ -10,10 +10,6 @@ from eval_entity_resolver.eee import extract_metric
 _ROOT = Path(__file__).resolve().parent.parent
 _FIXTURES = _ROOT / "fixtures"
 
-# WILD slug -> expected canonical id. Covers the 8 that previously failed:
-# arc_easy/arc_challenge (alias -> the AI2 ARC Easy/Challenge children), race_h
-# (alias -> race), and the five new canonicals (squad, paws, chembench,
-# finance-fundamentals, pre-flight — WILD's underscore slugs resolve via aliases).
 WILD_BENCHMARKS = {
     "arc_easy": "ai2-reasoning-challenge-arc-easy",
     "arc_challenge": "ai2-reasoning-challenge-arc-challenge",
@@ -43,8 +39,7 @@ def test_wild_benchmark_resolves(resolver, slug, expected):
 
 
 def test_arc_not_arc_agi(resolver):
-    # WILD's arc_* is the AI2 Reasoning Challenge (its Easy / Challenge question
-    # sets), never ARC-AGI (Chollet) or the generic 'arc' canonical.
+    # WILD's arc_* is the AI2 Reasoning Challenge, never ARC-AGI or bare `arc`.
     for slug, expected in (
         ("arc_easy", "ai2-reasoning-challenge-arc-easy"),
         ("arc_challenge", "ai2-reasoning-challenge-arc-challenge"),
@@ -109,9 +104,8 @@ def test_openeval_anthropic_red_teaming_resolves_structurally(resolver):
     ],
 )
 def test_openeval_harmbench_channels_have_own_metrics(resolver, raw, expected):
-    # Each channel carries its own meaning, so it must never fall through to the
-    # catch-all and be renamed onto harmbench-refusal-score (haiku-llm-judge
-    # would land there with inverted direction).
+    # Each channel has its own meaning; falling through to the catch-all would
+    # land haiku-llm-judge on harmbench-refusal-score with inverted direction.
     assert _resolve_openeval_metric(resolver, raw) == expected
 
 
@@ -131,11 +125,9 @@ def test_openeval_harmbench_judge_metric_stays_score(resolver):
     assert _resolve_openeval_metric(resolver, "openeval.harmbench.safety-gpt-score") == "score"
 
 
-# BERTScore / SummaC / BLEURT: model-scored generation metrics that all landed on
-# the catch-all `score` before they were minted. Their surface forms name the
-# metric itself rather than a benchmark-specific channel, so the aliases are
-# global and the structured id resolves off the metric segment alone — no scoped
-# whole-id alias is needed (unlike the WildBench / HarmBench channels above).
+# BERTScore / SummaC / BLEURT name the metric itself, not a benchmark channel,
+# so their aliases are global and the structured id resolves off the metric
+# segment alone (unlike the scoped WildBench / HarmBench channels above).
 @pytest.mark.parametrize(
     "raw,expected", [
         ("openeval.cnndm.bertscore-f", "bertscore-f1"),
@@ -168,28 +160,27 @@ def test_openeval_model_scored_generation_metrics(resolver, raw, expected):
     ],
 )
 def test_generation_metric_names_resolve(resolver, raw, expected):
-    # The metric_name path: the label the source publishes, not a structured id.
+    # The metric_name path: the published label, not a structured id.
     assert resolver.resolve(raw, entity_type="metric").canonical_id == expected
 
 
 def test_bleurt_20_is_the_bleurt_canonical(resolver):
-    # BLEURT-20 is a checkpoint of BLEURT on [0, 1], not a separate metric, and
-    # must not be confused with TruthfulQA's unbounded bleurt-max regression output.
+    # BLEURT-20 is a checkpoint of BLEURT, not a separate metric, and is
+    # distinct from the unbounded bleurt-max regression output.
     for raw in ("bleurt-20", "BLEURT-20", "BLEURT"):
         assert resolver.resolve(raw, entity_type="metric").canonical_id == "bleurt"
     assert resolver.resolve("bleurt-max", entity_type="metric").canonical_id == "bleurt-max"
 
 
 def test_rouge_1_still_resolves(resolver):
-    # Guard: the new BLEURT/BERTScore aliases must not disturb the existing
-    # n-gram overlap metrics on the same summarization benchmarks.
+    # The BLEURT/BERTScore aliases must not disturb the n-gram metrics on the
+    # same summarization benchmarks.
     assert resolver.resolve("rouge_1", entity_type="metric").canonical_id == "rouge-1"
 
 
 def test_generation_metric_bounds(resolver):
-    # Baseline-rescaled BERTScore keeps 1.0 as its definitional maximum; its lower
-    # bound is left uncurated (null) because rescaling puts real values below 0
-    # with no principled floor. BLEURT diff/max are unbounded regression outputs.
+    # Rescaled BERTScore has a definitional max of 1.0 but no principled floor
+    # (null); BLEURT diff/max are unbounded regression outputs.
     import math
 
     bounds = {
@@ -212,8 +203,7 @@ def _metric_rows():
     "raw,subset",
     [
         # Two-letter language tails are slices, not case-folded metric aliases
-        # (`mr` is Marathi here, not mean-recall `mR`). Regression for the
-        # Apertus 2026-09 export where the Marathi row lost its slice.
+        # (`mr` is Marathi here, not mean-recall `mR`).
         ("arc.arc_multilingual.mr", "mr"),
         ("arc.arc_multilingual.de", "de"),
     ],
@@ -226,7 +216,7 @@ def test_two_letter_language_tail_stays_a_slice(resolver, raw, subset):
 
 
 def test_byte_exact_short_metric_tail_is_still_a_metric(resolver):
-    # The exact-alias tier keeps claiming short tails spelled exactly as the
-    # registry alias (`F1`); only the case-insensitive tiers need >= 3 chars.
+    # Exact-alias tier still claims a byte-exact short tail (`F1`); only the
+    # case-insensitive tiers need >= 3 chars.
     assert resolver._segment_is_metric("F1", None)
     assert not resolver._segment_is_metric("mr", None)

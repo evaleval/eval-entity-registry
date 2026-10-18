@@ -1,17 +1,9 @@
-"""
-EEE-specific preprocessing for entity resolution.
+"""EEE-specific preprocessing: an EEE field often encodes several entity types
+(``evaluation_name`` carries both benchmark and metric); these helpers extract
+resolvable strings first.
 
-Raw strings from the EEE datastore often encode multiple entity types in a
-single field (e.g. ``evaluation_name`` contains both benchmark and metric).
-These helpers extract clean, resolvable strings before passing them to the
-resolver.
-
-Usage::
-
-    from eval_entity_resolver.eee import extract_metric, clean_eval_name
-
-    metric_raw = extract_metric("Accuracy on IFEval")       # → "Accuracy"
-    bench_raw  = clean_eval_name("bfcl.live.live_accuracy")  # → "bfcl live"
+    extract_metric("Accuracy on IFEval")       # → "Accuracy"
+    clean_eval_name("bfcl.live.live_accuracy")  # → "bfcl live"
 """
 from __future__ import annotations
 
@@ -23,20 +15,13 @@ import re
 # ------------------------------------------------------------------
 
 def extract_metric(metric_desc: str) -> str:
-    """Extract a reusable metric name from an EEE evaluation description.
+    """Extract a resolvable metric name from an EEE evaluation description.
 
-    EEE configs rarely provide a structured metric_id.  Instead the metric
-    lives inside ``evaluation_description`` in one of several formats:
-
-    * **"X on Y"** — ``"Accuracy on IFEval"`` → ``"Accuracy"``
-    * **Dot notation** — ``"bfcl.live.live_accuracy"`` → ``"accuracy"``
-    * **Verbose description** — ``"Chat accuracy - includes easy subsets"``
-      → ``"accuracy"`` (keyword extraction)
-    * **No keyword** — ``"Global MMLU Lite - Arabic"`` → ``"score"``
-      (generic fallback)
-
-    The returned string is passed to the resolver, which maps it to a
-    canonical metric entity via alias lookup / normalized match.
+    * "X on Y" — ``"Accuracy on IFEval"`` → ``"Accuracy"``
+    * Dot notation — ``"bfcl.live.live_accuracy"`` → ``"accuracy"``
+    * Verbose description — ``"Chat accuracy - includes easy subsets"`` →
+      ``"accuracy"`` (keyword extraction)
+    * No keyword — ``"Global MMLU Lite - Arabic"`` → ``"score"``
     """
     text = metric_desc.strip()
     if not text:
@@ -44,23 +29,19 @@ def extract_metric(metric_desc: str) -> str:
 
     from_dot = False
 
-    # 1. Dot notation: "bfcl.live.live_accuracy" → last segment → "live accuracy"
     if "." in text and " " not in text:
         text = text.rsplit(".", 1)[1].replace("_", " ").strip()
         from_dot = True
 
-    # 2. "X on Y" pattern: "Accuracy on IFEval" → "Accuracy". Only when the
-    #    prefix is a short metric-like phrase — a prose sentence with a
-    #    mid-sentence " on " ("GDPval-AA evaluates AI agents on …") must NOT
-    #    be truncated there, or keywords disclosed later in the sentence
-    #    ("… reports performance as an Elo score.") are never seen.
+    # Only a short prefix is an "X on Y" metric: a prose sentence with a
+    # mid-sentence " on " ("GDPval-AA evaluates AI agents on …") must keep the
+    # keywords disclosed later in it ("… as an Elo score").
     if not from_dot:
         m = re.match(r"^(.+?)\s+on\s+\S+", text, re.IGNORECASE)
         if m and len(m.group(1).split()) <= 3:
             text = m.group(1).strip()
 
-    # 3. Try keyword extraction on any multi-word text or dot-notation segment.
-    #    Single bare words ("Accuracy", "F1", "EM") pass straight to the resolver.
+    # Single bare words ("Accuracy", "F1", "EM") go straight to the resolver.
     word_count = len(text.split())
     needs_extraction = from_dot or word_count > 1
 
@@ -68,23 +49,18 @@ def extract_metric(metric_desc: str) -> str:
         canonical = _keyword_extract(text)
         if canonical:
             return canonical
-        # No keyword found — verbose descriptions (4+ words) → generic fallback.
-        # Short phrases (2-3 words) pass through so the resolver can still
-        # match them via alias (e.g. "Equivalent (CoT)" →
-        # math-equivalent-chain-of-thought).
+        # A 2-3 word phrase may still be an alias ("Equivalent (CoT)"), so only
+        # longer verbose text falls back to the generic bucket.
         if not from_dot and word_count > 3:
             return "score"
 
     return text
 
 
-# Ordered from most-specific to most-generic.  When multiple patterns
-# match, the earliest *position* in the input text wins (see
-# _keyword_extract).
+# Most specific first; among matches, the earliest position in the text wins
+# (see `_keyword_extract`).
 _METRIC_KEYWORDS: list[tuple[str, str]] = [
-    # Multi-word / compound patterns
-    # pass@N: the trailing (?!\d) is load-bearing. Without it `pass@1`
-    # matches inside `pass@10` and a pass@10 score is stored as pass@1.
+    # The trailing (?!\d) is load-bearing: `pass@1` matches inside `pass@10`.
     (r"pass@10(?!\d)",                   "Pass@10"),
     (r"pass@8(?!\d)",                    "Pass@8"),
     (r"pass@1(?!\d)",                    "Pass@1"),
@@ -92,18 +68,13 @@ _METRIC_KEYWORDS: list[tuple[str, str]] = [
     (r"pass[\s_-]*at[\s_-]*8(?!\d)",     "Pass@8"),
     (r"pass[\s_-]*at[\s_-]*1(?!\d)",     "Pass@1"),
     (r"mean[\s_-]*win[\s_-]*rate",       "Mean Win Rate"),
-    # AlpacaEval's two win-rate variants are different estimators from the
-    # plain win rate; they must not be swallowed by the generic pattern.
-    # `lc` is anchored so a word merely ending in "lc" ("Calc Win Rate") is a
-    # plain win rate; the price is a camel-case run ("AlpacaEvalLC Win Rate"),
-    # which no known source emits.
+    # AlpacaEval's variants are different estimators from the plain win rate.
+    # `lc` is anchored so "Calc Win Rate" stays a plain win rate.
     (r"(?:(?<![a-z])lc|length[\s_-]*controlled)[\s_-]*win[\s_-]*rate", "Length-Controlled Win Rate"),
     (r"discrete[\s_-]*win[\s_-]*rate",   "Discrete Win Rate"),
     (r"win[\s_-]*rate",                  "Win Rate"),
     (r"mean[\s_-]*response[\s_-]*time",  "Mean Response Time"),
-    # "Mean Progress Score" is a distinct measurement (fraction of a
-    # scenario's steps completed), not a mean of scores — it must be caught
-    # before the generic `score` pattern swallows it.
+    # A fraction of scenario steps completed, not a mean of scores.
     (r"mean[\s_-]*progress[\s_-]*score", "Mean Progress Score"),
     (r"mean[\s_-]*score",                "Mean Score"),
     # HELM's near-miss exact-match variants are separately computed stats.
@@ -114,11 +85,9 @@ _METRIC_KEYWORDS: list[tuple[str, str]] = [
     (r"exact[\s_-]*match",               "Exact Match"),
     (r"equivalent[\s_-]*\(?chain[\s_-]*of[\s_-]*thought", "Equivalent (CoT)"),
     (r"\bbrier\b",                       "Brier Score"),
-    # A benchmark-specific judge score is its own canonical, not the generic
-    # score. (LEXam's leaderboard header "Judge Scores on Open Questions" is a
-    # scoped alias of the same metric in the seed and is deliberately NOT
-    # matched here: the extractor is source-agnostic and must not globalise a
-    # header the registry scoped to one source.)
+    # Its own canonical, not the generic score. The LEXam header "Judge Scores
+    # on Open Questions" is deliberately NOT matched: it is a source-scoped
+    # alias in the seed, and this extractor is source-agnostic.
     (r"open[\s_-]*questions?[\s_-]*judge[\s_-]*scores?", "Open Question Judge Score"),
     (r"bleu[\s_-]*4",                    "BLEU-4"),
     (r"cot[\s_-]*correct",              "COT correct"),
@@ -130,8 +99,7 @@ _METRIC_KEYWORDS: list[tuple[str, str]] = [
     (r"max[\s_-]*delta",                 "max-delta"),
     (r"benchmark\s+evaluation",          "score"),
     (r"outperform",                      "rank"),
-    # Compound accuracy types (before generic accuracy)
-    # Patterns sourced from metric_names in evaleval/card_backend eval-list.
+    # Compound accuracy types, before generic accuracy.
     (r"ast[\s_-]*accuracy",              "AST Accuracy"),
     (r"ifeval[\s_-]*strict",             "IFEval Strict Acc"),
     (r"normali[sz]ed[\s_-]*accuracy",    "Normalized Accuracy"),
@@ -144,12 +112,10 @@ _METRIC_KEYWORDS: list[tuple[str, str]] = [
     (r"recursive[\s_-]*summarization[\s_-]*accuracy", "Accuracy"),
     (r"total[\s_-]*cost",                "cost"),
     (r"cost[\s_-]*per[\s_-]*task",       "cost-per-task"),
-    # Class-averaged F1 (before generic F1, which would swallow both)
     (r"macro[\s_-]*f1",                  "Macro F1"),
     (r"micro[\s_-]*f1",                  "Micro F1"),
-    # Benchmark-scoped safety rubrics. Each is its own canonical with its own
-    # rubric and direction, so the generic tail ("Score", "Harmlessness") must
-    # not swallow them onto `score` / `harmlessness`.
+    # Benchmark-scoped safety rubrics: each has its own rubric and direction,
+    # so the generic tail must not fold them onto `score` / `harmlessness`.
     (r"harmbench[\s_-]*refusal[\s_-]*score",
      "HarmBench Refusal Score"),
     (r"xstest[\s_-]*appropriateness[\s_-]*score",
@@ -158,16 +124,15 @@ _METRIC_KEYWORDS: list[tuple[str, str]] = [
      "SimpleSafetyTests Safety Score"),
     (r"anthropic[\s_-]*red[\s_-]*team(?:ing)?[\s_-]*harmlessness[\s_-]*score",
      "Anthropic Red Team Harmlessness Score"),
-    # Model-scored generation metrics whose variant tail ("F1", "Accuracy")
-    # the single-word patterns below would otherwise swallow onto the plain
-    # f1 / accuracy canonicals.
+    # Model-scored metrics whose tail ("F1", "Accuracy") the single-word
+    # patterns would otherwise claim.
     (r"bertscore[\s_-]*f1?\b",            "BERTScore-F"),
     (r"bertscore[\s_-]*p(?:recision)?\b", "BERTScore-P"),
     (r"bertscore[\s_-]*r(?:ecall)?\b",    "BERTScore-R"),
     (r"bleurt[\s_-]*acc(?:uracy)?\b",     "BLEURT_acc"),
     (r"bleurt[\s_-]*diff\b",              "BLEURT_diff"),
     (r"bleurt[\s_-]*max\b",               "BLEURT_max"),
-    # Single-word patterns (generic, checked last by position)
+    # Generic single-word patterns.
     (r"\baccuracy\b",                    "Accuracy"),
     (r"\bacc\b",                         "Accuracy"),
     (r"\bscores?\b",                     "score"),
@@ -182,7 +147,7 @@ _METRIC_KEYWORDS: list[tuple[str, str]] = [
 
 
 def _keyword_extract(text: str) -> str | None:
-    """Return the canonical metric name for the first keyword found in *text*."""
+    """Canonical metric name for the earliest-positioned keyword in *text*."""
     lower = text.lower()
     best: str | None = None
     best_pos = len(lower) + 1
@@ -198,9 +163,8 @@ def _keyword_extract(text: str) -> str | None:
 # Benchmark-name cleaning
 # ------------------------------------------------------------------
 
-# Trailing metric patterns for space-separated names (e.g.
-# "Gaming Score" → "Gaming").  Checked with ``re.search`` against
-# the lowered name; the first match wins.
+# Trailing metric patterns for space-separated names ("Gaming Score" →
+# "Gaming"); first match wins.
 _TRAILING_METRIC_RE: list[str] = [
     r"mean\s+win\s+rate$",
     r"mean\s+response\s+time$",
@@ -215,21 +179,16 @@ _TRAILING_METRIC_RE: list[str] = [
 ]
 
 
-# Segments that never carry benchmark identity in a dotted
-# ``evaluation_name``: the aggregate marker sources use for the
-# whole-benchmark rollup, and bare version fragments left behind by
-# splitting a dotted version (``terminal-bench-2.0`` → ``2``, ``0``).
+# Aggregate markers never carry benchmark identity in a dotted ``evaluation_name``.
 _AGGREGATE_SEGMENTS = {"overall"}
 
 
 def prepare_eval_name_segments(eval_name: str | None) -> list[str] | None:
-    """Split a dotted ``evaluation_name`` into candidate identity segments.
-
-    Applies only the rewrites that need no registry knowledge: collapse
-    identical adjacent segments (``bbq.bbq.overall`` → ``bbq.overall``),
-    drop aggregate markers and numeric fragments. Returns None for names
-    ``clean_eval_name`` would not dot-split, so the structured path and the
-    legacy path see exactly the same set of names.
+    """Split a dotted ``evaluation_name`` into candidate identity segments,
+    collapsing identical adjacent segments (``bbq.bbq.overall`` →
+    ``bbq.overall``) and dropping aggregate markers and numeric fragments
+    (``terminal-bench-2.0`` → ``2``, ``0``). Returns None for names
+    ``clean_eval_name`` would not dot-split, so both paths see the same names.
     """
     if not eval_name or not isinstance(eval_name, str):
         return None
@@ -251,33 +210,22 @@ def prepare_eval_name_segments(eval_name: str | None) -> list[str] | None:
 
 
 def clean_eval_name(eval_name: str) -> str:
-    """Strip embedded metric information from an ``evaluation_name``.
+    """Strip embedded metric information from an ``evaluation_name``, leaving
+    the benchmark portion.
 
-    EEE configs often encode both benchmark *and* metric in a single
-    ``evaluation_name`` string.  This function extracts the benchmark
-    portion so that the metric lives only in ``metric_id``.
-
-    Patterns handled:
-
-    * **Dot notation** — ``"bfcl.live.live_accuracy"`` → ``"bfcl live"``
-      (last segment is the metric, everything before is the benchmark)
-    * **Underscore suffix** — ``"fibble1_arena_win_rate"`` → ``"fibble1 arena"``
-    * **Trailing words** — ``"Gaming Score"`` → ``"Gaming"``
+    * Dot notation — ``"bfcl.live.live_accuracy"`` → ``"bfcl live"`` (the last
+      segment is the metric)
+    * Underscore suffix — ``"fibble1_arena_win_rate"`` → ``"fibble1 arena"``
+    * Trailing words — ``"Gaming Score"`` → ``"Gaming"``
     """
     name = eval_name.strip()
     if not name:
         return name
 
-    # --- 1. Dot notation: split on last dot ------------------------------
-    # The last segment is the metric; everything before is the benchmark.
-    # e.g. "bfcl.live.live_simple_ast_accuracy" → "bfcl live"
     if "." in name and " " not in name:
         parts = name.rsplit(".", 1)[0].split(".")
         return " ".join(p.replace("_", " ") for p in parts)
 
-    # --- 2. Underscore/space names: strip trailing metric keywords -------
-    # Normalise underscores to spaces so "fibble1_arena_win_rate" and
-    # "Gaming Score" use the same codepath.
     has_underscores = "_" in name and " " not in name
     normalized = name.replace("_", " ") if has_underscores else name
 
@@ -288,6 +236,6 @@ def clean_eval_name(eval_name: str) -> str:
             prefix = normalized[: m.start()].strip()
             if prefix:
                 return prefix
-            break  # matched but prefix is empty — fall through
+            break  # the whole name is the metric; keep it as-is
 
     return name

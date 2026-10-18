@@ -1,7 +1,7 @@
-"""OpenRouter id adoption (specs/model-id-resolution PLAN.md G1/G2) — synthetic
-data, no network. Covers: eligible adoption on the mint and family paths, the
-variant-identity guard, tag/`~` cleanup, the tie-break, `openrouter/*`
-exclusion, old-id-as-alias, and core-collision suppression."""
+"""OpenRouter id adoption in the models.dev refresh: adoption on the mint and
+family paths, the variant-identity guard, tag and `~` cleanup, the tie-break,
+`openrouter/*` exclusion, old-id-as-alias, and core-collision suppression.
+Synthetic data, no network."""
 import json
 
 import pytest
@@ -48,9 +48,8 @@ def test_mint_path_adopts_openrouter_key_and_keeps_old_id_as_alias(mod):
 
 
 def test_mint_path_order_swapped_key_adopts_via_identity_sig(mod):
-    """The flagship rename class: token ORDER differs between the invented id
-    and the OpenRouter key (`claude-haiku-3` vs `claude-3-haiku`); the
-    order-insensitive identity sig still matches and the key is adopted."""
+    """Token order differs between the invented id and the key; the
+    order-insensitive identity sig still matches."""
     api = {
         "anthropic": {"id": "anthropic", "name": "Anthropic", "models": {
             "claude-zzz-3": _or_rec("claude-zzz-3", "Claude Zzz 3"),
@@ -99,9 +98,7 @@ def test_family_path_adopts_root_and_repoints_child_edges(mod):
 # Eligibility guards
 # ---------------------------------------------------------------------------
 def test_variant_only_key_does_not_rename_base(mod):
-    """A group whose only OpenRouter record is a VARIANT key keeps the invented
-    base id — the variant key never attaches to the base (identity guard),
-    matching the plan's `olmo-3-32b-think` / `nova-lite-v1` rule."""
+    """A variant key never attaches to the base: the base keeps its invented id."""
     api = {
         "kilo": {"id": "kilo", "name": "Kilo", "models": {
             "zorg-ai/zmodel-2.5": _or_rec("zorg-ai/zmodel-2.5", "ZModel 2.5"),
@@ -121,9 +118,8 @@ def test_variant_only_key_does_not_rename_base(mod):
 
 
 def test_tagged_key_adopts_tag_stripped_never_with_tag(mod):
-    """A `:free`-tagged OpenRouter key adopts its tag-stripped form (a key is
-    never adopted with a tag in it); the raw tagged spelling stays resolvable
-    as an alias (G2 verbatim)."""
+    """A tagged key is adopted tag-stripped; the raw tagged spelling stays
+    an alias."""
     api = {
         "openrouter": {"id": "openrouter", "name": "OpenRouter", "models": {
             "zorg-ai/zmodel-2.5:free": _or_rec("zorg-ai/zmodel-2.5:free", "ZModel 2.5"),
@@ -140,19 +136,14 @@ def test_tagged_key_adopts_tag_stripped_never_with_tag(mod):
 
 
 def test_latest_pointer_key_is_never_adopted(mod):
-    """A `~…-latest` moving-pointer key names no fixed release: it must not
-    become a canonical id."""
+    """A `-latest` moving pointer names no fixed release."""
     assert mod._clean_openrouter_key("~anthropic/claude-zzz-latest") is None
     assert mod._clean_openrouter_key("anthropic/claude-zzz-latest") is None
 
 
 def test_adoption_tie_break_shortest_then_alpha(mod):
-    """Several eligible keys: the shortest tag-stripped key wins (the
-    brand-stripped short spelling beats the doubled-brand one), then
-    alphabetical for determinism."""
+    """Shortest tag-stripped key wins, then alphabetical."""
     alias_index = mod._build_org_alias_index()
-    # Shortest: the entry answers both its own sig and the brand-stripped sig;
-    # the short external key wins over the doubled-brand one.
     entries = [{
         "id": "perplexity/perplexity-zonar-1", "org_id": "perplexity",
         "aliases": [], "parents": [], "metadata": "{}",
@@ -163,7 +154,6 @@ def test_adoption_tie_break_shortest_then_alpha(mod):
     ]
     mod._adopt_openrouter_ids(entries, recs, "perplexity", alias_index)
     assert entries[0]["id"] == "perplexity/zonar-1"
-    # Alphabetical among equal-length eligible keys.
     entries = [{
         "id": "zorg/z-a-9", "org_id": "zorg",
         "aliases": [], "parents": [], "metadata": "{}",
@@ -177,8 +167,7 @@ def test_adoption_tie_break_shortest_then_alpha(mod):
 
 
 def test_org_disagreeing_key_is_not_adopted(mod):
-    """An OpenRouter key under a DIFFERENT developer's namespace must not
-    re-attribute the entry (the `unsloth` re-upload vs `google/…` key class)."""
+    """A key under another developer's namespace never re-attributes the entry."""
     alias_index = mod._build_org_alias_index()
     entries = [{
         "id": "unsloth/zemma-3-4b-it", "org_id": "unsloth",
@@ -190,8 +179,7 @@ def test_org_disagreeing_key_is_not_adopted(mod):
 
 
 def test_hf_deferred_entry_is_never_renamed(mod):
-    """Rung 1 of the ladder: an HF-deferred entry keeps the real HF id even
-    when an identity-matching OpenRouter key exists."""
+    """An HF-deferred entry keeps the real HF id."""
     alias_index = mod._build_org_alias_index()
     entries = [{
         "id": "ZorgLabs/ZModel-2.5", "org_id": "zorglabs",
@@ -204,9 +192,7 @@ def test_hf_deferred_entry_is_never_renamed(mod):
 
 
 def test_rehost_junk_key_is_never_adopted(mod, monkeypatch):
-    """A key curation ruled junk (curation/rehost_repoint.json — the model's
-    real identity is elsewhere, e.g. a real HF repo the frozen oracle
-    predates) is excluded from adoption."""
+    """A key curation ruled junk (curation/rehost_repoint.json) is never adopted."""
     monkeypatch.setattr(mod, "_REHOST_JUNK_IDS", frozenset({"zorg-ai/zmodel-2.5"}))
     alias_index = mod._build_org_alias_index()
     entries = [{
@@ -222,11 +208,8 @@ def test_rehost_junk_key_is_never_adopted(mod, monkeypatch):
 # openrouter/* router pseudo-endpoints
 # ---------------------------------------------------------------------------
 def test_router_pseudo_endpoints_never_adopted_as_ids(mod):
-    """`openrouter/*` keys are routing products: they are never ADOPTED as
-    canonical ids and never emitted verbatim as aliases. The pre-existing bare
-    mints (`auto`, `bodybuilder`) stay — the raws exist in EEE data and the
-    policy removes nothing — but no canonical may live under the `openrouter/`
-    namespace."""
+    """`openrouter/*` keys are routing products: never a canonical id, never
+    a verbatim alias. The bare mints stay (nothing is removed)."""
     api = {
         "openrouter": {"id": "openrouter", "name": "OpenRouter", "models": {
             "openrouter/auto": _or_rec("openrouter/auto", "Auto Router"),
@@ -251,9 +234,8 @@ def test_router_pseudo_endpoints_never_adopted_as_ids(mod):
 # Core collision suppresses adoption (curated id wins)
 # ---------------------------------------------------------------------------
 def test_core_collision_suppresses_adopted_mint(mod, tmp_path):
-    """An adopted mint whose id normalized-collides with a curated core entry
-    is suppressed and enriched onto the core id — core wins, the OpenRouter
-    key survives only as an alias (the `aion-labs/aion-2-0` class)."""
+    """An adopted mint colliding with core folds onto the core id; the key
+    survives only as an alias."""
     core = tmp_path / "core.yaml"
     core.write_text(yaml.safe_dump({"entries": [
         {"id": "zorg-ai/zmodel-2-5", "display_name": "ZModel 2.5", "aliases": []},
@@ -272,7 +254,7 @@ def test_core_collision_suppresses_adopted_mint(mod, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# G2: verbatim OpenRouter keys as aliases everywhere
+# Verbatim OpenRouter keys as aliases
 # ---------------------------------------------------------------------------
 def test_provider_alias_forms_emit_openrouter_key_verbatim(mod):
     forms = mod._provider_alias_forms(
@@ -289,16 +271,13 @@ def test_provider_alias_forms_slash_raw_still_dropped_for_other_providers(mod):
 
 
 def test_provider_alias_forms_never_emit_router_keys_verbatim(mod):
-    """The G2 verbatim-key emission never surfaces an `openrouter/*` router
-    pseudo-endpoint key (the normalized bare form still flows, as before —
-    the router products stay resolvable, per the nothing-is-removed policy)."""
+    """A router key is never emitted verbatim; its bare form still flows."""
     forms = mod._provider_alias_forms("openrouter/auto", None, "openrouter")
     assert "openrouter/auto" not in forms
 
 
 def test_openrouter_key_aliases_variant_entity_not_base(mod):
-    """G2 identity rule end-to-end: a variant OpenRouter key aliases the
-    VARIANT entity when the family emits one — never the base."""
+    """A variant key aliases the variant entity, never the base."""
     api = {
         "anthropic": {"id": "anthropic", "name": "Anthropic", "models": {
             "claude-zzz-3": _or_rec("claude-zzz-3", "Claude Zzz 3"),
@@ -316,6 +295,4 @@ def test_openrouter_key_aliases_variant_entity_not_base(mod):
     root = by_id["anthropic/claude-zzz-3"]
     snap = by_id["anthropic/claude-zzz-3-20250101"]
     assert "anthropic/claude-zzz-3-20250101" not in root["aliases"]
-    # The dated key names the dated child — it IS the child's id here, and the
-    # child's alias set never leaks onto the base.
     assert snap["parents"], "dated child must keep its typed edge"

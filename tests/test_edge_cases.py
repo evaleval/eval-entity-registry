@@ -1,6 +1,4 @@
-"""
-Edge case tests: degenerate inputs, alias uniqueness, normalization, API consistency.
-"""
+"""Degenerate inputs, alias uniqueness, normalization, and API response consistency."""
 import pytest
 from fastapi.testclient import TestClient
 
@@ -54,7 +52,7 @@ class TestNormalization:
         assert normalize("math  level  5") == "math level 5"
 
     def test_punctuation_then_space_collapse(self):
-        # Punctuation removal can create adjacent spaces — they must be collapsed
+        # Punctuation removal can leave adjacent spaces; they must collapse.
         assert normalize("hello!  world") == "hello world"
 
     def test_hyphen_collapsed_to_space(self):
@@ -68,8 +66,7 @@ class TestNormalization:
         assert normalize("mmlu_pro") == normalize("MMLU-PRO")
 
     def test_slash_collapsed_like_other_separators(self):
-        # '/' collapses with space/_/- so that 'tau-bench-2/airline' and
-        # 'tau-bench-2_airline' resolve to the same canonical entity.
+        # '/' collapses like the other separators.
         assert normalize("meta-llama/Llama-3") == "meta llama llama 3"
         assert normalize("tau-bench-2/airline") == normalize("tau-bench-2_airline")
 
@@ -80,7 +77,6 @@ class TestNormalization:
         assert normalize("  accuracy  ") == "accuracy"
 
     def test_unicode_passthrough(self):
-        # Non-ASCII word chars (\w includes unicode) pass through
         result = normalize("résumé")
         assert "résumé" in result
 
@@ -104,7 +100,7 @@ class TestSlugify:
         assert slug.startswith("auto-")
 
     def test_dashes_only_produces_auto_id(self):
-        # "---" has no word chars; after strip("-") → ""
+        # No word chars survive the strip.
         slug = _slugify("---")
         assert slug.startswith("auto-")
 
@@ -112,13 +108,11 @@ class TestSlugify:
         assert _slugify("MATH Level 5") == "math-level-5"
 
     def test_hf_model_id_preserved(self):
-        # Slashes and hyphens are kept
         slug = _slugify("meta-llama/Llama-3.1-8B")
         assert "/" in slug
         assert "meta-llama" in slug
 
     def test_two_degenerate_inputs_produce_different_ids(self):
-        # Each call produces a unique auto-ID (UUID-based)
         assert _slugify("!!!") != _slugify("!!!")
 
 
@@ -135,14 +129,12 @@ class TestDegenerateResolution:
         assert result["canonical_id"].startswith("auto-")
 
     def test_whitespace_raw_value_returns_no_match(self, store):
-        """Whitespace-only raw_value hits the early guard and returns no_match."""
         svc = ResolutionService(store)
         result = svc.resolve("   ", "benchmark", "cfg", None)
         assert result["canonical_id"] is None
         assert result["strategy"] == "no_match"
 
     def test_degenerate_input_idempotent(self, store):
-        """Two resolves of the same degenerate string return the same ID."""
         svc = ResolutionService(store)
         r1 = svc.resolve("!!!", "benchmark", "cfg", None)
         r2 = svc.resolve("!!!", "benchmark", "cfg", None)
@@ -151,7 +143,6 @@ class TestDegenerateResolution:
         assert len(store.table("canonical_benchmarks")) == 1
 
     def test_very_long_raw_value(self, store):
-        """Very long raw values should resolve without error."""
         svc = ResolutionService(store)
         long_value = "A" * 500
         result = svc.resolve(long_value, "benchmark", "cfg", None)
@@ -175,15 +166,12 @@ class TestAliasUniqueness:
             "confidence": 1.0,
             "notes": None,
         }
-        # First insert should succeed
         queries.add_alias(store, alias_data)
         assert len(store.table("aliases")) == 1
 
-        # Second insert of same key should raise
         with pytest.raises(ValueError, match="Alias already exists"):
             queries.add_alias(store, alias_data)
 
-        # Still only one row
         assert len(store.table("aliases")) == 1
 
     def test_add_alias_first_succeeds(self, store):
@@ -201,7 +189,7 @@ class TestAliasUniqueness:
         assert len(store.table("aliases")) == 1
 
     def test_rejected_alias_allows_new_insert(self, store):
-        """A rejected alias does not block a new one for the same key."""
+        """A rejected alias does not block a new alias for the same key."""
         queries.add_alias(store, {
             "raw_value": "IFEval",
             "entity_type": "benchmark",
@@ -213,7 +201,6 @@ class TestAliasUniqueness:
             "confidence": 1.0,
             "notes": None,
         })
-        # Should not raise — rejected alias doesn't block
         queries.add_alias(store, {
             "raw_value": "IFEval",
             "entity_type": "benchmark",
@@ -228,16 +215,16 @@ class TestAliasUniqueness:
         assert len(store.table("aliases")) == 2
 
     def test_resolution_service_idempotent_no_duplicate(self, store):
-        """resolve() twice with rerun=False produces exactly one alias."""
+        """Resolving the same value twice writes exactly one alias."""
         svc = ResolutionService(store)
         svc.resolve("IFEval", "benchmark", "cfg", None)
         svc.resolve("IFEval", "benchmark", "cfg", None)
-        # Aliases are buffered during resolution; flush to check count
+        # Aliases are buffered during resolution.
         queries.flush_pending(store)
         assert len(store.table("aliases")) == 1
 
     def test_scoped_and_global_aliases_coexist(self, store):
-        """Same raw_value can have both a global alias and a config-scoped alias."""
+        """A global and a config-scoped alias may share a raw_value."""
         queries.add_alias(store, {
             "raw_value": "MATH",
             "entity_type": "benchmark",
@@ -263,7 +250,7 @@ class TestAliasUniqueness:
         assert len(store.table("aliases")) == 2
 
     def test_rebuilt_alias_index_preserves_global_aliases(self, store):
-        """Global aliases remain lookupable after parquet string columns reload as pd.NA."""
+        """A global alias stays lookupable after its source_config reloads as pd.NA."""
         import pandas as pd
 
         queries.add_alias(store, {
@@ -319,24 +306,22 @@ class TestApiResponseConsistency:
         assert r.json()[0]["tags"] == ["instruct"], "GET list should return decoded list"
 
     def test_post_get_round_trip_consistent(self, client):
-        """POST then GET should return identical tag/metadata values."""
         payload = {"id": "test-harness", "display_name": "Test", "metadata": {"key": "value"}}
         post_r = client.post("/api/v1/harnesses", json=payload)
         get_r = client.get("/api/v1/harnesses/test-harness")
         assert post_r.json()["metadata"] == get_r.json()["metadata"]
 
     def test_explicit_false_boolean_patch(self, client):
-        """PATCH with lower_is_better=False should persist False, not be dropped."""
+        """An explicit False in a PATCH persists; it is not treated as unset."""
         client.post("/api/v1/metrics", json={"id": "perplexity", "display_name": "PPL", "lower_is_better": True})
         r = client.patch("/api/v1/metrics/perplexity", json={"lower_is_better": False})
         assert r.status_code == 200
         assert r.json()["lower_is_better"] is False
-        # Confirm via GET
         get_r = client.get("/api/v1/metrics/perplexity")
         assert get_r.json()["lower_is_better"] is False
 
     def test_empty_tags_default(self, client):
-        """Tags default to empty list, not null."""
+        """Tags default to [] rather than null."""
         client.post("/api/v1/benchmarks", json={"id": "no-tags-bench", "display_name": "No Tags"})
         r = client.get("/api/v1/benchmarks/no-tags-bench")
         assert r.status_code == 200
@@ -372,29 +357,18 @@ class TestModelPathParam:
 
 class TestSourceConfigScoping:
     def test_same_raw_value_different_configs_normalizes_to_same_entity(self, store):
-        """
-        "MATH" in helm_lite creates a draft entity and alias.
-        "MATH" in hfopenllm_v2 then finds the same entity via the normalized strategy
-        (same string → same canonical). This is correct: if the strings are identical,
-        they should map to one canonical unless a config-scoped alias explicitly overrides it.
-        """
+        """Identical strings from different configs map to one canonical (one
+        entity, one alias per config) unless a scoped alias overrides."""
         svc = ResolutionService(store)
         r1 = svc.resolve("MATH", "benchmark", "helm_lite", None)
         r2 = svc.resolve("MATH", "benchmark", "hfopenllm_v2", None)
         assert r1["canonical_id"] == r2["canonical_id"]
-        # Flush buffered writes and verify counts
         queries.flush_pending(store)
-        # Two aliases (one per config-scope), one entity
         assert len(store.table("aliases")) == 2
         assert len(store.table("canonical_benchmarks")) == 1
 
     def test_config_scoped_alias_overrides_global_normalization(self, store):
-        """
-        A config-scoped alias for the same raw value overrides the global normalized match.
-        This is how MATH in helm_lite (→ math) and MATH in some_config (→ math-variant)
-        are kept separate when genuinely different.
-        """
-        # Seed global "math" entity and alias
+        """A config-scoped alias overrides the global match for its config only."""
         queries.add_alias(store, {
             "raw_value": "MATH",
             "entity_type": "benchmark",
@@ -406,7 +380,6 @@ class TestSourceConfigScoping:
             "confidence": 1.0,
             "notes": None,
         })
-        # Seed a config-scoped override for "other_config"
         queries.add_alias(store, {
             "raw_value": "MATH",
             "entity_type": "benchmark",
@@ -419,15 +392,13 @@ class TestSourceConfigScoping:
             "notes": None,
         })
         svc = ResolutionService(store)
-        # Global alias used when no config-scoped alias exists
         r1 = svc.resolve("MATH", "benchmark", "helm_lite", None)
         assert r1["canonical_id"] == "math"
-        # Config-scoped alias takes priority
         r2 = svc.resolve("MATH", "benchmark", "other_config", None)
         assert r2["canonical_id"] == "math-other-variant"
 
     def test_global_alias_resolves_across_configs(self, store):
-        """A global alias (source_config=None) is used by any config."""
+        """A global alias (source_config=None) serves every config."""
         queries.add_alias(store, {
             "raw_value": "IFEval",
             "entity_type": "benchmark",

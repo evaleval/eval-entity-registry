@@ -22,7 +22,7 @@ def fresh_store(monkeypatch):
     store._loaded = True
     monkeypatch.setattr(hf_store, "_store", store)
 
-    # Set up app.state so route dependencies work without lifespan
+    # Route dependencies read app.state; no lifespan runs under TestClient.
     app.state.resolution_service = ResolutionService(store)
     app.state.log_writer = ResolveLogWriter("")  # disabled (no bucket)
     return store
@@ -47,10 +47,7 @@ class TestHealth:
         assert "benchmarks" in data
 
 
-# The lean HTTP ResolveResponse is the type-agnostic CORE + ancestry +
-# resolution_detail. Type-specific entity fields are NOT on the resolve response;
-# they live on the entity GET endpoints (models / benchmarks / families /
-# composites). These are the fields a consumer must fetch there, not from resolve.
+# Type-specific entity fields live on the entity GET endpoints, never on resolve.
 _DROPPED_RESOLVE_FIELDS = {
     "parent_canonical_id", "resolved_leaf_id", "root_model_id",
     "lineage_origin_org_id", "model_group_id", "model_family_id",
@@ -88,8 +85,7 @@ class TestResolve:
         assert len(r.json()) == 2
 
     def test_resolve_response_is_lean_core(self, client):
-        """The HTTP response carries ONLY the type-agnostic core + ancestry
-        + resolution_detail — no type-specific entity fields."""
+        """The resolve response is exactly the type-agnostic core."""
         r = client.post("/api/v1/resolve", json={
             "raw_value": "SomeBench", "entity_type": "benchmark",
         })
@@ -133,9 +129,7 @@ class TestEntityCRUD:
         assert len(r.json()) >= 1
 
     def test_list_search_with_null_columns_serializes(self, client):
-        """Regression: list endpoints with a search term used to 500 when
-        matching rows had nullable columns (pd.NA / NaN) — those fields
-        must serialize to JSON null, not raise."""
+        """Nullable columns (pd.NA / NaN) in search results serialize to JSON null."""
         client.post("/api/v1/benchmarks", json={"id": "math", "display_name": "MATH"})
         r = client.get("/api/v1/benchmarks?search=math")
         assert r.status_code == 200
@@ -153,10 +147,8 @@ class TestEntityCRUD:
         assert body["dataset_repo"] is None
 
     def test_post_model_with_parents_round_trips(self, client):
-        """Regression: `parents` is a list-of-dicts on the API side but
-        a JSON-encoded string in the parquet column. The route's
-        `_JSON_FIELDS` set must include `parents` so POST→GET round-trips
-        cleanly and the GET response decodes the column to a list."""
+        """`parents` is a list on the API side and a JSON string in parquet;
+        POST then GET must round-trip it as a list."""
         body = {
             "id": "lab/test-model",
             "display_name": "Test Model",
@@ -170,16 +162,13 @@ class TestEntityCRUD:
         assert r.status_code == 201, r.text
 
         def _strip_axis_none(parents):
-            # Pydantic serializes Optional[axis] as `axis: None` for edges
-            # where the input omitted axis. Drop None for comparison.
+            # Pydantic emits `axis: None` for edges that omitted it.
             return [{k: v for k, v in p.items() if v is not None} for p in parents]
 
         post_parents = r.json()["parents"]
         assert isinstance(post_parents, list)
         assert _strip_axis_none(post_parents) == body["parents"]
 
-        # GET round-trip: same shape (axis=None survives the JSON round-trip
-        # because POST stored it that way via Pydantic model_dump).
         g = client.get("/api/v1/models/lab/test-model")
         assert g.status_code == 200
         get_parents = g.json()["parents"]
@@ -192,8 +181,7 @@ class TestNonFiniteBounds:
         client.post("/api/v1/metrics", json={
             "id": "perplexity-like", "display_name": "Perplexity-like",
             "score_type": "continuous", "lower_is_better": True,
-            # The wire form: JSON has no infinity literal, so the string is the
-            # input form too (pydantic parses it to float("inf")).
+            # JSON has no infinity literal; the string is the wire form both ways.
             "min_score": 1.0, "max_score": "Infinity",
         })
         r = client.get("/api/v1/metrics/perplexity-like")
@@ -204,9 +192,7 @@ class TestNonFiniteBounds:
         assert "Infinity" in r.text and "inf" not in r.text.replace("Infinity", "")
 
     def test_validation_error_echoing_an_infinite_input_still_renders(self, client):
-        """`1e400` parses to inf, and the 422 echoes the offending input
-        back; the handler must use the registry response class or the echo
-        itself raises and the client gets a 500."""
+        """`1e400` parses to inf; the 422 that echoes it must render, not 500."""
         r = client.post("/api/v1/metrics", content=b'{"id": [1e400], "display_name": "x"}',
                         headers={"content-type": "application/json"})
         assert r.status_code == 422, r.text

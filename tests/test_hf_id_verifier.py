@@ -1,8 +1,6 @@
-"""Unit tests for HfIdVerifier — the resolver's injected HF id checker.
-
-All live-tier tests mock the Hub API client; nothing here touches the
-network. The autouse conftest fixture disables the live flag, so tests that
-exercise the live tier re-enable it explicitly."""
+"""HfIdVerifier: index tiers, live-tier caching, budget, breaker and
+single-flight. The Hub API is mocked; the live flag (off by default in
+conftest) is re-enabled per test."""
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -30,9 +28,8 @@ class _FakeRepoNotFound(Exception):
 
 
 class _FakeGated(_FakeRepoNotFound):
-    # Mirrors the REAL hierarchy: GatedRepoError subclasses
-    # RepositoryNotFoundError. The except-clause order in _live_lookup
-    # depends on this, so the fakes must not flatten it.
+    # GatedRepoError subclasses RepositoryNotFoundError upstream; the
+    # except-clause order in _live_lookup depends on it.
     pass
 
 
@@ -41,8 +38,7 @@ class _FakeValidation(Exception):
 
 
 def _patch_live(verifier, side_effect=None, return_id=None):
-    """Install a fake HfApi on the verifier and route the error classes the
-    live path imports to fakes we can raise."""
+    """Fake HfApi on the verifier, with the live path's error classes faked."""
     api = MagicMock()
     if side_effect is not None:
         api.model_info.side_effect = side_effect
@@ -173,9 +169,8 @@ def test_single_flight_duplicate_answers_unknown(live_enabled):
 
 
 def test_gated_repo_counts_as_existing(live_enabled):
-    # _FakeGated subclasses _FakeRepoNotFound (like the real classes), so
-    # this also proves the except-clause ORDER: gated must be caught before
-    # not-found, else every gated repo is negative-cached as a miss.
+    # Gated must be caught before not-found, else every gated repo is
+    # negative-cached as a miss.
     v, _ = _verifier(index={})
     api, patches = _patch_live(v, side_effect=_FakeGated())
     with patches:
@@ -195,8 +190,7 @@ def test_validation_error_does_not_poison_breaker(live_enabled):
     with patches:
         for i in range(5):
             assert v.check(f"acme/bad value {i}") is None
-    # All 5 went to the API (breaker never opened) and were cached as
-    # misses, not failures.
+    # Validation errors are misses, not failures: no breaker trip.
     assert api.model_info.call_count == 5
     assert v._breaker_open_until == 0.0
     with patches:
@@ -215,8 +209,7 @@ def test_single_flight_duplicate_does_not_burn_budget(live_enabled):
 
 
 def test_index_collision_verbatim_only():
-    # Two distinct repos share an id_norm: only case-insensitive-exact raws
-    # may answer from the index; others fall through (None with live off).
+    # Two repos share an id_norm: only case-insensitive-exact raws answer.
     collided = {"acme-widget-7b": {
         "acme/widget-7b": "acme/Widget-7B",
         "acme/widget.7b": "acme/Widget.7B",

@@ -26,10 +26,9 @@ async def lifespan(app: FastAPI):
     else:
         store.load()
 
-    # Singleton ResolutionService — avoids rebuilding AliasStore per request
+    # Singleton: avoids rebuilding the AliasStore per request.
     app.state.resolution_service = ResolutionService(store)
 
-    # Resolve log writer
     log_writer = ResolveLogWriter(settings.hf_log_bucket)
     app.state.log_writer = log_writer
     log_writer.start(settings.log_flush_interval_seconds)
@@ -40,18 +39,12 @@ async def lifespan(app: FastAPI):
 
 
 class RegistryJSONResponse(JSONResponse):
-    """JSON with a wire form for non-finite floats.
-
-    Metric bounds use `.inf` / `-.inf` for "unbounded on that side" (see the
-    seed/metrics.yaml header), and an infinite float is not JSON-compliant:
-    Starlette's JSONResponse raises on one (allow_nan=False), and a bare
-    json.dumps would emit the invalid literal `Infinity`. This renders them
-    as the strings "Infinity" / "-Infinity", the form every_eval_ever's
-    schema uses, and NaN as null. Registered as the app's default response
-    class AND on the validation-error handler, since a client can put an
-    infinity in a request body (`1e400` parses to inf) and the 422 echoes
-    the offending input back.
-    """
+    """JSON response that renders infinite floats (metric bounds meaning
+    "unbounded") as the strings "Infinity" / "-Infinity", the form
+    every_eval_ever's schema uses, and NaN as null: JSON has no infinity
+    literal and Starlette's JSONResponse raises on one. Also installed on the
+    validation-error handler, since `1e400` in a request body parses to inf
+    and the 422 echoes it back."""
 
     @staticmethod
     def _finite(value):

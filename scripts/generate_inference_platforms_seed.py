@@ -1,23 +1,13 @@
 #!/usr/bin/env python
-"""Generate seed/inference_platforms.yaml from the curated proposal JSON.
+"""Generate seed/inference_platforms.yaml from curation/inference_platforms.proposed.json.
 
-Reusable generator (mirrors the refresh_from_* pattern) that reads
-``curation/inference_platforms.proposed.json`` and writes
-``seed/inference_platforms.yaml`` with all platform entries.
+Emits id, display_name, kind, aliases, plus canonical_org / variant_of /
+homepage when present; informational-only JSON fields are dropped.
 
-Field mapping:
-  id, display_name, kind, aliases, canonical_org (when present),
-  variant_of (when present), homepage (when present).
-
-Informational-only JSON fields (source, api, models_dev_provider,
-n_models_on_modelsdev, note, also_author, also_hosts, alias_of) are dropped.
-
-Host-token folding (single-source): the host-token spellings
-(`fireworks/`, `-fireworks`, `-bedrock`, `azure/`, …) live in the JSON's
-separate ``eee_host_tokens`` section, NOT in ``platforms[].aliases``. For each
-eee_host_token form, the ``prefix:``/``suffix:`` marker is stripped to get the
-raw token, which is appended (de-duped) to the ``aliases`` list of the platform
-whose id == the token's ``platform`` value.
+Host-token spellings (`fireworks/`, `-bedrock`, `azure/`, …) live in the JSON's
+``eee_host_tokens`` section, not in ``platforms[].aliases``: each form's
+``prefix:``/``suffix:`` marker is stripped and the raw token appended (de-duped)
+to the aliases of the platform named by its ``platform`` value.
 
 Run from the repo root:
     uv run python scripts/generate_inference_platforms_seed.py
@@ -37,18 +27,12 @@ JSON_PATH = (
 )
 OUT_PATH = REPO_ROOT / "seed" / "inference_platforms.yaml"
 
-# Fields kept on each seed row, in stable output order. canonical_org /
-# variant_of / homepage are only emitted when present on the JSON entry.
 ALWAYS_FIELDS = ("id", "display_name", "kind", "aliases")
 OPTIONAL_FIELDS = ("canonical_org", "variant_of", "homepage")
 
 
 def _strip_marker(form: str) -> str:
-    """Strip the prefix:/suffix: marker from an eee_host_token form.
-
-    'prefix:fireworks/' -> 'fireworks/'
-    'suffix:-fireworks' -> '-fireworks'
-    """
+    """Strip the prefix:/suffix: marker from an eee_host_token form."""
     for marker in ("prefix:", "suffix:"):
         if form.startswith(marker):
             return form[len(marker):]
@@ -73,7 +57,6 @@ def build_rows(data: dict) -> list[dict]:
         rows.append(row)
         by_id[row["id"]] = row
 
-    # Fold the EEE host-token spellings into the matching platform's aliases.
     eee_host_tokens = data.get("eee_host_tokens", {})
     for token_name, info in eee_host_tokens.items():
         platform_id = info.get("platform")

@@ -24,8 +24,8 @@ import datasets
 
 
 def _scan_local_cache_for_configs() -> list[str]:
-    """List EEE configs from local HF datasets cache. Filters out -samples
-    auxiliary configs (different schema) and the synthetic 'default-*' fallback."""
+    """EEE configs in the local HF datasets cache, minus the -samples auxiliary
+    configs (different schema) and the synthetic 'default-*' fallback."""
     from pathlib import Path
     cache_root = Path.home() / ".cache" / "huggingface" / "datasets" / "evaleval___eee_datastore"
     if not cache_root.exists():
@@ -38,12 +38,10 @@ def _scan_local_cache_for_configs() -> list[str]:
 
 
 def _config_names_offline_fallback() -> list[str]:
-    """Try get_dataset_config_names (needs network). Offline, it returns
-    ['default'] — useless. Detect that and fall back to scanning the local
-    HF datasets cache."""
+    """EEE config names; offline, get_dataset_config_names returns ['default'],
+    so fall back to the local HF datasets cache."""
     try:
         names = datasets.get_dataset_config_names("evaleval/EEE_datastore")
-        # Offline mode returns ['default'] when network's down — drop into cache scan
         if names == ["default"]:
             cache_names = _scan_local_cache_for_configs()
             if cache_names:
@@ -105,8 +103,7 @@ def check_coverage(models: Counter) -> tuple[dict[str, dict], dict]:
 
     for raw_id, count in models.items():
         r = svc.resolve(raw_id, "model", None, None)
-        # `created_new` indicates the resolver auto-drafted, which means no
-        # canonical match — we treat that as "unresolved" for coverage.
+        # An auto-drafted result is no canonical match; count it as unresolved.
         resolved = (r["canonical_id"] is not None) and (not r["created_new"]) and (r["strategy"] != "auto_draft")
         per_id[raw_id] = {
             "count": count,
@@ -144,7 +141,6 @@ def main() -> int:
     configs = data["configs"]
 
     if not args.check_coverage and not args.emit_overrides_stub:
-        # Plain frequency table
         print(f"\n{'='*70}")
         print(f"  EEE model_info.id frequency ({len(counter)} distinct, "
               f"{sum(counter.values())} total occurrences)")
@@ -165,10 +161,8 @@ def main() -> int:
           f"({summary['occurrences_pct']:5.1f}%)")
     print()
 
-    # Stratified coverage — separates the synthetic long-tail from real-looking
-    # entries. The EEE corpus contains lots of one-off test/synthetic model ids;
-    # coverage on entries appearing in N+ distinct configs is a better proxy
-    # for "real model" coverage.
+    # EEE carries many one-off synthetic model ids; coverage on ids present in
+    # N+ configs is the better proxy for real-model coverage.
     print("  Coverage by config-presence threshold:")
     print(f"  {'min_configs':>12s}  {'distinct':>14s}  {'occurrences':>14s}")
     for threshold in (1, 2, 3, 5, 7):
@@ -187,7 +181,6 @@ def main() -> int:
               f"{o_resolved:5d}/{o_total:5d} ({o_pct:4.1f}%)")
     print()
 
-    # Sort unresolved by occurrence count desc
     unresolved = [
         (raw_id, info["count"]) for raw_id, info in per_id.items() if not info["resolved"]
     ]

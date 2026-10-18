@@ -2,48 +2,40 @@ name: Refresh hub-stats source
 
 on:
   schedule:
-    # Twice daily: upstream uploads ~13:18–13:59 UTC and GitHub delays these
-    # crons by hours, so the evening slot guarantees a run that sees the day's
-    # file. An unchanged upstream short-circuits before the download. The
-    # registry-seed-writer group below serialises this with refresh-models.
+    # Upstream uploads ~13:18–13:59 UTC and GitHub delays crons by hours, so
+    # the evening slot guarantees a run that sees the day's file.
     - cron: "37 11 * * *"
     - cron: "37 21 * * *"
   workflow_dispatch: {}
 
-# Direct-commit auto-sync (no PR review). Switch to PR mode if human review of
-# refreshes becomes warranted.
 permissions:
   contents: write
-  # `gh workflow run seed.yml` (downstream dispatch) requires actions:write.
+  # `gh workflow run seed.yml` needs actions:write; the default token has read.
   actions: write
-  # The stall beacon (final steps) opens/closes a single sticky tracking issue.
   issues: write
 
 env:
   GENERATED_PATH: seed/models/sources/hub_stats.generated.yaml
   STATE_PATH: seed/models/sources/hub_stats.state.json
 
-# One writer to main at a time. The group name is hard-coded and SHARED with
-# refresh-models.yml on purpose: it must NOT include github.workflow, or the
-# two writers get separate lanes and can again race each other's push and
-# seed.yml dispatch when the crons drift into the same window.
+# One writer to main at a time. The group name is shared with
+# refresh-models.yml on purpose and must not include github.workflow, or the
+# two writers get separate lanes and race each other's push and seed.yml
+# dispatch.
 concurrency:
   group: registry-seed-writer
   cancel-in-progress: false
-  # Hold every arrival; the default 'single' cancels the waiting writer, and a
-  # run that never starts cannot raise its own stall beacon.
+  # Hold every arrival: 'single' cancels the waiting writer, and a run that
+  # never starts cannot raise its own stall beacon.
   queue: max
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    # Include headroom for the correlated seed/publish child to queue behind
-    # another live publisher and then consume its own 60-minute budget.
     timeout-minutes: 180
     steps:
-      # Check out the live branch tip, not github.sha: that sha is pinned when
-      # the run is created, and the concurrency group can hold the run behind
-      # the other writer until it is stale, which gets the push rejected.
+      # Live branch tip, not github.sha: that sha is pinned at run creation, and
+      # the writer lane can hold this run until it is stale and its push rejected.
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.ref }}
@@ -65,15 +57,9 @@ jobs:
       - name: Refresh hub-stats generated source
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        # --live: read a fresh pinned upstream snapshot (~1.6 GB download,
-        # queried locally) instead of the committed offline cache the script
-        # defaults to for reproducible regens.
         run: uv run python scripts/refresh_from_hub_stats.py --live
 
-      # SMOKE tier (must pass — RED on failure). The YAML must parse, the seed
-      # loader must run, and the gate suite must COLLECT cleanly (catches import /
-      # path / module-load breakage). A failure here is pipeline breakage, not a
-      # data issue, so it stays loud RED to stand out from a routine skip.
+      # Infra tier: a failure here is pipeline breakage, not a data regression.
       - name: Smoke checks (pipeline integrity)
         run: |
           uv run python -c "import yaml; yaml.safe_load(open('$GENERATED_PATH'))"
@@ -86,22 +72,10 @@ jobs:
           LOCAL_MODE=true uv run eval-entity-registry seed --local
           LOCAL_MODE=true uv run pytest tests/test_gate_invariants.py --collect-only -q
 
-      # REGRESSION gate — the invariant suite over the fixtures that the smoke
-      # step's `seed --local` just wrote to fixtures/ (this step CONSUMES that
-      # output; keep it after the smoke step). A regen that re-mints a shadow,
-      # re-splits an org (e.g. reverts a same-uploader merge), or regresses a
-      # known resolution outcome FAILS here and the named step turns the job RED,
-      # so a stalled refresh is visible (not silently skipped). It is
-      # distinguishable from pipeline breakage by WHICH step failed: a smoke-step
-      # failure is infra; this step failing means "today's upstream would regress
-      # data, so nothing was committed." A failure here halts the job before
-      # Detect, so the commit/deploy steps never run.
-      # The models.dev dedup/confluence suite is part of this gate too:
-      # hub_stats.generated.yaml is an INPUT to the models_dev reconcile, so a
-      # hub-stats refresh that changes which models_dev mints are suppressed /
-      # donated would silently break the committed models_dev fixpoint (the
-      # confluence tests) while this cron stays green. Gate on it so such a
-      # refresh ABORTS (skips the day) instead of committing incoherence.
+      # Data tier, over the fixtures the smoke step just seeded (keep it after
+      # that step). A failure here means today's upstream would regress data and
+      # nothing is committed. The models.dev dedup suite is included because
+      # hub_stats.generated.yaml is an input to the models.dev reconcile.
       - name: Regression gate (blocks commit on data regression)
         run: LOCAL_MODE=true uv run pytest tests/test_gate_invariants.py tests/test_refresh_modelsdev_dedup.py -q
 
@@ -148,8 +122,8 @@ jobs:
           git push origin "HEAD:${GITHUB_REF_NAME}"
           echo "pushed_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      # Retry a previous publish failure even when today's generated data is
-      # unchanged; the sticky issue is the durable recovery signal.
+      # Also publish while a stall issue is open: a prior publish may have failed
+      # with unchanged data.
       - name: Decide whether registry publish is needed
         id: deploy
         env:
@@ -162,8 +136,6 @@ jobs:
             echo "needed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Wait for the correlated seed + flat-data publish to finish. Dispatch
-      # acceptance alone is not deployment success.
       - name: Publish and wait for verified completion
         if: steps.deploy.outputs.needed == 'true'
         env:
@@ -195,14 +167,11 @@ jobs:
           fi
           gh run watch "$run_id" --exit-status
 
-      # Stall beacon — ONE sticky tracking issue (deduplicated by the
-      # `refresh-hub-stats-stalled` label), never a new issue per run. ANY failure
-      # or cancellation (infra / data-regression / timeout / commit / dispatch) opens-or-comments the
-      # single issue. It is CLEARED only after a correlated downstream publish
-      # finishes successfully — never on dispatch acknowledgement alone. A
-      # committed-but-unpublished refresh is retried while the issue remains.
-      # All `gh` calls are best-effort (|| true) so a beacon-side
-      # API hiccup can't flip the run's real status.
+      # Stall beacon: one sticky issue keyed by label, never one per run. Any
+      # failure or cancellation opens-or-comments it; it is cleared only after
+      # the correlated downstream publish succeeds, never on dispatch
+      # acknowledgement. gh calls are best-effort so a beacon-side hiccup cannot
+      # flip the run's real status.
       - name: Raise/refresh stall beacon
         if: failure() || cancelled()
         env:

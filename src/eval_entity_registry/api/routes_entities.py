@@ -26,7 +26,6 @@ def _get_or_404(store, table, entity_id):
 
 _JSON_FIELDS = {
     "tags", "metadata", "parents",
-    # family / composite list columns (JSON-encoded on parquet).
     "benchmark_ids", "composite_keys", "source_configs", "folder_aliases",
 }
 
@@ -144,7 +143,7 @@ def patch_benchmark(benchmark_id: str, body: BenchmarkPatch, store: RegistryStor
 
 
 # ------------------------------------------------------------------
-# Families  (canonical_families — first-class read entity, no CRUD)
+# Families (read-only; no CRUD)
 # ------------------------------------------------------------------
 
 @router.get("/families")
@@ -163,13 +162,12 @@ def list_families(
 
 @router.get("/families/{family_id}")
 def get_family(family_id: str, store: RegistryStore = Depends(get_store)):
-    """A benchmark family: the member `benchmark_ids`, curated `category`,
-    and the `composite_keys` it rolls up into. Mirrors GET /benchmarks/{id}."""
+    """A benchmark family: member `benchmark_ids`, curated `category`, and the `composite_keys` it rolls up into."""
     return _decode(_get_or_404(store, "canonical_families", family_id))
 
 
 # ------------------------------------------------------------------
-# Composites  (canonical_composites — first-class read entity, no CRUD)
+# Composites (read-only; no CRUD)
 # ------------------------------------------------------------------
 
 @router.get("/composites")
@@ -188,8 +186,7 @@ def list_composites(
 
 @router.get("/composites/{composite_id}")
 def get_composite(composite_id: str, store: RegistryStore = Depends(get_store)):
-    """A composite (leaderboard / suite): its `source_configs` members and
-    the `family_id` it belongs to. Mirrors GET /benchmarks/{id}."""
+    """A composite (leaderboard / suite): its `source_configs` members and the `family_id` it belongs to."""
     return _decode(_get_or_404(store, "canonical_composites", composite_id))
 
 

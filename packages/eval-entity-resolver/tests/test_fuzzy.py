@@ -1,10 +1,6 @@
-"""Unit tests for the fuzzy resolution strategy primitives + integration tests
-for the new ``_ORG_ALIASES`` entries (zhipu/z-ai/moonshot families) and the
-``_drop_duplicated_org_prefix`` heuristic.
-
-The existing ``test_resolver.py`` covers fuzzy_match behavior end-to-end.
-This file focuses on the pure-function helpers and on the new aliases /
-behaviors landed alongside them.
+"""Fuzzy strategy primitives: duplicated-org-prefix collapse, host-prefix
+stripping, org normalisation, quant/HF suffix strip, platform capture, and
+the benchmark run-config strip.
 """
 from __future__ import annotations
 
@@ -34,9 +30,7 @@ class TestDropDuplicatedOrgPrefix:
         )
 
     def test_slug_form_dash(self):
-        # Slug input → slug output. The pipeline already uses `__` as the
-        # org/model separator, so we keep that shape; a downstream step
-        # can normalize to slash form if needed.
+        # Slug input keeps its `__` separator shape.
         assert (
             _drop_duplicated_org_prefix("moonshotai__moonshotai-kimi-k2-instruct")
             == "moonshotai__kimi-k2-instruct"
@@ -55,9 +49,8 @@ class TestDropDuplicatedOrgPrefix:
         )
 
     def test_does_not_collapse_distinct_tokens(self):
-        # gpt-4 and gpt-4-turbo share a substring but are different model
-        # paths, so collapsing would drop information. The hyphen-in-org
-        # guard keeps this from firing.
+        # `gpt-4` prefixes `gpt-4-turbo` but is a different model path;
+        # the hyphen-in-org guard must stop the collapse.
         assert _drop_duplicated_org_prefix("gpt-4/gpt-4-turbo") is None
 
     def test_real_case_openai_o1(self):
@@ -80,27 +73,25 @@ class TestDropDuplicatedOrgPrefix:
         )
 
     def test_case_insensitive_token_match(self):
-        # Token equality is case-insensitive; original casing is preserved
-        # in the returned string.
+        # Case-insensitive token match; original casing is preserved.
         assert (
             _drop_duplicated_org_prefix("Moonshotai/MOONSHOTAI-Kimi")
             == "Moonshotai/Kimi"
         )
 
     def test_substring_overlap_does_not_match(self):
-        # `openai` is not a strict prefix of `openaicommunity` followed by
-        # a separator, so this must NOT fire.
+        # `openai` is not `openaicommunity` followed by a separator.
         assert _drop_duplicated_org_prefix("openai/openaicommunity-x") is None
 
 
 # ---------------------------------------------------------------------------
-# _ORG_ALIASES integration tests (new entries)
+# _ORG_ALIASES integration tests
 # ---------------------------------------------------------------------------
 
 
 def _store_with_aliases(*rows) -> AliasStore:
-    """Mirror of the helper in test_resolver.py — builds an AliasStore from
-    (raw_value, entity_type, canonical_id, source_config, status) tuples."""
+    """Build an AliasStore from (raw_value, entity_type, canonical_id,
+    source_config, status) tuples."""
     from datetime import datetime, timezone
     import uuid
 
@@ -163,9 +154,7 @@ class TestNewOrgAliases:
 
 
 class TestDuplicatedOrgIntegration:
-    """End-to-end check that fuzzy_match wires _drop_duplicated_org_prefix
-    in the right place — the deduped candidate must go through alias
-    lookup AND through the org-alias pass."""
+    """The deduped candidate goes through alias lookup AND the org-alias pass."""
 
     def test_duplicated_prefix_resolves_via_alias(self):
         store = _store_with_aliases(
@@ -177,8 +166,7 @@ class TestDuplicatedOrgIntegration:
         assert result.strategy == "fuzzy"
 
     def test_duplicated_prefix_plus_org_alias(self):
-        """Combined: `moonshot/moonshot-kimi-k2` → dedup → `moonshot/kimi-k2`
-        → org-alias → `moonshotai/kimi-k2`."""
+        """Dedup then org-alias: `moonshot/moonshot-kimi-k2` → `moonshotai/kimi-k2`."""
         store = _store_with_aliases(
             ("moonshotai/kimi-k2", "model", "moonshotai/kimi-k2", None, "confirmed")
         )
@@ -194,23 +182,16 @@ class TestDuplicatedOrgIntegration:
 
 
 class TestDropHostPrefix:
-    """Unit coverage for the host/gateway/placeholder prefix stripper.
-
-    The helper recognizes 39 known hosting platforms plus placeholders,
-    and accepts both ``host/model`` and ``host.model`` separators. It now
-    returns a ``(bare_suffix, platform_id)`` tuple — the captured
-    ``platform_id`` is the canonical
-    inference_platform id when the host token carries one in the
-    single-source seed map, else None. Returns None (not a tuple) when the
-    prefix is not in the known set.
+    """`_drop_host_prefix` accepts ``host/model`` and ``host.model``; returns
+    ``(bare_suffix, platform_id)`` (platform_id None when the host token is
+    not in the seed map), or None when the prefix is not a known host.
     """
 
     # ------- slash-form positive cases -------
 
     def test_strips_unknown_slash_prefix(self):
-        # `unknown/` is the alphaxiv leaderboard placeholder for missing
-        # developer field — drop it and resolve on the bare suffix. The
-        # sentinel carries NO platform.
+        # `unknown/` is a leaderboard placeholder for a missing developer
+        # field; the sentinel carries no platform.
         assert _drop_host_prefix("unknown/openai-o1") == ("openai-o1", None)
 
     def test_strips_bedrock_slash_prefix(self):
@@ -330,7 +311,6 @@ class TestDropHostPrefix:
     # ------- platform-capture cases: tokens in the single-source map -------
 
     def test_captures_fireworks_platform(self):
-        # `fireworks/` is in the seed map → captures `fireworks-ai`.
         assert _drop_host_prefix("fireworks/llama-3") == ("llama-3", "fireworks-ai")
 
     def test_captures_together_platform(self):
@@ -343,16 +323,13 @@ class TestDropHostPrefix:
         assert _drop_host_prefix("azure/gpt-4") == ("gpt-4", "azure")
 
     def test_unmapped_host_token_captures_none(self):
-        # `vertex` is stripped for matching but has no `vertex/` token in
-        # the single-source seed map yet → platform None.
+        # `vertex` is stripped for matching but has no seed-map token.
         assert _drop_host_prefix("vertex/gemini-2.0") == ("gemini-2.0", None)
 
     # ------- dot-form positive cases -------
 
     def test_strips_bedrock_dot_prefix(self):
-        # Bedrock model IDs use dots: `bedrock.anthropic.claude-3-5`. The
-        # helper splits at the first dot only, so the rest can carry its
-        # own dotted segments.
+        # Bedrock model IDs use dots: `bedrock.anthropic.claude-3-5`.
         assert (
             _drop_host_prefix("bedrock.anthropic-claude-3-5")[0]
             == "anthropic-claude-3-5"
@@ -362,8 +339,7 @@ class TestDropHostPrefix:
         assert _drop_host_prefix("vertex.google-gemini-2.0")[0] == "google-gemini-2.0"
 
     def test_dot_form_only_first_dot_consumed(self):
-        # `bedrock.anthropic.claude-3-5` → first dot is the separator;
-        # anything after it (including subsequent dots) is the rest.
+        # Only the first dot is the separator; the rest keeps its dots.
         assert (
             _drop_host_prefix("bedrock.anthropic.claude-3-5")[0]
             == "anthropic.claude-3-5"
@@ -372,8 +348,6 @@ class TestDropHostPrefix:
     # ------- case-insensitivity -------
 
     def test_uppercase_unknown_slash(self):
-        # The map is lowercased; the helper lowercases the prefix before
-        # the membership check.
         assert _drop_host_prefix("UNKNOWN/openai-o1")[0] == "openai-o1"
 
     def test_mixed_case_bedrock_slash(self):
@@ -385,44 +359,37 @@ class TestDropHostPrefix:
     # ------- negative cases (still return None, not a tuple) -------
 
     def test_unknown_org_returns_none(self):
-        # `random` is not a hosting platform.
         assert _drop_host_prefix("random/openai-o1") is None
 
     def test_real_org_slash_returns_none(self):
-        # `openai` is a real org, not a host — the helper must NOT strip.
+        # A real org is not a host.
         assert _drop_host_prefix("openai/gpt-4") is None
 
     def test_anthropic_dot_form_returns_none(self):
-        # `anthropic` is a real org, not in the host set, even though
-        # Bedrock IDs sometimes look like `anthropic.claude-3-5`.
+        # A real org in Bedrock dot form is still not a host.
         assert _drop_host_prefix("anthropic.claude-3-5-sonnet") is None
 
     def test_no_separator_returns_none(self):
-        # Bare token with no `/` or `.` — nothing to strip.
         assert _drop_host_prefix("unknown") is None
 
     def test_empty_string_returns_none(self):
         assert _drop_host_prefix("") is None
 
     def test_empty_suffix_after_slash_returns_none(self):
-        # `unknown/` with empty rest — no model name to fall back to.
         assert _drop_host_prefix("unknown/") is None
 
     def test_empty_suffix_after_dot_returns_none(self):
-        # `bedrock.` with empty rest — no model name to fall back to.
         assert _drop_host_prefix("bedrock.") is None
 
     def test_slash_takes_precedence_over_dot(self):
-        # When both separators exist, slash is checked first. The prefix
-        # before the slash (`groq` here) is what's tested against the set.
+        # With both separators present, the slash prefix is the one tested.
         assert (
             _drop_host_prefix("groq/anthropic.claude-3-5")[0]
             == "anthropic.claude-3-5"
         )
 
     def test_substring_of_host_name_does_not_match(self):
-        # `bedrocky` is not the same token as `bedrock`. The helper
-        # compares the full prefix, not a substring.
+        # Full-token comparison: `bedrocky` is not `bedrock`.
         assert _drop_host_prefix("bedrocky/claude-3") is None
 
 
@@ -432,9 +399,7 @@ class TestDropHostPrefix:
 
 
 class TestNormalizeOrg:
-    """Direct unit coverage of `_normalize_org`. The integration tests in
-    `TestNewOrgAliases` exercise this through `Resolver.resolve`; these tests
-    pin the helper's contract independent of the resolver wiring."""
+    """`_normalize_org` contract, independent of the resolver wiring."""
 
     def test_deepseek_ai_to_deepseek(self):
         assert (
@@ -458,19 +423,17 @@ class TestNormalizeOrg:
         )
 
     def test_unknown_org_returns_none(self):
-        # `openai` is not in `_ORG_ALIASES` (already canonical).
+        # Already-canonical org: not in `_ORG_ALIASES`.
         assert _normalize_org("openai/gpt-4") is None
 
     def test_no_slash_returns_none(self):
-        # Helper requires a slash — bare tokens are out of scope.
         assert _normalize_org("deepseek-ai") is None
 
     def test_empty_string_returns_none(self):
         assert _normalize_org("") is None
 
     def test_case_insensitive_org_match(self):
-        # Map keys are lowercased; the helper lowercases the org token
-        # before lookup. Casing of the rest is preserved on output.
+        # Org lookup is case-insensitive; the rest keeps its casing.
         assert (
             _normalize_org("DeepSeek-AI/DeepSeek-V3")
             == "deepseek/DeepSeek-V3"
@@ -483,31 +446,22 @@ class TestNormalizeOrg:
 
 
 class TestDuplicatedOrgPlusSuffixIntegration:
-    """The dedup pass runs AFTER suffix stripping in `fuzzy_match`. So a
-    raw value with BOTH a duplicated org prefix AND a known suffix can
-    only resolve if the suffix-stripped form ALSO carries the duplicated
-    prefix (so dedup fires on it) — or if dedup runs once and the result
-    happens to match an alias as-is.
-
-    These tests pin the current behavior. If a future refactor re-runs
-    `_strip_suffix` on derived candidates produced by the dedup pass,
-    `test_double_prefix_plus_fc_suffix_resolves` will start passing.
+    """Order of operations in `fuzzy_match`: suffix-strip, host-strip,
+    dedup, org-alias. A value with both a duplicated prefix and a known
+    suffix resolves because the suffix-stripped form still carries the
+    duplicated prefix.
     """
 
     def test_dedup_alone_produces_expected_candidate(self):
-        # Pure-helper sanity check: dedup on the raw value yields a
-        # string that still carries the `-fc` suffix.
+        # Dedup alone leaves the `-fc` suffix in place.
         assert (
             _drop_duplicated_org_prefix("moonshotai/moonshotai-kimi-k2-fc")
             == "moonshotai/kimi-k2-fc"
         )
 
     def test_double_prefix_plus_fc_suffix_resolves(self):
-        """End-to-end: `moonshotai/moonshotai-kimi-k2-fc` should resolve
-        to `moonshotai/kimi-k2` (suffix `-fc` stripped, double prefix
-        deduped). Today this works because suffix-stripping fires first
-        on the original, producing `moonshotai/moonshotai-kimi-k2`, which
-        the dedup pass then collapses to `moonshotai/kimi-k2`."""
+        """Suffix-strip fires first (`moonshotai/moonshotai-kimi-k2`), then
+        dedup collapses it to `moonshotai/kimi-k2`."""
         store = _store_with_aliases(
             ("moonshotai/kimi-k2", "model", "moonshotai/kimi-k2", None, "confirmed")
         )
@@ -517,11 +471,7 @@ class TestDuplicatedOrgPlusSuffixIntegration:
         assert result.strategy == "fuzzy"
 
     def test_suffix_first_then_dedup_path(self):
-        """The order of operations in `fuzzy_match` is: suffix-strip first,
-        then host-strip, then dedup, then org-alias. This test exercises
-        the path where suffix-strip fires on the raw value (yielding
-        `<org>/<org>-...`), and dedup then runs on the suffix-stripped form.
-        """
+        """Suffix-strip yields `<org>/<org>-...`; dedup then runs on it."""
         store = _store_with_aliases(
             ("openai/o1", "model", "openai/o1", None, "confirmed")
         )
@@ -532,35 +482,21 @@ class TestDuplicatedOrgPlusSuffixIntegration:
         assert result.strategy == "fuzzy"
 
     def test_dedup_then_suffix_path_not_currently_covered(self):
-        """KNOWN GAP: when the deduped-then-org-aliased candidate still
-        carries a known suffix that wasn't on the original, the resolver
-        does NOT re-apply `_strip_suffix` to derived candidates.
-
-        Construct a case where this matters: a raw value where the dedup
-        pass produces a string carrying `-fc`, but the original raw value
-        does NOT end in `-fc` (so suffix-strip never fires on it).
-
-        This is not currently constructible from the existing helpers
-        because dedup only TRIMS leading tokens — it can't introduce new
-        trailing characters. So in practice, the order
-        (suffix → host → dedup → org-alias → lookup) is sufficient for
-        all observed corpus cases. This test pins that observation: a
-        synthetic suffix on the original IS picked up by the
-        suffix-first pass, so the integration works.
+        """Derived candidates are not re-suffix-stripped. Dedup only trims
+        leading tokens, so it can never introduce a trailing suffix the
+        suffix-first pass missed; a suffix on the original is enough.
         """
         store = _store_with_aliases(
             ("moonshotai/kimi-k2", "model", "moonshotai/kimi-k2", None, "confirmed")
         )
         resolver = Resolver(store)
-        # Suffix `-fc` is on the original; suffix-strip fires first
-        # producing `moonshotai/moonshotai-kimi-k2`, then dedup collapses.
         result = resolver.resolve("moonshotai/moonshotai-kimi-k2-fc", "model")
         assert result.canonical_id == "moonshotai/kimi-k2"
 
 
 class TestQuantizationAndHfStripping:
-    """Quantization / HF-upload suffix stripping. See PRECISION-LOSS POLICY in
-    fuzzy.py module docstring — these collapses sacrifice precision intentionally."""
+    """Quantization / HF-upload suffix stripping (see the PRECISION-LOSS
+    POLICY in fuzzy.py): these collapses sacrifice precision deliberately."""
 
     def test_hf_suffix_strips(self):
         store = _store_with_aliases(
@@ -580,9 +516,7 @@ class TestQuantizationAndHfStripping:
         assert result.canonical_id == "deepseek/deepseek-v4-flash"
 
     def test_int4_awq_strips_as_one_unit(self):
-        # Compound suffix: -int4-awq is in the strip list before -int4 / -awq alone,
-        # so it should strip in one step (not stripping -awq first then leaving
-        # -int4 behind to fail).
+        # Compound `-int4-awq` must strip in one step, not leave `-int4` behind.
         store = _store_with_aliases(
             ("meta/llama-3-70b", "model", "meta/llama-3-70b", None, "confirmed")
         )
@@ -612,9 +546,7 @@ class TestLetterDigitDashCollapse:
         assert result.strategy == "fuzzy"
 
     def test_dash_form_with_instruct_suffix(self):
-        # alibaba/qwen-2-72b-instruct (real route_id form) must reach
-        # alibaba/qwen2-72b after both the digit-dash collapse AND
-        # whatever path handles -instruct.
+        # Digit-dash collapse must compose with the `-instruct` alias.
         store = _store_with_aliases(
             ("alibaba/qwen2-72b-instruct", "model", "alibaba/qwen2-72b", None, "confirmed")
         )
@@ -623,28 +555,22 @@ class TestLetterDigitDashCollapse:
         assert result.canonical_id == "alibaba/qwen2-72b"
 
     def test_no_change_when_no_letter_digit_boundary(self):
-        # qwen2-72b already has no boundary dash → collapse no-op.
         store = _store_with_aliases(
             ("alibaba/qwen2-72b", "model", "alibaba/qwen2-72b", None, "confirmed")
         )
         resolver = Resolver(store)
         result = resolver.resolve("alibaba/qwen2-72b", "model")
         assert result.canonical_id == "alibaba/qwen2-72b"
-        # exact path, not fuzzy
         assert result.strategy == "exact"
 
     def test_distinct_models_stay_distinct(self):
-        # gpt-4 and gpt-4-mini are distinct models; the collapse should
-        # not merge them. Both have letter-digit at "t-4" boundary but
-        # the -mini suffix preserves identity.
+        # The collapse must not merge `gpt-4` into `gpt-4-mini`.
         store = _store_with_aliases(
             ("openai/gpt4", "model", "openai/gpt4", None, "confirmed"),
             ("openai/gpt4-mini", "model", "openai/gpt4-mini", None, "confirmed"),
         )
         resolver = Resolver(store)
-        # gpt-4 → gpt4 (matches gpt4 canonical)
         assert resolver.resolve("openai/gpt-4", "model").canonical_id == "openai/gpt4"
-        # gpt-4-mini → gpt4-mini (matches gpt4-mini canonical, NOT gpt4)
         assert resolver.resolve("openai/gpt-4-mini", "model").canonical_id == "openai/gpt4-mini"
 
 
@@ -654,8 +580,7 @@ class TestLetterDigitDashCollapse:
 
 
 class TestStripAndCapturePlatformSuffix:
-    """`_strip_and_capture_platform_suffix` — moved the 3 host suffixes out of
-    the generic `_STRIP_SUFFIXES` so they're CAPTURED, not silently dropped."""
+    """Host suffixes are captured as a platform, not silently dropped."""
 
     def test_together_suffix_captures_platform(self):
         assert _strip_and_capture_platform_suffix("llama-3-8b-together") == (
@@ -676,8 +601,7 @@ class TestStripAndCapturePlatformSuffix:
         )
 
     def test_no_platform_suffix_returns_none(self):
-        # `-fp8` is a quant suffix handled by the generic strip, NOT a
-        # platform suffix → this helper returns None.
+        # A quant suffix is not a platform suffix.
         assert _strip_and_capture_platform_suffix("llama-3-8b-fp8") is None
 
     def test_case_insensitive_suffix(self):
@@ -687,12 +611,12 @@ class TestStripAndCapturePlatformSuffix:
 
 
 class TestFuzzyMatchPlatformCapture:
-    """`fuzzy_match` now returns a 3-tuple ``(canonical_id, confidence,
-    inference_platform)``. Capture happens ONCE; suffix beats prefix; the
-    captured platform is a SIDE VALUE — it never changes the resolved id."""
+    """`fuzzy_match` returns ``(canonical_id, confidence, inference_platform)``.
+    Capture happens once, suffix beats prefix, and the platform never
+    changes the resolved id."""
 
     def test_returns_three_tuple_on_match(self):
-        # Bare `gpt-4o` alias so the suffix-stripped stem (`gpt-4o`) matches.
+        # Bare alias so the suffix-stripped stem matches.
         store = _store_with_aliases(
             ("gpt-4o", "model", "openai/gpt-4o", None, "confirmed")
         )
@@ -725,8 +649,7 @@ class TestFuzzyMatchPlatformCapture:
         assert platform == "togetherai"
 
     def test_suffix_beats_prefix_capture(self):
-        # Both a `fireworks/` prefix AND a `-bedrock` suffix present: the
-        # SUFFIX wins (explicit model-name host token is stronger).
+        # Prefix and suffix both present: the suffix wins.
         store = _store_with_aliases(
             ("meta/llama-3-8b", "model", "meta/llama-3-8b", None, "confirmed")
         )
@@ -737,10 +660,8 @@ class TestFuzzyMatchPlatformCapture:
         assert platform == "amazon-bedrock"
 
     def test_capture_does_not_change_canonical(self):
-        # The same model with and without a host suffix must resolve to the
-        # SAME canonical_id — capture is a pure side-value. Use the full
-        # resolver chain so the plain id hits the exact-match path (fuzzy
-        # alone never sees the raw value as a candidate).
+        # Full resolver chain: the plain id hits exact match, which fuzzy
+        # alone never sees.
         store = _store_with_aliases(
             ("gpt-4o", "model", "openai/gpt-4o", None, "confirmed")
         )
@@ -758,8 +679,7 @@ class TestFuzzyMatchPlatformCapture:
 
 
 class TestResolverThreadsPlatform:
-    """`Resolver.resolve` threads the fuzzy-captured platform onto the
-    ResolutionResult (the explicit-host-token-in-raw fact that WINS)."""
+    """`Resolver.resolve` threads the fuzzy-captured platform onto the result."""
 
     def test_resolve_sets_inference_platform_on_host_suffix(self):
         store = _store_with_aliases(
@@ -773,7 +693,7 @@ class TestResolverThreadsPlatform:
         store = _store_with_aliases(
             ("openai/gpt-4o", "model", "openai/gpt-4o", None, "confirmed")
         )
-        # Exact-match path: no fuzzy capture, platform stays None.
+        # Exact match runs no fuzzy capture.
         result = Resolver(store).resolve("openai/gpt-4o", "model")
         assert result.inference_platform is None
 
@@ -813,7 +733,7 @@ class TestBenchmarkRunConfigStrip:
         )
 
     def test_holds_back_metric_tokens(self):
-        # `_mc2` is metric identity: it must not strip onto the English parent.
+        # `_mc2` is metric identity; it must not strip onto the parent.
         assert (
             Resolver(self._store()).resolve("truthfulqa_de_mc2", "benchmark").canonical_id
             is None

@@ -1,21 +1,9 @@
-"""The Tier-3 inferred-seed generator must classify a dated/version SNAPSHOT of a
-confirmed base as an identity-preserving `variant/version` edge (so it folds into
-the base's `model_group_id`), not a blanket `finetune`.
-
-Regression for the bug where every inferred child was stamped `finetune`, which
-broke the model-group walk and surfaced each dated snapshot (e.g.
-`gpt-5.4-pro-2026-03-05`) as a SEPARATE model page from its base `gpt-5.4-pro`.
-
-The same module also covers the o-series pass, which reaches names the
-family-token pass cannot see (`o3-2025-04-16` carries no token in
-`BASE_FAMILY_TOKENS`). It runs only where that pass produced no edge, so it can
-give a parentless row an edge but can never move an existing classification. A
-date carrying a trailing runtime effort/mode token (`o3-2025-04-16-high`) is the
-same release served differently and chains onto the dated snapshot under
-`axis: mode`; anything else on that path stays parentless for curation.
-
-OFFLINE + non-destructive: loads the script via importlib and exercises its pure
-helpers directly. Never invokes `main()`.
+"""Tier-3 generator edge classification: a dated/version snapshot of a
+confirmed base is a `variant/version` edge (folding into the base's group),
+never a blanket `finetune`; a date plus a trailing effort token chains onto
+the dated snapshot under `axis: mode`. The o-series pass runs only where the
+family-token pass found nothing, so it can add an edge but never move one.
+Drives the pure helpers offline.
 """
 from __future__ import annotations
 
@@ -32,9 +20,9 @@ def mod():
 @pytest.mark.parametrize(
     "tokens",
     [
-        ["2026", "03", "05"],   # ISO date split on separators: gpt-5.4-pro-2026-03-05
-        ["2024", "05", "13"],   # gpt-4o-2024-05-13
-        ["20250929"],           # compact 8-digit date: claude-...-20250929
+        ["2026", "03", "05"],   # ISO date split on separators
+        ["2024", "05", "13"],
+        ["20250929"],           # compact 8-digit date
         ["2025", "08"],         # year-month snapshot
         ["202608"],             # compact year-month
         ["v0", "3"],            # slugified v0.3
@@ -63,11 +51,9 @@ def test_non_version_suffix_stays_finetune(mod, tokens):
 
 
 # ---------------------------------------------------------------------------
-# Date-then-mode tails: `o3-2025-04-16-high` is the dated snapshot served at one
-# reasoning effort. It chains onto the dated sibling under `axis: mode` (which
-# in turn is an `axis: version` child of the base), so openness and grouping
-# reach it without either axis being flattened. A bare effort token with no
-# date in front stays parentless.
+# Date-then-mode tails: `o3-2025-04-16-high` chains onto the dated sibling
+# under `axis: mode` (itself a version child of the base). A bare effort token
+# with no date in front stays parentless.
 # ---------------------------------------------------------------------------
 HF_TO_DEV = {"openai": "openai", "kimi": "moonshotai"}
 
@@ -114,8 +100,8 @@ def test_ambiguous_suffix_has_no_mode_split(mod, tokens):
     ],
 )
 def test_date_shaped_but_invalid_calendar_has_no_mode_split(mod, tokens):
-    """Date SHAPE is not enough. Grouping two models under a tail that only
-    looks like a date would assert they are the same release."""
+    """Date shape is not enough: a tail that only looks like a date must not
+    assert two models are the same release."""
     assert mod.split_date_mode_suffix(tokens) is None
 
 
@@ -144,10 +130,8 @@ def test_validated_date_suffix(mod, tokens, expected):
 
 
 # ---------------------------------------------------------------------------
-# The o-series parent decision. This pass runs ONLY where the family-token pass
-# found nothing, so it can add edges to previously parentless rows but can never
-# move an existing classification. It emits a validated version edge or a
-# deferred date-then-mode edge, and nothing else.
+# The o-series parent decision emits a validated version edge or a deferred
+# date-then-mode edge, and nothing else.
 # ---------------------------------------------------------------------------
 KNOWN_BASES = {
     "openai/o1", "openai/o1-mini", "openai/o1-preview",
@@ -209,25 +193,23 @@ def test_o_series_effort_row_defers_to_dated_sibling(mod, raw, sibling):
     ],
 )
 def test_o_series_ambiguous_tail_stays_parentless(mod, raw):
-    """No generic finetune fallback on this path: an o-series model publishes
-    no weights, so an unexplained tail is not evidence of derivation."""
+    """No finetune fallback: an o-series model publishes no weights, so an
+    unexplained tail is not evidence of derivation."""
     edge, dated, _confirmed = mod.o_series_edge(raw, HF_TO_DEV, _confirm)
     assert edge is None
     assert dated is None
 
 
 def test_o_series_rejects_sentinel_org(mod):
-    """A placeholder prefix is not a namespace. Openness inheritance walks
-    `variant` edges without an org check, so an unverified row must not pick up
-    a real lab's verdict."""
+    """A placeholder prefix is not a namespace: openness inheritance walks
+    `variant` edges without an org check."""
     assert mod.o_series_edge("unknown/o4-mini-2025-04-16", HF_TO_DEV, _confirm) == (
         None, None, None,
     )
 
 
 def test_o_series_rejects_other_developer(mod):
-    """A non-OpenAI `o1-*` name must not confirm against OpenAI's release line,
-    even if a bare-stem lookup would hit it."""
+    """A non-OpenAI `o1-*` name never confirms against OpenAI's release line."""
     assert mod.o_series_edge(
         "otherlab/o1-2024-12-17", HF_TO_DEV, lambda _c: "openai/o1",
     ) == (None, None, None)
@@ -236,7 +218,7 @@ def test_o_series_rejects_other_developer(mod):
 @pytest.mark.parametrize(
     "raw",
     [
-        # Reached by the `gpt` stem in the family-token pass, which owns it.
+        # Owned by the family-token pass.
         "openai/gpt-o3-high",
         "openai/gpt-5-mini-2025-08-07-high",
         "openai/gpt-4-1-2025-04-14-fc",
@@ -245,8 +227,7 @@ def test_o_series_rejects_other_developer(mod):
     ],
 )
 def test_o_series_pass_ignores_rows_the_family_pass_owns(mod, raw):
-    """Rows the long-standing pass already classifies must keep exactly the
-    edge they have today; this pass must not see them at all."""
+    """Rows the family-token pass classifies are invisible to this pass."""
     assert mod.o_series_edge(raw, HF_TO_DEV, _confirm) == (None, None, None)
     name = raw.split("/", 1)[1]
     assert mod.detect_base_token(name) is not None
@@ -254,15 +235,13 @@ def test_o_series_pass_ignores_rows_the_family_pass_owns(mod, raw):
 
 @pytest.mark.parametrize("name", ["o3-2025-04-16", "o3-2025-04-16-high", "o1-preview"])
 def test_family_token_pass_does_not_claim_o_series(mod, name):
-    """The o-series tokens stay OUT of `BASE_FAMILY_TOKENS`: keeping the
-    long-standing pass blind to them is what guarantees its output cannot
-    move."""
+    """The o-series tokens stay out of `BASE_FAMILY_TOKENS`, which is what
+    keeps that pass's output fixed."""
     assert mod.detect_base_token(name) is None
 
 
 def test_resolve_mode_edges_uses_same_run_mint(mod):
-    """The dated sibling is minted from its own residual raw in the same run,
-    so the edge must settle against that mint (and its final id) rather than
+    """The edge settles against the same-run mint (and its final id), not
     the pre-run registry."""
     dated = {"id": "openai/o3-2025-04-16", "aliases": []}
     child = {"id": "openai/o3-2025-04-16-high", "aliases": []}
@@ -277,8 +256,7 @@ def test_resolve_mode_edges_uses_same_run_mint(mod):
 
 
 def test_resolve_mode_edges_matches_same_run_mint_across_separators(mod):
-    """A child and its dated sibling often disagree on separators
-    (`gpt-5-4-…` vs `gpt-5.4-…`); the edge must still land on the mint."""
+    """Separator disagreement between child and sibling must not lose the edge."""
     dated = {"id": "openai/gpt-5.4-2026-03-05", "aliases": []}
     child = {"id": "openai/gpt-5-4-2026-03-05-high", "aliases": []}
     mod.resolve_mode_edges(
@@ -290,8 +268,8 @@ def test_resolve_mode_edges_matches_same_run_mint_across_separators(mod):
 
 
 def test_resolve_mode_edges_rejects_ambiguous_normalized_sibling(mod):
-    """Two same-run mints sharing a normalized form would otherwise pick
-    whichever was minted first, making the output order-dependent."""
+    """Two same-run mints sharing a normalized form: no edge, or the output
+    becomes order-dependent."""
     a = {"id": "acme/gpt-5.4-2026-03-05", "aliases": []}
     b = {"id": "acme/gpt-5-4-2026-03-05", "aliases": []}
     child = {"id": "acme/gpt_5_4_2026_03_05-high", "aliases": []}
@@ -313,7 +291,7 @@ def test_resolve_mode_edges_falls_back_to_registry(mod):
 
 
 def test_resolve_mode_edges_leaves_unmintable_sibling_parentless(mod):
-    """No sibling anywhere = parentless for curation, never a dangling edge."""
+    """No sibling anywhere: parentless, never a dangling edge."""
     child = {"id": "openai/o3-2025-04-16-high", "aliases": []}
     mod.resolve_mode_edges([(child, "openai/o3-2025-04-16")], {}, lambda _c: None)
     assert "parents" not in child

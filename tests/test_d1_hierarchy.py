@@ -1,15 +1,7 @@
-"""Contract tests for the lean resolve HTTP API + full hierarchy scope.
-
-Covers, against a fully-populated in-memory hierarchy store:
-  - `ancestry` (model group/family chain; benchmark→family→composite;
-    family→composite; composite/root → []),
-  - typed `resolution_detail.<type>` (model granularity; benchmark
-    level/matched_subset incl. the slice + subset-fold cases),
-  - GET /families/{id} and GET /composites/{id},
-  - composite/family resolving via resolve(entity_type=...).
-
-The fixtures/-backed gate invariants (tests/test_gate_invariants.py) own
-the resolution-outcome guarantees; this module owns the RESPONSE SHAPE.
+"""Response shape of the lean resolve API over a full in-memory hierarchy:
+`ancestry`, typed `resolution_detail`, the family/composite GET endpoints,
+and resolving with the family/composite entity types. Resolution outcomes
+against fixtures/ belong to test_gate_invariants.py.
 """
 import json
 
@@ -24,9 +16,7 @@ from eval_entity_registry.services.log_writer import ResolveLogWriter
 
 
 def _row(table: str, **vals) -> dict:
-    """Build a full row for `table` with schema defaults + overrides.
-    JSON-encodes list/dict overrides for the *_ids / *_keys / configs
-    columns so the stored shape matches the parquet contract."""
+    """Full row for `table`; list/dict overrides are JSON-encoded as in parquet."""
     base = {col: None for col in s._SCHEMAS[table]}
     base.update({"review_status": "reviewed",
                  "created_at": "2026-01-01T00:00:00+00:00",
@@ -66,18 +56,16 @@ def hier_store(monkeypatch):
              display_name="Widget 7B Instruct", org_id="acme",
              model_group_id="acme/widget-7b", model_family_id="acme/widget",
              resolution_granularity="variant", parents="[]"),
-        # HF-backed (sourced from the HF oracle): hf_repo_id == its own id.
+        # resolution_source=hf: hf_repo_id is its own id.
         _row("canonical_models", id="meta-llama/Llama-3.1-8B",
              display_name="Llama 3.1 8B", org_id="meta",
              resolution_source="hf", parents="[]"),
-        # HF-backed via hub-stats metadata (resolution_source != hf, but
-        # metadata.hf_id == its own id): hf_repo_id == its own id.
+        # metadata.hf_id == own id: hf_repo_id is its own id.
         _row("canonical_models", id="mistralai/Mistral-7B-v0.1",
              display_name="Mistral 7B v0.1", org_id="mistral",
              resolution_source="models_dev",
              metadata={"hf_id": "mistralai/Mistral-7B-v0.1"}, parents="[]"),
-        # Shadow slug: metadata.hf_id points at a DIFFERENT real repo, so its
-        # OWN id is not a real HF repo -> hf_repo_id is None.
+        # Shadow slug: metadata.hf_id names a different repo, so hf_repo_id is None.
         _row("canonical_models", id="kimi/kimi-x",
              display_name="Kimi X", org_id="moonshotai",
              resolution_source="inferred",
@@ -147,7 +135,6 @@ class TestAncestry:
             "raw_value": "bench-pro", "entity_type": "benchmark"})
         assert r.status_code == 200
         data = r.json()
-        # bench-pro -> family fam-x -> composite comp-suite (the full chain).
         assert data["ancestry"] == [
             {"canonical_id": "fam-x", "level": "family"},
             {"canonical_id": "comp-suite", "level": "composite"},
@@ -173,32 +160,27 @@ class TestResolutionDetail:
     def test_model_detail_granularity(self, client):
         r = client.post("/api/v1/resolve", json={
             "raw_value": "acme/widget-7b-instruct", "entity_type": "model"})
-        # Off-HF model: granularity carried, hf_repo_id None.
         assert r.json()["resolution_detail"] == {
             "granularity": "variant", "hf_repo_id": None}
 
     def test_model_detail_hf_repo_id_oracle_backed(self, client):
-        # resolution_source == "hf" -> the match is a real HF repo id.
         r = client.post("/api/v1/resolve", json={
             "raw_value": "meta-llama/Llama-3.1-8B", "entity_type": "model"})
         assert r.json()["resolution_detail"]["hf_repo_id"] == "meta-llama/Llama-3.1-8B"
 
     def test_model_detail_hf_repo_id_metadata_confirmed(self, client):
-        # resolution_source != hf, but metadata.hf_id == own id -> HF-backed.
         r = client.post("/api/v1/resolve", json={
             "raw_value": "mistralai/Mistral-7B-v0.1", "entity_type": "model"})
         assert r.json()["resolution_detail"]["hf_repo_id"] == "mistralai/Mistral-7B-v0.1"
 
     def test_model_detail_hf_repo_id_shadow_slug_is_none(self, client):
-        # metadata.hf_id points at a DIFFERENT repo -> own id is NOT a real HF
-        # repo, so hf_repo_id is None (the shadow slug must not claim it).
+        # A shadow slug must not claim the repo its metadata points at.
         r = client.post("/api/v1/resolve", json={
             "raw_value": "kimi/kimi-x", "entity_type": "model"})
         assert r.json()["resolution_detail"]["hf_repo_id"] is None
 
     def test_model_detail_hf_repo_id_normalized_match(self, client):
-        # A casing/separator-variant input still resolves and surfaces the
-        # HF-true repo id (the value of matching a HF id loosely).
+        # A loose match still surfaces the HF-true repo id.
         r = client.post("/api/v1/resolve", json={
             "raw_value": "meta-llama/llama-3.1-8b", "entity_type": "model"})
         d = r.json()
@@ -212,16 +194,14 @@ class TestResolutionDetail:
             "level": "benchmark", "matched_subset": None}
 
     def test_benchmark_detail_slice(self, client):
-        """A decomposed slice canonical (parent_benchmark_id set) reports
-        level=slice."""
+        """A canonical with parent_benchmark_id reports level=slice."""
         r = client.post("/api/v1/resolve", json={
             "raw_value": "bench-sub", "entity_type": "benchmark"})
         d = r.json()["resolution_detail"]
         assert d["level"] == "slice"
 
     def test_benchmark_detail_matched_subset_fold(self, client):
-        """A subset string folded onto a parent canonical (Anatomy -> mmlu)
-        surfaces the subset via matched_subset without a slice entity."""
+        """A subset folded onto its parent surfaces via matched_subset."""
         r = client.post("/api/v1/resolve", json={
             "raw_value": "Anatomy", "entity_type": "benchmark"})
         d = r.json()["resolution_detail"]
@@ -239,9 +219,8 @@ class TestResolutionDetail:
         assert r.json()["resolution_detail"] == {}
 
     def test_harness_detail_records_a_stripped_version(self, client):
-        """The one harness case that carries keys: the resolver reached the
-        match by dropping a trailing version token. Additive — every other
-        harness response keeps `{}`."""
+        """The only harness detail: a match reached by dropping a trailing
+        version token."""
         r = client.post("/api/v1/resolve", json={
             "raw_value": "helm 1.2.3", "entity_type": "harness"})
         body = r.json()
@@ -254,7 +233,7 @@ class TestResolutionDetail:
         }
 
 
-# --- new endpoints ---------------------------------------------------------
+# --- family / composite endpoints ---------------------------------------------------------
 
 class TestFamilyCompositeEndpoints:
     def test_get_family(self, client):

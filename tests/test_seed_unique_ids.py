@@ -1,14 +1,9 @@
-"""Every id in the flat seed files is defined exactly once.
+"""Every id in the flat seed files is defined exactly once, every entity
+declares a review_status, and metric bounds are well formed.
 
-The seed loader upserts by id (`queries.upsert_entity`), so a second block
-with the same id silently overwrites the first, and a duplicated mapping key
-in families.yaml / composites.yaml is silently last-wins at YAML load time.
-Neither raises. Two rebases in one week each produced such a duplicate
-(`length-controlled-win-rate` in #55, the perplexity family in #60) because
-the colliding blocks sat thousands of lines apart and merged cleanly. The
-existing duplicate gates cover canonical model and org ids only; this one
-covers the flat seeds, the model enrichment layers and the generated
-benchmark files. Reads the YAML directly so it runs without built fixtures.
+The loader upserts by id and YAML keeps the last duplicate mapping key, so a
+duplicate from a clean merge is silent. Reads the YAML directly, so no
+fixtures are needed.
 """
 from __future__ import annotations
 
@@ -38,8 +33,7 @@ class _DuplicateKey(Exception):
 
 
 class _StrictLoader(yaml.SafeLoader):
-    """SafeLoader that refuses a mapping with a repeated key instead of
-    keeping the last value."""
+    """SafeLoader that refuses a repeated mapping key."""
 
 
 def _construct_mapping(loader, node, deep=False):
@@ -85,19 +79,17 @@ def test_mapping_seed_keys_are_unique(name):
         pytest.fail(f"{name}: key defined more than once: {exc}")
 
 
-# Flat entity seeds whose entries carry review_status and (for metrics) bounds.
-# models/core.yaml is not gated: 15 of its entries declare review_status: null
-# on purpose (generator-owned rows awaiting a decision) and the generated
-# benchmark files use a third value, `auto`; both need their own rule.
+# models/core.yaml is not gated: some entries declare review_status: null on
+# purpose (generator-owned rows awaiting a decision), and the generated
+# benchmark files use a third value, `auto`.
 ENTITY_SEEDS = ("metrics.yaml", "benchmarks.yaml", "harnesses.yaml", "orgs.yaml")
 
 
 @pytest.mark.parametrize("name", ENTITY_SEEDS)
 def test_every_entity_declares_a_review_status(name):
-    """The flat-seed loader stores a missing review_status as NULL (only the
-    families / composites loaders default). A NULL row matches neither
-    `?review_status=draft` nor `=reviewed`, so it drops out of the review
-    queue and of stale-removal alike; `ter` reached a branch that way."""
+    """A missing review_status is stored as NULL, which matches neither
+    `draft` nor `reviewed`: the row drops out of the review queue and of
+    stale-removal alike."""
     entries = yaml.safe_load((SEED / name).read_text()) or []
     missing = sorted(str(e.get("id")) for e in entries
                      if isinstance(e, dict) and e.get("review_status") not in ("draft", "reviewed"))
@@ -105,9 +97,8 @@ def test_every_entity_declares_a_review_status(name):
 
 
 def test_metric_bounds_are_well_formed():
-    """`.inf` / `-.inf` mean unbounded by definition, null means not stated
-    (seed/metrics.yaml header). NaN is never a bound, +inf is never a lower
-    bound, -inf never an upper one, and a stated pair is ordered."""
+    """`.inf` means unbounded, null means not stated. NaN is never a bound,
+    +inf never a lower bound, -inf never an upper one, and a pair is ordered."""
     import math
 
     entries = yaml.safe_load((SEED / "metrics.yaml").read_text()) or []

@@ -1,11 +1,7 @@
-"""The three additive fallbacks against the REAL seed (built fixtures).
-
-A — a datastore folder that is itself a registered benchmark is the fallback
-identity for the dotted names under it, once nothing else in the name resolves.
-B — the whole namespaced `metric_id` may itself be a registered alias.
-C — a versioned harness string resolves via its bare name.
-
-Skips if fixtures aren't built (run `eval-entity-registry seed --local` first).
+"""The three additive fallbacks against the built fixtures: a registered
+datastore folder is the fallback identity for dotted names under it; the
+whole namespaced `metric_id` may be an alias; a versioned harness string
+resolves via its bare name. Skips without fixtures.
 """
 from pathlib import Path
 
@@ -27,19 +23,18 @@ def resolver():
     return Resolver.from_parquet(str(_FIXTURES))
 
 
-# --- C: harness version strip ---------------------------------------------
+# --- harness version strip ------------------------------------------------
 
 @pytest.mark.parametrize("raw,expected", [
     ("lm-evaluation-harness 0.4.0", "lm-evaluation-harness"),
     ("inspect_ai inspect_ai:0.3.75", "inspect-ai"),
     ("inspect_ai 0.3.142", "inspect-ai"),
-    # AlpacaEval 1 and 2 are different judging protocols but the registry has
-    # one canonical; `harness_raw` keeps the version and an explicit
-    # per-version alias would win before the strip.
+    # One canonical for both AlpacaEval protocols; `harness_raw` keeps the
+    # version and an explicit per-version alias would win before the strip.
     ("alpaca_eval 2.0", "alpaca-eval"),
     ("lm_eval 0.4.12", "lm-evaluation-harness"),
     ("helm 1.2.3", "helm"),
-    # no digits / dotless / comma multi-library tails stay unmatched
+    # Dotless or non-numeric tails stay unmatched.
     ("helm unknown", None),
     ("BFCL v4", None),
     ("kaggle kernel 4", None),
@@ -52,7 +47,7 @@ def test_harness_strip_is_resolve_mode_only(resolver):
     assert resolver.resolve("helm 1.2.3", "harness", mode="exact").canonical_id is None
 
 
-# --- A: benchmark folder fallback -----------------------------------------
+# --- benchmark folder fallback --------------------------------------------
 
 def test_cocoabench_names_report_the_folder(resolver):
     for name in ("cocoabench.overall.accuracy_percent",
@@ -68,10 +63,8 @@ def test_cocoabench_names_report_the_folder(resolver):
     ("lexam.mcq_4_choices", "lexam-mcq-4-choices", "mcq 4 choices"),
 ])
 def test_lexam_sub_tasks_hit_the_first_pass(resolver, name, canonical, raw):
-    """The scoped slice aliases make these FIRST-pass hits: the folder
-    fallback never runs for lexam, and `benchmark_raw` is the slice spelling
-    (not the folder-kept one), which is what lets `slice_promotion` promote
-    the bucket instead of overriding the sub-task back to the parent."""
+    """Scoped slice aliases make these first-pass hits: `benchmark_raw` is
+    the slice spelling, which lets `slice_promotion` promote the bucket."""
     match = resolver.resolve_structured_benchmark(name, "lexam")
     assert (match.canonical_id, match.benchmark_raw, match.subset) == (canonical, raw, None)
 
@@ -106,26 +99,16 @@ def test_unregistered_child_under_a_registered_folder(resolver):
     ("paperswithcode.depth_estimation.nyuv2_relative", "paperswithcode"),
 ])
 def test_unregistered_aggregator_folders_stay_unresolved(resolver, name, folder):
-    """SEED-REVIEW PIN. Neither aggregator is a registered benchmark, so the
-    folder fallback finds nothing. Seeding `benchpress` or `paperswithcode` as
-    a benchmark would make it the fallback identity for 238 / 64 distinct
-    dotted names (one slice each) — flip this expectation only deliberately,
-    and re-run the census when you do.
-
-    The paperswithcode names are chosen so that this test fails for exactly
-    that reason and no other: `paperswithcode.<category>.<child>` stops at the
-    category segment, so the pin turns on the category resolving, not the
-    child (`paperswithcode.agents.browsecomp` is unresolved even though
-    `browsecomp` IS a registered benchmark; `math` and `reasoning` are
-    categories that already resolve). `image_restoration` /
-    `depth_estimation` and their children are computer-vision task
-    configurations, not plausible registrations in an LLM-eval registry, and
-    two pins are kept so one incidental seed cannot silently retire the
-    check."""
+    """Neither aggregator is a registered benchmark, so the folder fallback
+    finds nothing; seeding either would make it the fallback identity for
+    hundreds of dotted names, so flip this only deliberately. The
+    paperswithcode names stop at the category segment, so the pin turns on
+    the category resolving, not the child; two are kept so one incidental
+    seed cannot retire the check."""
     assert resolver.resolve_structured_benchmark(name, folder) is None
 
 
-# --- B: whole metric id ----------------------------------------------------
+# --- whole metric id -------------------------------------------------------
 
 @pytest.mark.parametrize("raw_id,source_config,expected", [
     ("vals_ai.mgsm.mgsm_de.accuracy", "vals-ai", "accuracy"),

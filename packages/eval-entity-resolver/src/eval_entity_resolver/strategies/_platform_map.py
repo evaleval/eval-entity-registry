@@ -1,30 +1,12 @@
-"""Single-sourced host-token → inference_platform map for the fuzzy strategy.
+"""Host-token → inference_platform map for the fuzzy strategy.
 
-The resolver is a STANDALONE package — it must NOT hard-depend on
-``eval_entity_registry``. But the host-token → ``inference_platforms.id``
-mapping has exactly ONE authority: ``seed/inference_platforms.yaml``. The
-registry exposes that data via
-``eval_entity_registry.lib.inference_platforms_map``.
-
-To keep the resolver standalone while still single-sourcing the DATA (no
-hand-copied literal of the host→platform pairs), this loader reads the same
-authored YAML through TWO fallback channels, in order:
-
-1. ``eval_entity_registry.lib.inference_platforms_map`` — the registry's own
-   accessor. Available whenever the registry package is importable (the
-   workspace dev env, and the producer's path-dep env when the registry is
-   installed alongside the resolver).
-2. The co-located ``seed/inference_platforms.yaml`` — the resolver package
-   lives inside the registry repo (``packages/eval-entity-resolver/…``), so
-   the authored seed file is reachable by walking up to the repo root. This
-   covers the case where only the resolver tree is on the path.
-
-Both channels read the SAME authored YAML and invert each row's ``aliases``
-list into ``{host_token_lower: platform_id}``. If neither channel is available (e.g. a bare wheel install with no seed and
-no registry pkg), the map is empty and every host token captures ``None``
-(strip-for-matching still works; only the platform side-value is absent).
-
-Stdlib + optional yaml only — no import of ``fuzzy`` (avoids a cycle).
+The resolver must not hard-depend on ``eval_entity_registry``, yet the mapping
+has one authority, ``seed/inference_platforms.yaml``. So it is loaded through
+two channels, in order: the registry's ``lib.inference_platforms_map`` when
+importable, else the co-located seed YAML found by walking up to the repo
+root. With neither (a bare wheel install) the map is empty and every host token
+captures ``None``; strip-for-matching still works. Must not import ``fuzzy``
+(cycle).
 """
 from __future__ import annotations
 
@@ -32,7 +14,7 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-# Sentinel host token meaning "missing developer field" → no platform.
+# Missing-developer sentinel; never a platform.
 _UNKNOWN_SENTINEL = "unknown"
 
 _HOST_TOKEN_TO_PLATFORM: dict[str, Optional[str]] = {}
@@ -40,7 +22,7 @@ _LOADED = False
 
 
 def _coerce_aliases(raw: Any) -> list[str]:
-    """Accept either a YAML/native list or a JSON-encoded list string."""
+    """Accept a native list or a JSON-encoded list string."""
     if isinstance(raw, str):
         try:
             decoded = json.loads(raw)
@@ -51,7 +33,7 @@ def _coerce_aliases(raw: Any) -> list[str]:
 
 
 def _load_via_registry_lib() -> Optional[dict[str, Optional[str]]]:
-    """Channel 1: the registry's own single-source accessor, if importable."""
+    """The registry's accessor, if importable."""
     try:
         from eval_entity_registry.lib.inference_platforms_map import (  # type: ignore
             all_host_tokens,
@@ -66,8 +48,7 @@ def _load_via_registry_lib() -> Optional[dict[str, Optional[str]]]:
 
 
 def _find_seed_yaml() -> Optional[Path]:
-    """Channel 2: locate the co-located seed/inference_platforms.yaml by
-    walking up from this module to the registry repo root."""
+    """The co-located seed/inference_platforms.yaml, walking up from this module."""
     here = Path(__file__).resolve()
     for parent in here.parents:
         candidate = parent / "seed" / "inference_platforms.yaml"
@@ -81,7 +62,7 @@ def _load_via_seed_yaml() -> Optional[dict[str, Optional[str]]]:
     if seed_path is None:
         return None
     try:
-        import yaml  # optional dep; present in the workspace env
+        import yaml  # optional dep
     except (ImportError, ModuleNotFoundError):
         return None
     try:
@@ -109,7 +90,6 @@ def _load() -> None:
         mapping = _load_via_seed_yaml()
     if mapping:
         _HOST_TOKEN_TO_PLATFORM.update(mapping)
-    # Always honour the missing-developer sentinel.
     _HOST_TOKEN_TO_PLATFORM[_UNKNOWN_SENTINEL] = None
     _LOADED = True
 
@@ -120,14 +100,12 @@ def _ensure_loaded() -> None:
 
 
 def get_host_token_platform(token: str) -> Optional[str]:
-    """Return the inference_platforms.id for a host token spelling
-    (e.g. ``'fireworks/'``, ``'-bedrock'``, ``'together/'``) or None when the
-    token is unknown / the ``unknown`` sentinel. Case-insensitive."""
+    """inference_platforms.id for a host token spelling (``'fireworks/'``,
+    ``'-bedrock'``), or None when unknown. Case-insensitive."""
     if not token:
         return None
     _ensure_loaded()
     return _HOST_TOKEN_TO_PLATFORM.get(token.lower())
 
 
-# Load eagerly on import (graceful no-op if no source is reachable).
 _load()

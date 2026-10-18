@@ -1,9 +1,10 @@
-"""Tests for the seed CLI — particularly its rename-collision handling.
+"""The seed CLI against a tmp seed dir: alias rename repointing, cross-source
+merge semantics (parents, metadata, weak scalars), org collision and
+--prune-stale FK guards, and the benchmark / metric-fold validators.
 
-When seed YAML moves an alias from canonical-A to canonical-B, the seed CLI must
-repoint the existing alias row at the new canonical (YAML is the source of truth).
-The failure mode this guards against: swallowing the uniqueness ValueError from
-add_alias() and then letting end-of-seed stale-removal delete the row entirely.
+An alias moved between canonicals in YAML must be repointed in place; the
+failure mode is swallowing add_alias's uniqueness error and then letting
+stale-removal delete the row.
 """
 from __future__ import annotations
 
@@ -20,14 +21,7 @@ from eval_entity_registry.store import hf_store
 
 @pytest.fixture
 def fresh_seed_env(tmp_path, monkeypatch):
-    """Isolated fixtures-backed registry per test.
-
-    - LOCAL_MODE=true → store reads/writes parquet under tmp_path/fixtures/.
-    - FIXTURES_PATH points at tmp_path/fixtures/.
-    - The module-level singleton is reset so each test gets a fresh store.
-    - All four seed YAMLs are created (empty stubs) so seed_specs entries
-      that aren't under test don't dirty the assertions.
-    """
+    """Isolated LOCAL_MODE registry under tmp_path with empty seed stubs."""
     fixtures_dir = tmp_path / "fixtures"
     fixtures_dir.mkdir()
     seed_dir = tmp_path / "seed"
@@ -36,15 +30,10 @@ def fresh_seed_env(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCAL_MODE", "true")
     monkeypatch.setenv("FIXTURES_PATH", str(fixtures_dir))
 
-    # Reset the singleton so a previous test's store doesn't leak.
     hf_store._store = None
 
-    # Empty stubs for the YAMLs we don't exercise — keep the loop quiet.
     (seed_dir / "metrics.yaml").write_text("[]\n")
     (seed_dir / "harnesses.yaml").write_text("[]\n")
-    # Models layout: seed/models/{core.yaml,sources/,enrichments/}. The loader
-    # tolerates missing files, but core.yaml as an empty list keeps the
-    # surface area explicit for any future tests that read these stubs.
     (seed_dir / "models").mkdir()
     (seed_dir / "models" / "sources").mkdir()
     (seed_dir / "models" / "enrichments").mkdir()
@@ -52,7 +41,6 @@ def fresh_seed_env(tmp_path, monkeypatch):
 
     yield seed_dir, fixtures_dir
 
-    # Teardown: clear singleton so other tests start clean too.
     hf_store._store = None
 
 
@@ -72,15 +60,10 @@ def _seed(seed_dir: Path) -> None:
 
 
 def test_alias_canonical_rename_doesnt_drop(fresh_seed_env):
-    """The bug: rename canonical of an alias and the alias survives, repointed.
-
-    Before the fix this test would fail because the second seed run silently
-    swallowed the ValueError from add_alias and then stale-removal deleted
-    the orphaned row.
-    """
+    """An alias moved to another canonical is repointed in place (same row
+    id), never deleted by stale-removal."""
     seed_dir, fixtures_dir = fresh_seed_env
 
-    # Round 1: alias 'special-token' belongs to canonical 'old-bench'.
     _write_benchmarks(seed_dir, [
         {
             "id": "old-bench",
@@ -98,15 +81,12 @@ def test_alias_canonical_rename_doesnt_drop(fresh_seed_env):
     assert row.iloc[0]["canonical_id"] == "old-bench"
     original_alias_uuid = row.iloc[0]["id"]
 
-    # Round 2: YAML now puts 'special-token' on a NEW canonical 'new-bench'.
-    # The old canonical is also kept (different alias) so we're testing only
-    # the rename path, not the entity-removal path.
+    # The old canonical is kept, so only the rename path is exercised.
     _write_benchmarks(seed_dir, [
         {
             "id": "old-bench",
             "display_name": "Old Bench",
             "review_status": "reviewed",
-            # 'special-token' moved away
         },
         {
             "id": "new-bench",
@@ -129,14 +109,12 @@ def test_alias_canonical_rename_doesnt_drop(fresh_seed_env):
         f"alias should have been repointed to 'new-bench', got "
         f"{row.iloc[0]['canonical_id']!r}"
     )
-    # The alias row identity is preserved (same UUID) — we updated, not
-    # deleted-and-recreated. This matters for any downstream join that
-    # carries the alias UUID.
+    # Same UUID: updated, not deleted and recreated (downstream joins carry it).
     assert row.iloc[0]["id"] == original_alias_uuid
 
 
 def test_repeat_seed_is_idempotent(fresh_seed_env):
-    """Sanity check: same YAML seeded twice doesn't multiply or churn rows."""
+    """Re-seeding identical YAML neither multiplies nor churns rows."""
     seed_dir, fixtures_dir = fresh_seed_env
 
     _write_benchmarks(seed_dir, [
@@ -172,15 +150,11 @@ def _read_orgs(fixtures_dir: Path):
 
 
 def test_parents_union_by_id_across_sources(fresh_seed_env):
-    """Two seed sources contributing edges for the same model union by id:
-    same parent id from both sides yields one edge; different ids yield
-    multiple edges."""
+    """Parent edges from two sources union by id, keeping the axis whichever
+    side supplied it."""
     import json
     seed_dir, fixtures_dir = fresh_seed_env
 
-    # Two parents: one shared between source and core (axis only on source),
-    # one source-only, one core-only. After merge we expect three distinct
-    # edges with axis preserved on the shared one.
     sources_dir = seed_dir / "models" / "sources"
     (sources_dir / "test.generated.yaml").write_text(yaml.safe_dump([
         {
@@ -198,8 +172,7 @@ def test_parents_union_by_id_across_sources(fresh_seed_env):
             "id": "lab/model-a",
             "display_name": "Model A",
             "parents": [
-                # Same id as source's first edge — should fold, not duplicate.
-                # Core omits axis; source's axis must survive the merge.
+                # Same id as the source edge, without its axis.
                 {"id": "lab/parent-shared", "relationship": "variant"},
                 {"id": "lab/parent-core-only", "relationship": "finetune"},
             ],
@@ -214,19 +187,15 @@ def test_parents_union_by_id_across_sources(fresh_seed_env):
     parents = json.loads(row.iloc[0]["parents"])
     by_id = {p["id"]: p for p in parents}
     assert set(by_id) == {"lab/parent-shared", "lab/parent-source-only", "lab/parent-core-only"}
-    # Shared edge: source brought axis=size, core didn't, axis must survive.
     assert by_id["lab/parent-shared"]["axis"] == "size"
     assert by_id["lab/parent-shared"]["relationship"] == "variant"
-    # Distinct edges retain their relationships.
     assert by_id["lab/parent-source-only"]["relationship"] == "variant"
     assert by_id["lab/parent-core-only"]["relationship"] == "finetune"
 
 
 def test_side_record_keyed_by_promoted_alias_folds_onto_hf_entry(fresh_seed_env):
-    """An HF-true canonical lists the invented id it replaced as an alias. An
-    enrichment still keyed by that old id (and a parents edge naming it) folds
-    onto the HF entry instead of minting a second canonical that collides on
-    the alias."""
+    """An enrichment or parent edge still keyed by a replaced invented id
+    folds onto the HF entry that aliases it, instead of minting a twin."""
     import json
     seed_dir, fixtures_dir = fresh_seed_env
     sources_dir = seed_dir / "models" / "sources"
@@ -262,10 +231,8 @@ def test_side_record_keyed_by_promoted_alias_folds_onto_hf_entry(fresh_seed_env)
 
 
 def test_metadata_merges_per_key_across_sources(fresh_seed_env):
-    """metadata is a per-key JSON-object merge, not an opaque scalar: a later
-    source's `{alias_platforms}` must not clobber an earlier source's hub-stats
-    keys (`hf_id`, `downloads_all_time`, ...). Later source wins per key on
-    overlap; a side that isn't a JSON object falls back to last-non-empty-wins."""
+    """metadata merges per key (later source wins on overlap); a side that is
+    not a JSON object falls back to last-non-empty-wins."""
     import json
     seed_dir, fixtures_dir = fresh_seed_env
 
@@ -306,20 +273,16 @@ def test_metadata_merges_per_key_across_sources(fresh_seed_env):
 
     df = _read_models(fixtures_dir)
     meta = json.loads(df[df["id"] == "lab/model-m"].iloc[0]["metadata"])
-    # Disjoint keys from BOTH sources survive.
     assert meta["hf_id"] == "lab/model-m"
     assert meta["downloads_all_time"] == 42
     assert meta["alias_platforms"] == {"model-m": "poe"}
-    # Overlapping key: later source wins.
     assert meta["license"] == "apache-2.0"
-    # Malformed side: fall back to the scalar rule (later non-empty wins whole).
     meta_n = json.loads(df[df["id"] == "lab/model-n"].iloc[0]["metadata"])
     assert meta_n == {"source": "b"}
 
 
 def test_orgs_generated_curated_wins_on_collision(fresh_seed_env):
-    """seed/orgs.generated.yaml entries are dropped when the id is already
-    in seed/orgs.yaml; non-conflicting entries are still loaded."""
+    """Curated orgs.yaml wins over orgs.generated.yaml on an id collision."""
     seed_dir, fixtures_dir = fresh_seed_env
 
     (seed_dir / "orgs.yaml").write_text(yaml.safe_dump([
@@ -331,14 +294,12 @@ def test_orgs_generated_curated_wins_on_collision(fresh_seed_env):
         },
     ]))
     (seed_dir / "orgs.generated.yaml").write_text(yaml.safe_dump([
-        # Collides with curated — must be dropped (curated display_name wins).
         {
             "id": "anthropic",
             "display_name": "Anthropic Auto",
             "kind": "unknown",
             "review_status": "auto",
         },
-        # Doesn't collide — must be loaded.
         {
             "id": "some-uploader",
             "display_name": "Some Uploader",
@@ -360,10 +321,8 @@ def test_orgs_generated_curated_wins_on_collision(fresh_seed_env):
 
 
 def test_prune_stale_keeps_org_referenced_by_model(fresh_seed_env):
-    """--prune-stale must NOT drop an org still referenced by a surviving model's
-    org_id FK. A model whose org_id is DERIVED from its id-prefix (no curated org
-    row in any YAML) gets an org row auto-created at seed time; pruning it as
-    'stale' (not in the orgs YAML) would orphan the model with a dangling FK."""
+    """--prune-stale keeps an auto-created org still referenced by a model's
+    org_id; pruning it would leave a dangling FK."""
     seed_dir, fixtures_dir = fresh_seed_env
     (seed_dir / "models" / "core.yaml").write_text(yaml.safe_dump([
         {
@@ -389,10 +348,8 @@ def test_prune_stale_keeps_org_referenced_by_model(fresh_seed_env):
 
 
 def test_prune_stale_keeps_org_referenced_by_parent_org_id(fresh_seed_env):
-    """--prune-stale must NOT drop an org still referenced by a surviving org's
-    parent_org_id FK. Round 1 seeds a child org pointing at a parent; round 2
-    drops the parent from the YAML (so it looks stale) but keeps the child — the
-    parent must survive because the child still references it."""
+    """--prune-stale keeps an org dropped from YAML while another org's
+    parent_org_id still references it."""
     seed_dir, fixtures_dir = fresh_seed_env
 
     orgs_path = seed_dir / "orgs.yaml"
@@ -405,7 +362,6 @@ def test_prune_stale_keeps_org_referenced_by_parent_org_id(fresh_seed_env):
     _seed(seed_dir)
     assert "parent-lab" in set(_read_orgs(fixtures_dir)["id"].astype(str))
 
-    # Round 2: parent-lab is no longer in the YAML, but child-lab still points at it.
     orgs_path.write_text(yaml.safe_dump([
         {"id": "child-lab", "display_name": "Child Lab", "kind": "lab",
          "review_status": "reviewed", "parent_org_id": "parent-lab"},
@@ -422,7 +378,7 @@ def test_prune_stale_keeps_org_referenced_by_parent_org_id(fresh_seed_env):
 
 
 def test_orgs_generated_alone_loads(fresh_seed_env):
-    """When seed/orgs.yaml is absent, seed/orgs.generated.yaml still loads."""
+    """orgs.generated.yaml loads without an orgs.yaml."""
     seed_dir, fixtures_dir = fresh_seed_env
     (seed_dir / "orgs.generated.yaml").write_text(yaml.safe_dump([
         {
@@ -439,7 +395,7 @@ def test_orgs_generated_alone_loads(fresh_seed_env):
 
 
 def test_scoped_alias_rename_doesnt_drop(fresh_seed_env):
-    """Same bug, but for scoped aliases (source_config != None)."""
+    """The rename repoint also holds for scoped aliases."""
     seed_dir, fixtures_dir = fresh_seed_env
 
     _write_benchmarks(seed_dir, [
@@ -484,17 +440,14 @@ def test_scoped_alias_rename_doesnt_drop(fresh_seed_env):
 
 
 # ----------------------------------------------------------------------
-# Weak scalar fill: generated enrich records may carry a `weak:` map of
-# scalars donated from a suppressed/folded models.dev mint. Weak values
-# apply after ALL strong merges (fill empty fields only), an explicit core
-# key (even null) blocks them, and weak-vs-weak ties break to the first
-# contribution (sorted-filename then record order).
+# Weak scalar fill: `weak:` values apply after all strong merges and fill
+# empty fields only; an explicit core key (even null) blocks them; ties
+# break to the first contribution (sorted filename, then record order).
 # ----------------------------------------------------------------------
 
 def test_weak_scalar_fills_empty_but_never_beats_full_entry(fresh_seed_env):
-    """A weak value fills a field no full entry set, but a full entry's value
-    wins regardless of whether the weak record's file loads before (a.* vs
-    z.*) or after (zz.* vs z.*) the full entry's file."""
+    """A full entry's value beats a weak one whether the weak file loads
+    before or after it."""
     seed_dir, fixtures_dir = fresh_seed_env
     sources_dir = seed_dir / "models" / "sources"
     (sources_dir / "a.generated.yaml").write_text(yaml.safe_dump([
@@ -522,9 +475,8 @@ def test_weak_scalar_fills_empty_but_never_beats_full_entry(fresh_seed_env):
 
 
 def test_core_explicit_null_blocks_weak_fill(fresh_seed_env):
-    """A key explicitly present on the core entry — even with a null value —
-    is a curated claim that blocks weak fill; a key core leaves ABSENT stays
-    open for a weak value."""
+    """An explicit core key, even null, is a curated claim that blocks weak
+    fill; an absent key stays open."""
     import pandas as pd
     seed_dir, fixtures_dir = fresh_seed_env
     sources_dir = seed_dir / "models" / "sources"
@@ -549,8 +501,7 @@ def test_core_explicit_null_blocks_weak_fill(fresh_seed_env):
 
 
 def test_two_weak_values_tiebreak_first_file_first_record(fresh_seed_env):
-    """Two weak values for the same (id, field): the first contribution wins —
-    source files in sorted-filename order, records in file order."""
+    """Two weak values for one field: the first contribution wins."""
     seed_dir, fixtures_dir = fresh_seed_env
     sources_dir = seed_dir / "models" / "sources"
     (sources_dir / "a.generated.yaml").write_text(yaml.safe_dump([
@@ -576,8 +527,8 @@ def _seed_expect_fail(seed_dir: Path) -> str:
 
 
 def test_benchmark_separator_collision_rejected(fresh_seed_env):
-    """Two benchmark ids differing only by separators must fail the seed
-    with both ids named in the error (R4 collision guard)."""
+    """Two benchmark ids differing only by separators fail the seed with
+    both ids named."""
     seed_dir, _ = fresh_seed_env
     _write_benchmarks(seed_dir, [
         {"id": "foo-bench", "display_name": "Foo Bench", "metadata": "{}",
@@ -590,8 +541,7 @@ def test_benchmark_separator_collision_rejected(fresh_seed_env):
 
 
 def test_benchmark_alias_collision_rejected(fresh_seed_env):
-    """A global alias colliding (normalized) with another benchmark's id
-    is flagged too."""
+    """A global alias normalized-colliding with another benchmark's id fails too."""
     seed_dir, _ = fresh_seed_env
     _write_benchmarks(seed_dir, [
         {"id": "foo-bench", "display_name": "Foo Bench", "metadata": "{}",
@@ -620,7 +570,7 @@ def test_benchmark_collision_allowlist(fresh_seed_env):
 
 
 def test_benchmark_id_with_slash_rejected(fresh_seed_env):
-    """'/' is reserved for merged-view routing; ids carrying it fail."""
+    """'/' is reserved for merged-view routing."""
     seed_dir, _ = fresh_seed_env
     _write_benchmarks(seed_dir, [
         {"id": "foo/bar", "display_name": "Foo Bar", "metadata": "{}",
@@ -631,8 +581,7 @@ def test_benchmark_id_with_slash_rejected(fresh_seed_env):
 
 
 def test_preferred_metric_validated_and_renamed(fresh_seed_env):
-    """`preferred_metric` seed key lands as `preferred_metric_id` column;
-    an unknown metric id fails the seed."""
+    """`preferred_metric` lands as `preferred_metric_id`; an unknown id fails."""
     import pandas as pd
     seed_dir, fixtures_dir = fresh_seed_env
     (seed_dir / "metrics.yaml").write_text(yaml.safe_dump([
@@ -711,8 +660,8 @@ def test_preferred_metric_llm_judged_validated(fresh_seed_env):
 
 
 def test_metric_folds_loaded_and_validated(fresh_seed_env):
-    """metric_folds.yaml lands as the benchmark_metric_folds table; unknown
-    benchmark ids and chained folds fail the seed."""
+    """metric_folds.yaml lands as benchmark_metric_folds; malformed scales,
+    unknown benchmarks, contradictory scoped rows and chained folds fail."""
     import pandas as pd
     seed_dir, fixtures_dir = fresh_seed_env
     (seed_dir / "metrics.yaml").write_text(yaml.safe_dump([
@@ -847,10 +796,8 @@ def test_metric_folds_loaded_and_validated(fresh_seed_env):
 
 
 def test_metric_folds_pure_published_scale_conversion(fresh_seed_env):
-    """A source that publishes the RIGHT metric on the WRONG scale needs a
-    conversion and no rename, so a scoped row may stand alone with
-    from_metric == to_metric. The unscoped naming row it would otherwise
-    need does not exist, because nothing is being renamed."""
+    """A scoped self-fold with a conversion may stand alone: the right metric
+    on the wrong scale needs no naming row."""
     import pandas as pd
     seed_dir, fixtures_dir = fresh_seed_env
     (seed_dir / "metrics.yaml").write_text(yaml.safe_dump([
@@ -889,8 +836,7 @@ def test_metric_folds_pure_published_scale_conversion(fresh_seed_env):
     out = _seed_expect_fail(seed_dir)
     assert "self-fold" in out
 
-    # Still rejected: a scoped row with no conversion and no unscoped row
-    # renames nothing and converts nothing.
+    # Still rejected: no conversion and no unscoped row does nothing.
     (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump([
         {"benchmark": "foo-bench", "from_metric": "accuracy", "to_metric": "accuracy",
          "source_config": "openeval"},
@@ -907,8 +853,7 @@ def test_metric_folds_pure_published_scale_conversion(fresh_seed_env):
     out = _seed_expect_fail(seed_dir)
     assert "to_metric" in out and "unscoped" in out
 
-    # Still rejected: an unscoped row may not carry a conversion, so the
-    # pure-conversion shape has no unscoped counterpart at all.
+    # Still rejected: an unscoped row may not carry a conversion.
     (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump([
         {"benchmark": "foo-bench", "from_metric": "score", "to_metric": "accuracy",
          "scale_factor": 0.01},
@@ -918,10 +863,8 @@ def test_metric_folds_pure_published_scale_conversion(fresh_seed_env):
 
 
 def test_composites_scoped_members_json_encode(fresh_seed_env):
-    """Scoped configs members ({config, org[, source]}) survive the seed
-    as JSON objects in `source_configs` — str() coercion would ship
-    Python-repr garbage the producer can't parse (composite-partition
-    spec)."""
+    """Scoped config members survive as JSON objects in `source_configs`;
+    str() coercion would ship Python repr the producer cannot parse."""
     import json
 
     import pandas as pd
@@ -965,10 +908,8 @@ def test_composites_scoped_member_validation(fresh_seed_env):
 
 
 def test_seeded_wildbench_folds_carry_both_source_conversions():
-    """The real seed ships one benchmark-wide wildbench naming row plus two
-    per-source published-scale conversions: OpenEval's raw 1-10 judge score
-    and BenchPress's OpenCompass WB-Score on -100..100. Both land on
-    `wb-score`, so the conversions are what keeps them comparable."""
+    """The real seed's wildbench folds: one naming row plus per-source scale
+    conversions (OpenEval 1-10, BenchPress -100..100) onto `wb-score`."""
     import pandas as pd
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -995,7 +936,6 @@ def test_seeded_wildbench_folds_carry_both_source_conversions():
 
     assert convert(68.5) == pytest.approx(0.8250, abs=1e-4)
     assert convert(33.1) == pytest.approx(0.6283, abs=1e-4)
-    # The published scale runs (rating-5)*20, so the 1/10 and 10/10 endpoints
-    # (-80 and 100) must land on the wb-score bounds.
+    # The published scale is (rating-5)*20: endpoints -80 and 100 map to the bounds.
     assert convert(-80.0) == pytest.approx(0.0, abs=1e-9)
     assert convert(100.0) == pytest.approx(1.0, abs=1e-9)

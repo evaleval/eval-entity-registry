@@ -1,8 +1,7 @@
-"""
-In-memory store backed by HF Dataset parquet configs (or local fixtures in LOCAL_MODE).
+"""In-memory store backed by HF Dataset parquet (or local fixtures in LOCAL_MODE).
 
-All tables are loaded into memory on startup. Writes update memory immediately.
-HF Hub push happens only at end of sync run (call push_to_hub()).
+Writes update memory immediately; the Hub is pushed only at the end of a run
+via push_to_hub().
 """
 from __future__ import annotations
 
@@ -41,31 +40,23 @@ TABLE_NAMES = [
     "resolution_log",
     "eval_results",
     "sync_runs",
-    # Read-only HF id confirmation index — loaded so push_to_hub() round-trips
-    # it intact (a non-local seed load() reads then re-writes every table; an
-    # empty default here would clobber the cron-published index).
+    # Cron-owned; listed so a non-local seed load() round-trips it intact.
     "hub_stats_index",
 ]
 
 
 def _reconcile_schema(table: str, df: pd.DataFrame) -> pd.DataFrame:
-    """Bring a freshly-loaded parquet into line with the current schema:
-      * add missing columns (NA-filled, correct dtype)
-      * drop columns no longer in the schema
-      * apply one-shot data migrations (e.g. legacy `parent_model_id`
-        scalar → typed `parents` JSON list).
+    """Align a freshly-loaded parquet with the current schema: add missing
+    columns, drop retired ones, apply one-way data migrations.
 
-    The data migration shims here are intentionally narrow and one-way: the
-    parquet file gets re-saved with the new shape on the next sync, after
-    which the shim becomes a no-op. Keep them around at least one release
-    cycle so HF-deployed read-only Spaces survive a schema rollout.
+    Migration shims become no-ops once the parquet is re-saved; keep each for
+    at least one release cycle so read-only Spaces survive a schema rollout.
     """
     import json as _json
 
     expected = schemas._SCHEMAS[table]
     df = df.copy()
 
-    # canonical_models: legacy `parent_model_id` (scalar) → `parents` (JSON list)
     if table == "canonical_models" and "parent_model_id" in df.columns and "parents" not in df.columns:
         def _to_parents(legacy):
             try:
@@ -78,17 +69,13 @@ def _reconcile_schema(table: str, df: pd.DataFrame) -> pd.DataFrame:
             return _json.dumps([{"id": str(legacy), "relationship": "variant", "axis": "size"}])
         df["parents"] = df["parent_model_id"].map(_to_parents).astype(pd.StringDtype())
 
-    # Add any other missing columns as NA with the schema's dtype.
-    # Use `None` (not `pd.NA`) as the fill value: pandas 3.x rejects pd.NA
-    # when constructing a float64 Series, but None coerces correctly to
-    # both nullable-string (NA) and float64 (NaN).
+    # Fill with `None`, not `pd.NA`: pandas 3.x rejects pd.NA when building a
+    # float64 Series, while None coerces to both NA and NaN.
     for col, dtype in expected.items():
         if col not in df.columns:
             df[col] = pd.Series([None] * len(df), dtype=dtype)
 
-    # Drop columns not in the schema (e.g. legacy `parent_model_id` after the
-    # migration above). Order columns to match the schema for deterministic
-    # parquet output.
+    # Schema order gives deterministic parquet output.
     keep = [c for c in expected if c in df.columns]
     return df[keep]
 
@@ -100,25 +87,18 @@ QUERY_TABLE_NAMES = [
     "canonical_families",
     "canonical_composites",
     "canonical_metrics",
-    # Read-only curated dim table: no CRUD route, but the query-only Space
-    # loads it so a consumer can read the folds alongside the benchmarks
-    # they apply to.
+    # No CRUD route, but the query-only Space serves it.
     "benchmark_metric_folds",
     "eval_harnesses",
     "canonical_inference_platforms",
     "aliases",
-    # Read-only HF id confirmation index — consulted by the resolve path so
-    # the deployed READ_ONLY Space loads it via the {table}/part-0.parquet reader.
+    # Consulted by the resolve path.
     "hub_stats_index",
 ]
 
-# Tables that are READ but never WRITTEN by seed/sync: their sole writer is a
-# dedicated cron that publishes the subdir file directly. They are in
-# TABLE_NAMES/QUERY_TABLE_NAMES so load() and the Space pick them up, but
-# push_to_hub()/_flush_to_fixtures() must SKIP them — otherwise a seed/sync run
-# (whose best-effort load substitutes an empty table on any download hiccup)
-# would clobber the cron-published data with 0 rows, and the CI flat publish
-# would emit a spurious empty file.
+# Read by load() but written only by a dedicated cron. push_to_hub() and
+# _flush_to_fixtures() must skip them: a best-effort load substitutes an empty
+# table on any download error and would clobber the cron data with 0 rows.
 _CRON_OWNED_TABLES = frozenset({"hub_stats_index"})
 
 
@@ -134,11 +114,7 @@ class RegistryStore:
     # ------------------------------------------------------------------
 
     def load(self, tables: list[str] | None = None) -> None:
-        """Load tables from HF Hub or local fixtures.
-
-        Args:
-            tables: Specific table names to load. If None, loads all tables.
-        """
+        """Load tables (all of TABLE_NAMES by default) from HF Hub or local fixtures."""
         names = tables or TABLE_NAMES
         if _local_mode():
             self._load_from_fixtures(_fixtures_path(), names)
@@ -183,8 +159,7 @@ class RegistryStore:
             tmp = Path(tmpdir)
             for table, df in self._tables.items():
                 if table in _CRON_OWNED_TABLES:
-                    continue  # cron owns the subdir file; a seed/sync push must
-                              # not clobber it with an empty/best-effort table
+                    continue
                 p = tmp / f"{table}.parquet"
                 df.to_parquet(p, index=False)
                 api.upload_file(
@@ -199,7 +174,7 @@ class RegistryStore:
         path.mkdir(parents=True, exist_ok=True)
         for table, df in self._tables.items():
             if table in _CRON_OWNED_TABLES:
-                continue  # cron owns this file; never overwrite it from a seed
+                continue
             df.to_parquet(path / f"{table}.parquet", index=False)
 
     # ------------------------------------------------------------------
@@ -220,7 +195,6 @@ class RegistryStore:
         return self._loaded
 
 
-# Module-level singleton
 _store: Optional[RegistryStore] = None
 
 

@@ -1,21 +1,13 @@
-"""Org-aware fold decision: does a minted off-HF / dev-org-slug canonical refer
-to the SAME model as a real HF repo already in the registry?
+"""Org-aware fold decision: does a minted off-HF canonical refer to the SAME
+model as a real HF repo already in the registry? Single owner of this rule for
+both the seed generators (a mint defers to the HF id) and the gate tests.
 
-This is the single source of truth for the cross-source same-model dedup used by
-BOTH the generator (scripts/refresh_from_modelsdev.py reconciliation, so a mint
-DEFERS to the real HF id at generate time) AND the gate
-(tests/test_gate_invariants.py via scripts/fold_modelsdev_dupes.py, which verifies
-none survive). Keeping it here means the two can never drift.
-
-A match is "confident" only with ORG AGREEMENT (after the curated two-tier dev-org
-remap: meta-llama->meta, Qwen->alibaba, ...): a group with no resolvable org, or
-whose name matches only under a DIFFERENT developer, NEVER folds (no cross-vendor
-false merge). Tiers, strongest first: exact id == HF id; mint string already an
-alias of an HF entry; normalized-name (all separators removed) + org agreement;
-brand-prefix-stripped name + org agreement (so `qwen-qwq-32b` -> `QwQ-32B`).
-
-`name_norm` removes ALL separators to ONE token, so models.dev's mangled
-spellings collapse onto HF casing: `qwen-2-5-14b-instruct` == `Qwen2.5-14B-Instruct`.
+A fold requires ORG AGREEMENT after the curated developer remap (meta-llama ->
+meta, Qwen -> alibaba): a mint with no resolvable org, or whose name matches
+only under a DIFFERENT developer, never folds. Tiers, strongest first: exact
+id; mint string already an alias of an HF entry; `name_norm` equality + org
+agreement; brand-prefix-stripped name + org agreement (`qwen-qwq-32b` ->
+`QwQ-32B`).
 """
 from __future__ import annotations
 
@@ -25,70 +17,48 @@ from typing import Optional
 from eval_entity_resolver.normalization import normalize as _nz
 
 
-# Curated HF-namespace -> developer-org remap. The SINGLE owner of this map
-# (moved here from strategies/fuzzy.py so both the resolver and the seed
-# generators consume one source). HF namespaces that are alternate spellings of
-# one developer fold to that developer's slug (org_id only — a canonical_id keeps
-# its real HF repo prefix). Lowercased keys.
+# Curated HF-namespace -> developer-org remap (lowercase keys). Affects org_id
+# only; a canonical_id keeps its real HF repo prefix.
 _ORG_ALIASES: dict[str, str] = {
     "deepseek-ai": "deepseek",
     "cohereforai": "cohere",
     "cohere-labs": "cohere",
-    # HF renamed the Cohere org `CohereForAI` -> `CohereLabs` (no hyphen);
-    # both are the same lab, canonical `cohere`.
     "coherelabs": "cohere",
-    # HF's SmolLM team `HuggingFaceTB` is part of Hugging Face.
     "huggingfacetb": "huggingface",
-    # Baichuan is a curated lab; its HF namespace `baichuan-inc` folds into it.
     "baichuan-inc": "baichuan",
-    # HF `MiniMaxAI` / `SarvamAI` namespaces -> the lab slug we already use.
     "minimaxai": "minimax",
     "sarvamai": "sarvam",
     "tii-uae": "tiiuae",
     "meta-llama": "meta",
     "mistral-ai": "mistralai",
     "nvidia-nemo": "nvidia",
-    # Zhipu/Z.ai → zai. `THUDM` is the legacy HF org for the GLM/ChatGLM
-    # family (Tsinghua/Zhipu); HF now publishes under `zai-org`.
+    # `THUDM` is the legacy HF org for GLM/ChatGLM; HF now publishes under `zai-org`.
     "zhipu": "zai",
     "zhipu-ai": "zai",
     "z-ai": "zai",
     "zai-org": "zai",
     "thudm": "zai",
-    # Moonshot → moonshotai
     "moonshot": "moonshotai",
     "moonshot-ai": "moonshotai",
-    # Qwen models live under canonical org `alibaba` (Alibaba Cloud).
-    # HF uploads use the `Qwen/` namespace (e.g. Qwen/Qwen2-VL-7B-Instruct).
-    # The reverse mapping (alibaba → qwen) was rejected because
-    # `alibaba__mineru2-pipeline` is a non-Qwen entry; this direction has
-    # no analogous collision since every `qwen/<X>` upstream id we've seen
-    # corresponds to an Alibaba/Qwen-family model.
+    # One-way: `alibaba/` also hosts non-Qwen uploads, so alibaba -> qwen is unsafe.
     "qwen": "alibaba",
-    # Alternate HF namespaces of a known developer fold to the one parent org
-    # (org_id only — the canonical_id keeps the real HF repo prefix). These
-    # consolidate the developer in downstream listings.
-    "facebook": "meta",        # Meta's pre-Llama HF org (OPT, BART, ...)
+    "facebook": "meta",
     "mistral": "mistralai",
-    "mosaicml": "databricks",  # MosaicML (MPT) acquired by Databricks
+    "mosaicml": "databricks",  # MosaicML acquired by Databricks
     "databricks-mosaic-research": "databricks",
     "alibaba-aidc": "alibaba",
     "alibaba-nlp": "alibaba",
     "aws-prototyping": "amazon",
     "ibm-research": "ibm",
-    "ibm-granite": "ibm",      # Granite folded into IBM (curation decision)
+    "ibm-granite": "ibm",
     "bytedance-seed": "bytedance",
 }
 
 
 def build_curated_org_map(orgs_yaml_entries: list[dict]) -> dict[str, str]:
-    """The SINGLE curated HF-namespace -> developer-org map every generator and
-    the resolver should use: `_ORG_ALIASES` UNION every curated org's id +
-    `hf_org` + each entry in its `aliases`, keyed lowercase -> curated id. The
-    curated seed (orgs.yaml) wins over `_ORG_ALIASES` on conflict.
-
-    Every generator and the resolver build their fold map here so a curated
-    alias added to orgs.yaml automatically reaches every consumer (no drift)."""
+    """`_ORG_ALIASES` unioned with every curated org's id, `hf_org` and
+    `aliases`, keyed lowercase -> curated id; the curated seed wins on conflict.
+    Every generator and the resolver build their fold map here."""
     m: dict[str, str] = {k.lower(): v for k, v in _ORG_ALIASES.items()}
     for e in orgs_yaml_entries or []:
         if not isinstance(e, dict):
@@ -107,13 +77,9 @@ def build_curated_org_map(orgs_yaml_entries: list[dict]) -> dict[str, str]:
 
 
 def build_org_dev_map_from_store(org_records, org_alias_pairs) -> dict[str, str]:
-    """Same dev-org map as `build_curated_org_map`, for STORE-backed callers that
-    don't have orgs.yaml at hand (the live resolution_service; seed-time lineage
-    derivation; the deployed Space reads from the HF dataset, not seed files).
-    `canonical_orgs` has no `aliases` column, so the alias tier lives as org rows
-    in the alias table — feed it via `org_alias_pairs` ((raw, canonical_id) of
-    entity_type=org). Identical result to build_curated_org_map over orgs.yaml, so
-    every consumer folds orgs the same way (single source, no drift)."""
+    """`build_curated_org_map` for store-backed callers without orgs.yaml.
+    `canonical_orgs` has no `aliases` column; the alias tier arrives as
+    `org_alias_pairs` ((raw, canonical_id) rows of entity_type=org)."""
     m = build_curated_org_map([
         {"id": r.get("id"), "hf_org": r.get("hf_org")} for r in (org_records or [])
     ])
@@ -124,17 +90,14 @@ def build_org_dev_map_from_store(org_records, org_alias_pairs) -> dict[str, str]
 
 
 def _norm_org_key(org: str) -> str:
-    """Separator/case-insensitive org key (one token) for community-casing folds."""
+    """Separator/case-insensitive one-token org key."""
     return re.sub(r"[^a-z0-9]", "", org.lower())
 
 
 def build_community_casing(org_prefixes: list[str]) -> dict[str, str]:
-    """Map a separator/case-insensitive org key -> the authoritative HF-true
-    casing, derived from real-HF repo org prefixes (the hf_oracle / hub_stats
-    sources). Lets every generator snap a community org (no curated id) to ONE
-    canonical spelling so `Sao10K`/`sao10k`/`sao10K` collapse to one
-    canonical_orgs row. Deterministic tie-break (sorted) when a key has >1 real
-    spelling — so a refresh never flips a previously-chosen casing."""
+    """`_norm_org_key` -> one HF-true casing from real HF org prefixes, so
+    `Sao10K`/`sao10k` collapse to one canonical_orgs row. Sorted tie-break so a
+    refresh never flips a previously chosen casing."""
     by_key: dict[str, set[str]] = {}
     for p in org_prefixes:
         if isinstance(p, str) and p.strip():
@@ -148,11 +111,10 @@ def canonicalize_org(
     community_casing: Optional[dict[str, str]] = None,
     distinct_allowlist: Optional[set[str]] = None,
 ) -> str:
-    """Canonical org id for an HF org spelling: (1) curated developer id when the
-    prefix folds to one; (2) else the authoritative HF-true community casing
-    (unless the spelling is on the distinct-org allowlist, which keeps verified
-    separate uploaders apart); (3) else the prefix verbatim. The single org
-    canonicalizer all generators + the reconcile call."""
+    """Canonical org id for an HF org spelling: the curated developer id, else
+    the HF-true community casing (unless the spelling is on the distinct-org
+    allowlist, which keeps verified separate uploaders apart), else the prefix
+    verbatim."""
     if not prefix:
         return prefix
     curated = curated_map.get(prefix.lower())
@@ -173,16 +135,15 @@ def dev_org_of_prefix(prefix: str, hf_to_dev: dict[str, str]) -> str:
 
 
 def name_norm(name: str) -> str:
-    """Normalized name with separators collapsed AND removed (one token), so
-    `Qwen2.5-14B-Instruct` and `qwen-2-5-14b-instruct` map to the same token."""
+    """Normalized name with all separators removed, so `Qwen2.5-14B-Instruct`
+    and `qwen-2-5-14b-instruct` map to one token."""
     return _nz(name).replace(" ", "")
 
 
 def brand_tokens_for(dev_org: str, hf_to_dev: dict[str, str]) -> set[str]:
     """Brand tokens a models.dev key may glue onto a model name for this
-    developer: the dev slug + every HF alias mapping to it (alibaba -> {alibaba,
-    qwen, ...}; meta -> {meta, meta-llama, facebook}), plus a few spelling
-    variants not in the org map. Normalized to single tokens."""
+    developer: the dev slug, every HF alias mapping to it (meta -> {meta,
+    metallama, facebook}) and a few brands absent from the org map."""
     toks: set[str] = set()
     d = dev_org.lower()
     toks.add(name_norm(d))
@@ -201,8 +162,8 @@ def brand_tokens_for(dev_org: str, hf_to_dev: dict[str, str]) -> set[str]:
 
 
 def strip_brand_prefix(norm_name_tok: str, brands: set[str]) -> set[str]:
-    """Candidate name tokens with a leading brand token removed (always includes
-    the original). Strips repeatedly (defensive against `qwen-qwen-...`)."""
+    """Name tokens with leading brand tokens removed, repeatedly
+    (`qwen-qwen-...`); always includes the original."""
     out = {norm_name_tok}
     cur = norm_name_tok
     changed = True
@@ -222,13 +183,11 @@ def build_hf_index(
     hf_to_dev: dict[str, str],
     fixed_ids: frozenset[str] = frozenset(),
 ):
-    """Build the HF target authority from registry `entries` (+ any extra
-    real-HF `fixed_ids`, e.g. from the frozen oracle):
-      - hf_ids: every real-HF canonical id (resolution_source == 'hf' OR in
-        fixed_ids) — for exact id match.
+    """HF target index from registry `entries` plus extra real-HF `fixed_ids`:
+      - hf_ids: every real-HF canonical id (resolution_source == 'hf' or in fixed_ids).
       - alias_to_hf: every id/display/alias string on an HF entry -> that HF id.
-      - by_org_name: (dev_org, name_norm) -> hf_id — for org-aware normalized match.
-      - hf_entry_by_id: id -> entry (so callers can merge onto it).
+      - by_org_name: (dev_org, name_norm) -> hf_id.
+      - hf_entry_by_id: id -> entry.
     """
     hf_entry_by_id: dict[str, dict] = {}
     hf_ids: set[str] = set(fixed_ids)
@@ -270,9 +229,9 @@ def build_hf_index(
 
 
 def decide_fold(mint: dict, hf_ids, alias_to_hf, by_org_name, hf_to_dev) -> Optional[dict]:
-    """Return a fold dict (mint_id, hf_target, match_type, org agreement,
-    evidence) when `mint` confidently refers to the same model as a real HF id;
-    else None (never a cross-developer false merge)."""
+    """Fold dict (mint_id, hf_target, match_type, org agreement, evidence) when
+    `mint` confidently refers to the same model as a real HF id; else None,
+    never a cross-developer merge."""
     cid = mint.get("id")
     if not isinstance(cid, str):
         return None
@@ -289,19 +248,13 @@ def decide_fold(mint: dict, hf_ids, alias_to_hf, by_org_name, hf_to_dev) -> Opti
         if isinstance(a, str):
             mint_strings.append(a)
 
-    # exact id equality
     for s in mint_strings:
         if s in hf_ids and s != cid:
             return _mk(mint, s, "exact", eff_org, hf_to_dev, f"mint string {s!r} is a real HF id")
-    # alias linkage (mint string already an alias of an HF entry). A mint string
-    # can be a generic BARE name (e.g. `gemma-3-4b-it`) that DISTINCT developers
-    # legitimately both carry (google's gemma AND unsloth's re-upload). Such a
-    # shared alias must NOT link the mint across developers, so require org
-    # agreement (after the dev remap) when BOTH the mint's effective org and the
-    # target's developer are known and they DISAGREE — skip that match instead of
-    # false-merging unsloth/gemma-3-4b-it into google/gemma-3-4b-it. (A full
-    # org/model HF-id match is handled by the exact tier above, which is
-    # unambiguous and stays unguarded.)
+    # A bare alias (`gemma-3-4b-it`) is legitimately carried by distinct
+    # developers (google and unsloth's re-upload), so the alias tier requires
+    # org agreement whenever both orgs are known. The exact tier above matches
+    # a full org/model id and is unambiguous, so it stays unguarded.
     for s in mint_strings:
         tgt = alias_to_hf.get(s)
         if tgt and tgt != cid and tgt in hf_ids:
@@ -311,18 +264,16 @@ def decide_fold(mint: dict, hf_ids, alias_to_hf, by_org_name, hf_to_dev) -> Opti
             return _mk(mint, tgt, "alias", eff_org, hf_to_dev, f"mint string {s!r} declared on {tgt!r}")
 
     if eff_org is None:
-        return None  # no org agreement possible -> never fold
+        return None  # no org agreement possible
 
     cand_names = {(s.split("/", 1)[1] if "/" in s else s) for s in mint_strings}
     cand_names = {name_norm(n) for n in cand_names}
 
-    # normalized-name equality + org agreement
     for nm in cand_names:
         tgt = by_org_name.get((eff_org, nm))
         if tgt and tgt != cid:
             return _mk(mint, tgt, "normalized", eff_org, hf_to_dev,
                        f"org={eff_org} + name {nm!r} == {tgt!r}")
-    # fuzzy: brand-prefix-stripped name + org agreement
     brands = brand_tokens_for(eff_org, hf_to_dev)
     stripped: set[str] = set()
     for nm in cand_names:

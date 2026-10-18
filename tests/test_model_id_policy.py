@@ -1,16 +1,8 @@
-"""Write-mode service behavior for the model-ID policy:
-
-  - a verbatim HF id confirmation (hub_stats_index tier) wins over stored
-    aliases, and an unregistered attested id is minted with the HF-true id
-    (never a slugified re-derivation);
-  - stored aliases that disagree with a runtime attestation are flagged for
-    review, never silently repointed; confirmed aliases are never demoted,
-    including under rerun;
-  - exact mode creates no drafts and writes no aliases;
-  - the resolve memo cache is keyed by mode.
-
-The checker's index tier is exercised through a real `hub_stats_index`
-table; the live tier stays off (conftest autouse flag).
+"""Write-mode model-id policy: a verbatim HF id confirmation beats stored
+aliases and mints the HF-true id (never a slug); a disagreeing alias is
+flagged for review, never repointed, and a confirmed one is never demoted,
+even on rerun; exact mode writes nothing; the resolve memo is keyed by mode.
+The index tier runs against a real `hub_stats_index`; the live tier is off.
 """
 import json
 
@@ -74,7 +66,6 @@ def _store(monkeypatch, *, index_ids=(), models=(), aliases=()):
 
 
 def _model_ids(store) -> set:
-    # Flush the pending write buffer so the table reflects creations.
     queries.flush_pending(store)
     df = store.table("canonical_models")
     return set(df["id"]) if not df.empty else set()
@@ -89,9 +80,7 @@ def test_unregistered_index_hit_mints_hf_true_id(monkeypatch):
     assert d["created_new"] is True
     ids = _model_ids(store)
     assert "NousResearch/Hermes-4-70B" in ids
-    # No slugified shadow id was minted.
     assert "nousresearch/hermes-4-70b" not in ids
-    # The alias points at the minted HF-true id — no dangling FK.
     alias = queries.get_alias(store, "nousresearch/hermes-4-70b", "model", None)
     assert alias and alias["canonical_id"] == "NousResearch/Hermes-4-70B"
 
@@ -158,16 +147,14 @@ def test_exact_mode_no_fuzzy_but_resolver_mode_fuzzy(monkeypatch):
     )
     exact = svc.resolve("acme/widget-7b-fp8", "model", None, None, mode="exact")
     assert exact["canonical_id"] is None
-    # Memo is keyed by mode — the resolver-mode call is NOT served the
-    # exact-mode no_match.
+    # The memo is keyed by mode.
     fuzzy = svc.resolve("acme/widget-7b-fp8", "model", None, None)
     assert fuzzy["canonical_id"] == "acme/widget-7b"
     assert fuzzy["strategy"] == "fuzzy"
 
 
 def test_exact_mode_match_writes_nothing(monkeypatch):
-    # A normalized alias hit in exact mode must NOT write an alias row for
-    # the new raw spelling — exact mode is side-effect-free on match too.
+    # Exact mode is side-effect-free on a match too.
     store, svc = _store(
         monkeypatch,
         models=["acme/widget-7b"],
@@ -177,7 +164,7 @@ def test_exact_mode_match_writes_nothing(monkeypatch):
     assert d["canonical_id"] == "acme/widget-7b"
     assert d["strategy"] == "normalized"
     queries.flush_pending(store)
-    assert len(store.table("aliases")) == 1  # only the seeded row
+    assert len(store.table("aliases")) == 1
 
 
 def test_exact_mode_checker_hit_serves_attestation_without_minting(monkeypatch):
@@ -193,8 +180,7 @@ def test_exact_mode_checker_hit_serves_attestation_without_minting(monkeypatch):
 
 
 def test_attested_unregistered_reuses_case_variant_canonical(monkeypatch):
-    # A lowercased draft exists; the index later learns the HF-true casing.
-    # Resolving must reuse the existing row, not mint a shadow duplicate.
+    # A lowercased draft already exists; the HF-true casing must reuse it.
     store, svc = _store(
         monkeypatch,
         index_ids=["acme/Widget-7B"],
@@ -205,7 +191,7 @@ def test_attested_unregistered_reuses_case_variant_canonical(monkeypatch):
     assert d["canonical_id"] == "acme/widget-7b"
     assert d["created_new"] is False
     ids = _model_ids(store)
-    assert ids == {"acme/widget-7b"}  # no second canonical minted
+    assert ids == {"acme/widget-7b"}
 
 
 def test_rerun_never_repoints_confirmed_alias(monkeypatch):
@@ -238,8 +224,7 @@ def test_api_mode_param_threads(monkeypatch):
     d = r.json()
     assert d["canonical_id"] is None
     assert d["strategy"] == "no_match"
-    # Field-presence contract: the 10 core fields are always serialized,
-    # ancestry/resolution_detail never null.
+    # The core fields are always serialized; ancestry/resolution_detail never null.
     for f in ("raw_value", "entity_type", "canonical_id", "strategy",
               "confidence", "created_new", "resolution_source",
               "review_status", "ancestry", "resolution_detail"):

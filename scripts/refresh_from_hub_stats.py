@@ -3,39 +3,26 @@
 Generate seed/models/sources/hub_stats.generated.yaml from
 HuggingFace's `cfahlgren1/hub-stats` dataset.
 
-Scope: BACKFILL ONLY. For HF ids (`org/name`) already aliased to one of
-our canonicals, enrich the existing canonical with hub-stats metadata —
-`release_date` from `createdAt`, `params_billions` approximated from
-the safetensors total, license from cardData, useful tags from the
-tag list. The seed loader's field-level merge fills in missing scalars
-without overriding curated values in `seed/models/core.yaml`.
+Backfill only: for HF ids (`org/name`) already aliased to one of our
+canonicals, emit an enrichment entry (`release_date` from `createdAt`,
+`params_billions` from the safetensors total, license, useful tags, `parents`
+from `baseModels`) that the seed loader's field-level merge fills in without
+overriding curated values in `seed/models/core.yaml`. Lineage descendants of
+covered models are not pre-loaded; the live hub-stats lookup enriches those
+drafts on demand.
 
-Lineage descendant pre-load (community quants/finetunes whose
-`baseModels` chain points at our covered models) is intentionally
-NOT done here — initial scoping showed ~177k descendants of our
-4k HF ids, mostly LoRA adapters. The on-demand enrichment at draft
-creation handles those when EEE actually encounters them.
-
-Re-run efficiency: a watermark in
-`seed/models/sources/hub_stats.state.json` records the upstream parquet's
-content sha256 and the candidate HF ids checked against it. When the
-upstream file hasn't changed AND the candidate set is unchanged, the
-script exits without downloading or querying.
-
-Live source (`--live`): a pinned snapshot of `main/models.parquet`,
-downloaded and queried locally (see `services/hub_stats_snapshot.py`).
+Source: by default the committed offline cache
+`curation/hub_stats_frozen.parquet` (refreshed by
+`scripts/freeze_hub_stats_cache.py`), so a clean regen is reproducible;
+`--live` reads a pinned snapshot of `main/models.parquet` instead (see
+`services/hub_stats_snapshot.py`). On the live path a watermark in
+`seed/models/sources/hub_stats.state.json` (upstream content sha256 + the
+candidate ids checked against it) skips the download when nothing changed.
 
 Output:
     seed/models/sources/hub_stats.generated.yaml — enrichment entries
     that merge into existing canonicals at seed time.
-    seed/models/sources/hub_stats.state.json     — etag watermark.
-
-Reproducibility: by DEFAULT this reads the committed offline cache
-`curation/hub_stats_frozen.parquet` (the candidate subset of the upstream
-parquet incl. the `baseModels` lineage column), so a clean regen reproduces
-lineage without depending on flaky live HF. Refresh that cache with
-`scripts/freeze_hub_stats_cache.py` (live); pass `--live` here to bypass the
-cache and read a fresh pinned upstream snapshot.
+    seed/models/sources/hub_stats.state.json     — live-path watermark.
 
 Usage:
     python scripts/refresh_from_hub_stats.py             # offline cache (reproducible)
@@ -57,9 +44,6 @@ import yaml
 
 from eval_entity_registry.lib.seed_io import build_hf_to_dev_from_orgs_yaml, load_entries_from_yaml
 
-# Shared hub-stats helpers live in the package so the runtime resolver
-# (live lookup at draft creation) and this bulk refresh script stay
-# consistent on row-shape parsing.
 from eval_entity_registry.services.hub_stats import (
     HUB_STATS_LOCAL_PARQUET_ENV,
     QUERY_COLUMNS,
@@ -79,9 +63,6 @@ from eval_entity_registry.services.hub_stats_snapshot import (
     resolve_snapshot,
 )
 
-# Single-sourced two-tier org map (same as `_auto_create_entity._build_hf_to_dev`
-# and `generate_hf_oracle_seed.build_hf_to_dev`): HF-org-lowercase -> developer
-# slug, from `strategies/fuzzy.py:_ORG_ALIASES` + `canonical_orgs.hf_org`.
 from eval_entity_resolver.strategies.fuzzy import _ORG_ALIASES
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -93,16 +74,9 @@ MODELS_DEV_GENERATED = REPO_ROOT / "seed" / "models" / "sources" / "models_dev.g
 HF_ORACLE_GENERATED = REPO_ROOT / "seed" / "models" / "sources" / "hf_oracle.generated.yaml"
 MODELS_DEV_CATALOG_GENERATED = REPO_ROOT / "seed" / "models" / "sources" / "models_dev_catalog.generated.yaml"
 
-# Durable OFFLINE enrichment cache: the candidate subset of cfahlgren1/hub-stats
-# (incl. the `baseModels` lineage column) frozen by scripts/freeze_hub_stats_cache.py.
-# Reading it makes a regen REPRODUCIBLE without depending on flaky live HF. The
-# default below points HUB_STATS_LOCAL_PARQUET at it unless overridden or --live
-# is passed.
+# Offline cache frozen by scripts/freeze_hub_stats_cache.py; the default source.
 FROZEN_CACHE_PATH = REPO_ROOT / "curation" / "hub_stats_frozen.parquet"
 
-# Every model source whose canonicals/aliases can be enriched from hub-stats.
-# hf_oracle (the HF-present mints) and the models.dev catalog are included so a
-# refresh backfills their params/release_date/open_weights/baseModels parents.
 _MODEL_SOURCES = (
     CORE_PATH,
     MODELS_DEV_GENERATED,
@@ -112,10 +86,7 @@ _MODEL_SOURCES = (
 
 
 def build_hf_to_dev() -> dict[str, str]:
-    """HF-org-lowercase -> developer/community slug (see
-    `eval_entity_registry.lib.seed_io.build_hf_to_dev_from_orgs_yaml`). Reading the ALIAS tier lets a
-    refresh honour a curated same-uploader merge (e.g. `EnnoAi` -> `Enno-Ai`)
-    instead of re-emitting the community-twin spelling the org-fold merged."""
+    """HF-org-lowercase -> developer slug; see seed_io.build_hf_to_dev_from_orgs_yaml."""
     return build_hf_to_dev_from_orgs_yaml(ORGS_PATH)
 
 
@@ -128,9 +99,8 @@ STATE_ROWS_KEY = "rows_checked_at_sha256"
 
 
 def load_state() -> dict:
-    """Read the watermark state file. Returns an empty dict on missing,
-    unreadable, or schema-invalid input (including a file with other keys),
-    which means "re-check everything"."""
+    """The watermark state, or {} (re-check everything) when the file is
+    missing, unreadable, or schema-invalid."""
     if not STATE_PATH.exists():
         return {}
     try:
@@ -147,10 +117,9 @@ def load_state() -> dict:
 
 
 def write_state(sha256: str, rows_checked: list[str]) -> None:
-    """Write the watermark. Sorted for diff-clean commits. Called LAST,
-    after the YAML write succeeds — a crash before this line just means
-    next cron run redoes the work, never that we mark rows checked
-    without their data having landed in the YAML."""
+    """Write the watermark (sorted for diff-clean commits). Must run after the
+    YAML write succeeds, so a crash never marks rows checked whose data did
+    not land."""
     payload = {
         STATE_SHA_KEY: sha256,
         STATE_ROWS_KEY: sorted(set(rows_checked)),
@@ -160,13 +129,11 @@ def write_state(sha256: str, rows_checked: list[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Loading the existing registry's index — both org aliases and canonical
-# model HF aliases. We use these to gate which hub-stats rows we look up.
+# Registry index that gates which hub-stats rows are looked up.
 # ---------------------------------------------------------------------------
 
 def load_org_alias_to_canonical() -> dict[str, str]:
-    """Map normalized HF org alias → our canonical org id.
-    Example entry: `'meta-llama' → 'meta'`, `'qwen' → 'alibaba'`."""
+    """{normalized HF org alias -> canonical org id}, e.g. `'meta-llama' -> 'meta'`."""
     with open(ORGS_PATH) as f:
         orgs = yaml.safe_load(f) or []
     out: dict[str, str] = {}
@@ -184,25 +151,17 @@ def load_org_alias_to_canonical() -> dict[str, str]:
 
 
 def load_existing_canonical_aliases() -> dict[str, str]:
-    """Walk core.yaml + models_dev.generated.yaml and map every
-    HF-shaped surface form (any string containing `/`) to the canonical
-    id it belongs to. Keyed by normalized form so case/separator drift
-    doesn't matter at lookup time."""
+    """{normalized HF-shaped surface form -> canonical id} over every model
+    source's ids and `/`-containing aliases."""
     out: dict[str, str] = {}
 
-    # PASS 1: register every canonical `id` first, across ALL sources. A
-    # canonical's own id is a STRONGER claim than being listed as another
-    # canonical's alias — so when the same normalized form is both (a known
-    # cross-source inconsistency, e.g. `DeepSeek-V3.1-Terminus` is an alias of
-    # the fuzzy-collapsed `deepseek-v3.1` AND the id of a distinct HF canonical),
-    # the id-claim wins. This stops an enrichment from emitting an alias that the
-    # seed validator would see as double-claimed.
+    # A canonical's own id outranks another canonical's alias for the same
+    # normalized form, so ids are registered first.
     for path in _MODEL_SOURCES:
         for e in load_entries_from_yaml(path):
             cid = e.get("id")
             if cid:
                 out.setdefault(_normalize(cid), cid)
-    # PASS 2: aliases fill in only forms no canonical id already claimed.
     for path in _MODEL_SOURCES:
         for e in load_entries_from_yaml(path):
             cid = e.get("id")
@@ -215,14 +174,10 @@ def load_existing_canonical_aliases() -> dict[str, str]:
 
 
 def load_ambiguous_canonicals() -> set[str]:
-    """Canonical ids whose id/name/alias normalized form is ALSO claimed by a
-    DIFFERENT canonical — a pre-existing near-duplicate pair (e.g.
-    `alibaba/QwQ-32B` carries the core alias `qwen-qwq-32b`, which is the
-    name of the separate canonical `alibaba/qwen-qwq-32b`). For such pairs the
-    resolver's normalized-match tie-break is finely balanced, so merely adding
-    an enrichment row can flip an oracle id. We skip enriching them (a handful)
-    rather than risk a resolution regression; curation should de-dup the pair.
-    Computed once over all sources."""
+    """Canonical ids whose normalized id/name/alias form is also claimed by a
+    different canonical. Enriching one of such a near-duplicate pair can flip
+    the resolver's normalized-match tie-break, so they are skipped until
+    curation de-dups the pair."""
     norm_owners: dict[str, set[str]] = {}
 
     def _claim(form: str, cid: str) -> None:
@@ -247,14 +202,10 @@ def load_ambiguous_canonicals() -> set[str]:
 
 
 def load_canonical_id_norms() -> dict[str, str]:
-    """Map -> the canonical id for every NORMALIZED claim a distinct canonical
-    makes: its full id AND its bare model-name part. Used to reject an
-    enrichment alias whose normalized form collides with a DIFFERENT
-    canonical's id OR name — that double-claim both trips the seed validator
-    AND lets the resolver's normalized-match intercept another canonical's raw
-    id (the oracle-steal class, e.g. adding `Qwen/QwQ-32B` (norm `qwen-qwq-32b`)
-    as an alias of `alibaba/QwQ-32B` would collide with the distinct
-    `alibaba/qwen-qwq-32b` canonical and flip `qwen/qwq-32b`'s resolution)."""
+    """{normalized full id or bare name -> canonical id} for every canonical.
+    An enrichment alias colliding with a different canonical's id or name is
+    a double claim the seed validator rejects, and one that lets normalized
+    match steal that canonical's raw id."""
     out: dict[str, str] = {}
     for path in _MODEL_SOURCES:
         for e in load_entries_from_yaml(path):
@@ -272,10 +223,8 @@ def query_hub_stats(
     candidate_hf_ids: set[str],
     source: str,
 ) -> list[dict]:
-    """Fetch hub-stats rows whose `id` is in `candidate_hf_ids` from the
-    parquet at `source` (a local path, or a URL on a connection that already
-    has httpfs loaded). Single pass — bounded by the size of our HF-aliased
-    canonical set."""
+    """Hub-stats rows whose `id` is in `candidate_hf_ids`, from the parquet at
+    `source` (a local path, or a URL on a connection with httpfs loaded)."""
     if not candidate_hf_ids:
         return []
     quoted = ", ".join(f"'{i.replace(chr(39), chr(39)*2)}'" for i in candidate_hf_ids)
@@ -299,72 +248,40 @@ def build_entry(
     canonical_id_norms: Optional[dict[str, str]] = None,
     ambiguous_canonicals: Optional[set[str]] = None,
 ) -> Optional[dict]:
-    """Construct a seed entry from a hub-stats row. Returns None when
-    the row's HF id isn't in our existing aliases — backfill only
-    operates on canonicals we already cover.
+    """Seed entry for a hub-stats row, or None when the row's HF id is not
+    aliased to a covered canonical.
 
-    All hub-stats-derived data fields (release_date, params_billions,
-    open_weights, tags, metadata, parents, lineage_origin_model_org_id) come
-    from `enrich_draft_from_row` so this script and the live-lookup
-    path stay byte-identical on extraction. The seed loader's
-    `_merge_into` unions parents by id across sources — generated
-    parents from hub-stats compose with any curated parents in
-    core.yaml rather than overriding them.
+    All hub-stats-derived fields come from `enrich_draft_from_row` so this
+    script and the live-lookup path extract identically; the loader unions
+    `parents` by id, so generated parents compose with curated ones.
     """
     hf_id = row["id"]
-    # Derive the canonical id with HF casing preserved (two-tier org rule), so it
-    # matches the SAME HF-cased ids the HF-oracle generator mints and live
-    # auto-create use — never a lowercase duplicate. The gate below is on the
-    # normalized (case-insensitive) form, so an HF-cased canonical that exists in
-    # the seed still matches.
+    # HF casing is preserved so the id matches what the oracle generator and
+    # live auto-create mint; the gate is on the normalized form.
     if hf_to_dev is None:
         hf_to_dev = build_hf_to_dev()
     canonical_id, _ = hf_id_to_canonical_cased(hf_id, hf_to_dev)
     norm_canon = _normalize(canonical_id)
     if norm_canon not in aliases_to_canonical:
         return None
-    # Use the registry's actual canonical id (may differ in dot/dash from
-    # our slugify of the HF id — e.g., `meta/llama-3.1-8b` vs `meta/llama-3-1-8b`).
+    # The registry's own spelling of the canonical id.
     canonical_id = aliases_to_canonical[norm_canon]
 
-    # Ambiguous-pair guard: skip enriching a canonical that shares a normalized
-    # id/name/alias form with a DIFFERENT canonical (a pre-existing
-    # near-duplicate pair, e.g. `alibaba/QwQ-32B` carries the core alias
-    # `qwen-qwq-32b` = the name of the separate `alibaba/qwen-qwq-32b`). For
-    # such pairs the resolver's normalized-match tie-break is finely balanced;
-    # merely adding an enrichment row perturbs it and can flip an oracle id.
-    # Backfilling these few is not worth a resolution regression — curation
-    # should de-duplicate the pair first.
     if ambiguous_canonicals and canonical_id in ambiguous_canonicals:
         return None
 
-    # Candidate aliases = the HF repo id + its slug. ONLY keep a candidate when
-    # it isn't already owned (by normalized form) by a DIFFERENT canonical — the
-    # seed validator rejects an alias claimed by two canonicals. Now that the
-    # candidate set spans every source (incl. the hf_oracle mints), a
-    # snapshot HF id can be both an enrichment alias here AND its own separate
-    # canonical (e.g. `…-Chat-3B-v1` is a distinct canonical, not an alias of
-    # the fuzzy-collapsed `redpajama-incite-3b` base). Dropping the steal keeps
-    # the seed valid without weakening resolution — the owning canonical already
-    # resolves the form.
     cid_norms = canonical_id_norms or {}
 
-    # Candidate aliases: ONLY the raw HF repo id (case-preserved). We do NOT
-    # emit a lowercased `_slugify(hf_id)` form — the resolver's normalized-match
-    # already collapses case/separators, and a fabricated lowercase slug tends
-    # to collide with a DIFFERENT canonical's existing alias (e.g.
-    # `berkeley-nest/starling-lm-7b-alpha` is already a core alias of
-    # `nexusflow/starling-rm`), which the seed validator rejects as a double
-    # claim. Drop the HF id when it equals the canonical (no-op) or when any
-    # other canonical already owns that exact string OR its normalized form.
+    # Only the raw HF repo id is a candidate alias: normalized match already
+    # collapses case/separators, and a fabricated lowercase slug tends to
+    # collide with another canonical's alias. Dropped when another canonical
+    # owns the exact string or its normalized form.
     def _alias_ok(a: str) -> bool:
         if a == canonical_id:
             return False
         n = _normalize(a)
         if aliases_to_canonical.get(n, canonical_id) != canonical_id:
             return False
-        # Reject if the alias's full-normalized OR bare-name-normalized form is a
-        # distinct canonical's id/name (would steal that canonical's resolution).
         if cid_norms.get(n, canonical_id) != canonical_id:
             return False
         if "/" in a:
@@ -375,30 +292,21 @@ def build_entry(
 
     aliases = sorted(a for a in {hf_id} if _alias_ok(a))
 
-    # Pass the resolved registry canonical so the family-version
-    # inference inside enrich_draft_from_row can suppress a self-edge
-    # when the HF id is aliased directly to its family pointer (rather
-    # than a separate snapshot canonical). Without target_canonical,
-    # `Olmo-3-1125-32B` aliased to `allenai/olmo-3-32b` would gain a
-    # parent edge to itself and corrupt the lineage walker.
-    # The lightweight YAML map above does not include every curated alias from
-    # the resolver's shared org table (notably ``CohereLabs`` and
-    # ``ibm-granite``). Union in the complete HF-prefix map so this cron emits
-    # the same canonical lineage-origin org ids as the models.dev reconcile
-    # step; otherwise the two daily crons rewrite the same rows back and forth.
+    # target_canonical lets enrich_draft_from_row suppress a self-edge when the
+    # HF id is aliased directly to its family pointer.
+    # org_alias_map lacks some curated HF prefixes (e.g. ``CohereLabs``); union
+    # the full map so this cron and the models.dev reconcile emit the same
+    # lineage-origin org ids instead of rewriting each other's rows.
     lineage_org_map = {**org_alias_map, **hf_to_dev}
     enrichment = enrich_draft_from_row(
         row, aliases_to_canonical, lineage_org_map,
         target_canonical=canonical_id,
     )
 
-    # `metadata.hf_id` claims "this canonical IS that real HF repo". When the
-    # enrichment lands on a registry canonical under a DIFFERENT spelling
-    # (org-slug mint, e.g. `deepseek/deepseek-vl2`) and the real id is not
-    # itself a canonical anywhere, keeping the claim trips the
-    # canonical-id-equals-hf-id gate (the canonical id would 404 on HF) and
-    # stalls the cron. The HF surface form still resolves via the alias —
-    # drop only the metadata claim.
+    # `metadata.hf_id` asserts the canonical IS that HF repo. When the
+    # enrichment lands on a differently spelled canonical and the real id is
+    # not itself a canonical, the claim would trip the canonical-id-equals-hf-id
+    # gate; the alias still resolves, so drop only the claim.
     if "metadata" in enrichment and hf_id != canonical_id:
         if aliases_to_canonical.get(_normalize(hf_id)) != hf_id:
             try:
@@ -409,29 +317,19 @@ def build_entry(
                 meta.pop("hf_id")
                 enrichment["metadata"] = json.dumps(meta, sort_keys=True)
 
-    # Decode tags from JSON-encoded string (helper output) back to a YAML
-    # list. Loader accepts either form; list-form keeps generated YAML
-    # diffs reviewable.
+    # List-form tags keep the generated YAML diff reviewable; the loader
+    # accepts either form.
     if "tags" in enrichment:
         try:
             enrichment["tags"] = json.loads(enrichment["tags"])
         except (ValueError, TypeError):
             pass
 
-    # Preserve the existing YAML key order so the diff after this change
-    # is dominated by NEW fields (parents / lineage_origin_model_org_id) rather
-    # than wholesale reformatting.
-    # NO display_name here: this is a backfill enrichment that MERGES onto an
-    # existing canonical (hf_oracle/core/models_dev), which already carries the
-    # authoritative HF-cased display_name. Emitting a humanized, org-stripped
-    # name (e.g. `QwenStock1 14B`) would (a) collide across orgs — the seed
-    # auto-derives display_name as a global alias — and (b) needlessly churn the
-    # diff. The loader's field-merge keeps the existing display_name.
-    # NO org_id either: the owning source / seed-time org-from-prefix rule
-    # derives it (and auto-creates the org row — which only fires when org_id
-    # is None). Stamping the raw HF prefix here both overrode deliberately
-    # org-less curated canonicals via the prefer-non-empty field merge and left
-    # dangling org FKs for prefixes this cron never writes a row for.
+    # No display_name: the owning source already carries the authoritative
+    # one, and a humanized bare name would collide across orgs as a global
+    # alias. No org_id: the seed-time org-from-prefix rule derives it, and a
+    # stamped raw HF prefix overrides deliberately org-less canonicals and
+    # leaves dangling org FKs.
     entry: dict = {
         "id": canonical_id,
     }
@@ -455,20 +353,17 @@ def build_entry(
 
 
 def _carry_forward_committed(fresh: list[dict], committed: list[dict]) -> list[dict]:
-    """Merge the COMMITTED generated file into a fresh wholesale rewrite so a
-    model that fell out of today's fetch (upstream parquet shrank, repo gated/
-    deleted) never silently loses its committed enrichment at the next seed.
-    Mirrors refresh_from_modelsdev's carry-forward:
+    """Merge the committed file into the fresh rewrite so a model that fell out
+    of the fetch (parquet shrank, repo gated/deleted) keeps its enrichment.
 
-      * id still in the fresh output: the fresh entry wins outright (and a
-        prior `upstream_status: removed` tag is thereby cleared);
-      * id absent: retain the committed entry, tagged
-        `metadata.upstream_status: removed`. The committed `org_id` field
-        (pre-dating the no-stamping rule) is dropped — the seed-time
-        org-from-prefix rule recovers the org.
+      * id in the fresh output: the fresh entry wins (clearing any prior
+        `upstream_status: removed` tag);
+      * id absent: the committed entry is retained, tagged
+        `metadata.upstream_status: removed`, minus `org_id` (the seed-time
+        org-from-prefix rule recovers it).
 
-    Malformed committed metadata degrades to {} (with a warning) rather than
-    crashing the cron. Output is id-sorted (deterministic)."""
+    Malformed committed metadata degrades to {} with a warning. Output is
+    id-sorted."""
     fresh_ids = {e["id"] for e in fresh if e.get("id")}
     out = list(fresh)
     retained = 0
@@ -547,10 +442,8 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    # Source selection. Default is the committed offline cache (or an explicit
-    # $HUB_STATS_LOCAL_PARQUET) so a clean regen is reproducible. The --live
-    # source is resolved after the candidate set is known, so the watermark can
-    # short-circuit before any download.
+    # The --live source is resolved after the candidate set is known so the
+    # watermark can short-circuit before any download.
     snap: Optional[HubStatsSnapshot] = None
     source: Optional[str] = None
     if not args.live:
@@ -585,19 +478,14 @@ def main() -> int:
         print("[refresh] ERROR: no canonical models found in seed/. Seed first.", file=sys.stderr)
         return 1
 
-    # Reverse map: developer slug -> the HF org spellings that remap to it
-    # (`meta` -> {`meta-llama`, `facebook`}). Used to reconstruct the true HF
-    # repo id for a big-dev canonical (`meta/Llama-3.1-8B`) whose id is NOT the
-    # HF repo (`meta-llama/Llama-3.1-8B`) — so the parquet lookup finds the row.
+    # dev slug -> HF org spellings, to reconstruct the real HF repo id for a
+    # big-dev canonical whose id prefix is the dev slug.
     dev_to_hf_orgs: dict[str, set[str]] = {}
     for hf_org, dev in hf_to_dev.items():
         dev_to_hf_orgs.setdefault(dev, set()).add(hf_org)
 
-    # Initial candidates: every HF-shaped alias + canonical id on a known
-    # canonical, across ALL model sources (including the hf_oracle mints
-    # and the models.dev catalog). We pass the original (non-normalized) form to DuckDB
-    # since the parquet `id` column carries case-sensitive original strings. For
-    # big-dev canonicals we also enqueue the reconstructed HF-org repo id.
+    # Candidates keep their original casing: the parquet `id` column is
+    # case-sensitive.
     initial: set[str] = set()
     for path in _MODEL_SOURCES:
         for e in load_entries_from_yaml(path):
@@ -608,15 +496,13 @@ def main() -> int:
             if isinstance(cid, str) and "/" in cid:
                 initial.add(cid)
                 org_part, name_part = cid.split("/", 1)
-                for hf_org in dev_to_hf_orgs.get(org_part, ()):  # big-dev re-map
+                for hf_org in dev_to_hf_orgs.get(org_part, ()):
                     initial.add(f"{hf_org}/{name_part}")
     print(f"[refresh] HF-id candidates to look up: {len(initial)}", file=sys.stderr)
 
-    # Live path: pin the upstream snapshot, then short-circuit before the
-    # download if its content hash is unchanged, every current candidate was
-    # already checked against it, and the YAML is still on disk (a deleted YAML
-    # with a surviving state file must regenerate, not skip). Offline sources
-    # never consult the watermark.
+    # Short-circuit only when the content hash is unchanged, every candidate
+    # was already checked, and the YAML still exists (a deleted YAML must
+    # regenerate).
     hf_token = os.environ.get("HF_TOKEN")
     if args.live:
         snap = resolve_snapshot(token=hf_token)
@@ -643,7 +529,7 @@ def main() -> int:
     assert source is not None
 
     con = duckdb.connect()
-    if is_remote_source(source):  # only when $HUB_STATS_LOCAL_PARQUET is a URL
+    if is_remote_source(source):
         con.execute("INSTALL httpfs; LOAD httpfs;")
         if hf_token:
             escaped = hf_token.replace("'", "''")
@@ -664,12 +550,9 @@ def main() -> int:
             entries.append(e)
     entries.sort(key=lambda e: e["id"])
 
-    # Dedupe by canonical id: when multiple HF ids collapse to the same
-    # canonical via aliases_to_canonical (e.g. -v0.1/-v0.2/-v0.3 all
-    # mapping to mistralai/mistral-7b-instruct because the resolver's
-    # fuzzy strip removes the version suffix), pick the entry with the
-    # latest release_date as the winner and UNION the alias lists across
-    # all dupes so every HF id stays addressable.
+    # Several HF ids can map to one canonical (the fuzzy strip collapses
+    # version suffixes): latest release_date wins and aliases are unioned so
+    # every HF id stays addressable.
     by_id: dict[str, dict] = {}
     collisions = 0
     for e in entries:
@@ -679,7 +562,6 @@ def main() -> int:
             by_id[eid] = e
             continue
         collisions += 1
-        # Pick winner by max release_date (None sorts before any date).
         prev_date = prev.get("release_date") or ""
         new_date = e.get("release_date") or ""
         winner = e if new_date > prev_date else prev
@@ -695,9 +577,6 @@ def main() -> int:
         )
     entries = sorted(by_id.values(), key=lambda e: e["id"])
 
-    # Carry the committed file forward: an id that fell out of today's fetch
-    # keeps its committed enrichment (tagged `upstream_status: removed`)
-    # instead of losing release_date/params/metadata at the next seed.
     committed = (
         yaml.safe_load(MODELS_OUT_PATH.read_text()) or []
         if MODELS_OUT_PATH.exists() else []
@@ -716,8 +595,6 @@ def main() -> int:
     write_models_yaml(entries)
     print(f"[refresh] wrote {MODELS_OUT_PATH}", file=sys.stderr)
 
-    # State write LAST: if anything above crashed, next run sees old
-    # state and redoes the work — safe. Only the live path has a watermark.
     if snap is not None:
         write_state(snap.sha256, sorted(initial))
         print(f"[refresh] wrote {STATE_PATH}", file=sys.stderr)

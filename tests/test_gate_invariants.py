@@ -1,25 +1,10 @@
-"""Acceptance-gate invariants for model-resolution / canonical-graph integrity.
+"""Acceptance-gate invariants for model resolution and canonical-graph integrity.
 
-These are PERMANENT regression tests: they encode the acceptance gate as pytest
-cases that must hold across all future model-reconcile work. They run OFFLINE against
-the committed `fixtures/` parquet warehouse and the frozen live-HF oracle
-`hf_model_id_resolution.json` (at the evaleval workspace root).
-
-The gate has two complementary surfaces:
-  - the resolver behaviour (does every EEE id resolve, and do the 4,074 HF ids
-    resolve ORG-AWARE to their HF-true `fixed_hf_model_id`); and
-  - the canonical graph itself (dedup, no dangling parent edges, total
-    group/family membership, null-at-origin lineage, Tier-3 honesty,
-    no name-only cross-org merges).
-
-Heavy cases (the full 6,720-id resolve sweep + the 4,074 oracle sweep) are
-marked `@pytest.mark.slow` so they can be selected/deselected, but they stay
-runnable in CI (the sweep is sub-second against the parquet fixtures).
-
-The numbers asserted are the gate floor: COVERAGE must be 6,720/6,720 non-null;
-ORACLE must be 4,074/4,074 org-aware-correct; case-insensitive canonical dups
-must be 0; dangling parent edges must be 0. A regression that breaks any of
-these MUST fail this module.
+Runs offline against the committed `fixtures/` parquet and the frozen HF oracle
+`hf_model_id_resolution.json`. Pins: every EEE id resolves; every oracle HF id
+resolves org-aware to its real repo id; no duplicate, dangling or cross-org
+graph state; snapshot resolutions, edges and lineage never regress. The full
+sweeps are `@pytest.mark.slow` but stay runnable in CI.
 """
 from __future__ import annotations
 
@@ -45,10 +30,7 @@ from eval_entity_resolver.strategies.fuzzy import _ORG_ALIASES
 REGISTRY_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES_DIR = REGISTRY_ROOT / "fixtures"
 ORGS_YAML = REGISTRY_ROOT / "seed" / "orgs.yaml"
-# The frozen live-HF oracle. Tracked IN-REPO (curation/) so the oracle gates
-# actually run in CI (the evaleval workspace root is not part of the registry
-# checkout); the shared helper falls back to the workspace-root copy for local
-# dev. Single-sourced so the gate and the generator scripts resolve it identically.
+# Shared helper so the gate and the generator scripts resolve the same oracle file.
 ORACLE_PATH = resolve_oracle_path()
 
 # Gate floor numbers (the registry's measured baseline).
@@ -61,16 +43,14 @@ EXPECTED_ORACLE = 4074  # fixed_exact + fixed_near_miss subset of that oracle
 # --------------------------------------------------------------------------
 @pytest.fixture(scope="module")
 def resolver() -> Resolver:
-    """Resolver wired to the committed parquet fixtures (canonical graph +
-    alias index). Same construction path the oracle-comparison script uses."""
+    """Resolver over the committed parquet fixtures."""
     assert FIXTURES_DIR.exists(), f"missing fixtures dir: {FIXTURES_DIR}"
     return Resolver.from_parquet(str(FIXTURES_DIR))
 
 
 @pytest.fixture(scope="module")
 def models_df() -> pd.DataFrame:
-    """The canonical_models table as materialised in fixtures (post-seed:
-    the derived walk columns are already populated)."""
+    """canonical_models as seeded (derived walk columns populated)."""
     df = pd.read_parquet(FIXTURES_DIR / "canonical_models.parquet")
     assert not df.empty
     return df
@@ -84,10 +64,8 @@ def oracle() -> dict[str, dict]:
 
 @pytest.fixture(scope="module")
 def hf_to_dev() -> dict[str, str]:
-    """The HF-namespace → developer-org map for the ORG-AWARE oracle comparison.
-    Single source: the shared `build_curated_org_map` (incl. the orgs.yaml ALIAS
-    tier), so the gate folds orgs the SAME way the resolver does — a stricter
-    hf_org-only map here would make the gate diverge from real resolution."""
+    """HF-namespace -> developer map, built by the same `build_curated_org_map`
+    the resolver uses so the gate folds orgs exactly as real resolution does."""
     from eval_entity_resolver.fold import build_curated_org_map
     return build_curated_org_map(yaml.safe_load(ORGS_YAML.read_text()) or [])
 
@@ -159,9 +137,8 @@ def test_oracle_has_expected_population(oracle):
 # --------------------------------------------------------------------------
 @pytest.mark.slow
 def test_coverage_all_eee_ids_resolve_non_null(resolver, oracle):
-    """GATE part 1 (quantitative floor): every EEE id (incl. the 2,646
-    not-on-HF tail that must gain non-null via Tier-2/3) resolves to a
-    non-null canonical. A single no_match is a gate break."""
+    """Every EEE id in the oracle resolves to a non-null canonical; a single
+    no_match is a gate break."""
     no_match = [raw for raw in oracle if resolver.resolve(raw, "model").canonical_id is None]
     assert no_match == [], (
         f"{len(no_match)}/{len(oracle)} EEE ids resolved to no_match (gate floor "
@@ -174,30 +151,17 @@ def test_coverage_all_eee_ids_resolve_non_null(resolver, oracle):
 # --------------------------------------------------------------------------
 @pytest.mark.slow
 def test_oracle_org_aware_match(resolver, oracle, hf_to_dev):
-    """GATE part 1: each fixed_exact / fixed_near_miss id resolves to a
-    canonical C where model-name(C) == model-name(fixed_hf_model_id)
-    CASE-SENSITIVELY, and org(C) is ORG-AWARE-equal to the HF org (equal
-    case-insensitively for community ids, or a curated namespace-alias of the
-    resolved developer org for big-dev ids, e.g. meta-llama ↔ meta).
-
-    The model-name comparison is case-sensitive ON PURPOSE — HF repo names are
-    case-sensitive and the canonical id preserves HF casing."""
+    """Each fixed_exact / fixed_near_miss oracle id resolves to a canonical whose
+    model name equals the oracle's case-sensitively (HF repo names are
+    case-sensitive) and whose org folds to the same developer as the HF org."""
     fixed = {
         raw: meta for raw, meta in oracle.items()
         if meta.get("resolution_status") in ("fixed_exact", "fixed_near_miss")
     }
 
-    # Raws whose oracle `fixed_near_miss` redirect must NOT be followed (a wrong
-    # HF "did-you-mean": a genuine size change or a cross-uploader migration).
-    # They resolve to their own/corrected canonical, so each is checked against
-    # THAT (must resolve away from the bad redirect) rather than against it.
-    #
-    # SINGLE SOURCE OF TRUTH: the exemption set is derived from the SAME
-    # `nearmiss_changes_identity` rule the generator (generate_hf_oracle_seed)
-    # uses to decide which near-miss redirects to refuse — so the gate and the
-    # generator can never disagree about which redirects are "bad", and there is
-    # no hand-maintained list to drift. The curated `audit_bad_nearmiss.json` is
-    # one INPUT to that rule (audit-confirmed specific cases), not a parallel list.
+    # Near-miss redirects that change identity (a wrong HF "did-you-mean") must
+    # NOT be followed. Derived from the generator's `nearmiss_changes_identity`
+    # so the gate and the generator cannot disagree on which redirects are bad.
     _nearmiss_changes_identity, _hf_oracle_hf_to_dev = _import_nearmiss_rule()
     nm_hf_to_dev = _hf_oracle_hf_to_dev()
     AUDIT_CORRECTED = frozenset(
@@ -208,19 +172,14 @@ def test_oracle_org_aware_match(resolver, oracle, hf_to_dev):
     )
 
     def org_aware_equal(resolved_org: str, hf_org: str) -> bool:
-        # The resolved canonical's id-prefix is the REAL HF org (not a folded
-        # dev slug). Two HF orgs of the same developer are both
-        # valid (e.g. THUDM and zai-org both publish GLM); the invariant is
-        # that they fold to the SAME canonical developer.
+        # Two HF orgs of one developer (THUDM / zai-org) must fold to the same developer.
         if resolved_org.lower() == hf_org.lower():
             return True
         fold = lambda x: hf_to_dev.get(x.lower(), x.lower())
         return fold(resolved_org) == fold(hf_org)
 
-    # Each audit-corrected raw must resolve to a DIFFERENT canonical than its bad
-    # redirect does (i.e. it was actually re-pointed away from the wrong model).
-    # Compared by resolved canonical, not name — the cross-uploader corrections
-    # share the redirect's model NAME but differ in org.
+    # Compared by resolved canonical, not name: cross-uploader corrections share
+    # the redirect's model name but differ in org.
     not_corrected = []
     for raw in (AUDIT_CORRECTED & set(fixed)):
         bad_id = fixed[raw]["fixed_hf_model_id"]
@@ -269,12 +228,10 @@ def test_oracle_org_aware_match(resolver, oracle, hf_to_dev):
 # 3. DEDUP — 0 case-insensitive duplicate canonical ids
 # --------------------------------------------------------------------------
 def test_no_case_insensitive_duplicate_canonical_ids(models_df):
-    """No lowercase+HF-cased duplicate pair may exist: the HF-cased id wins and
-    any lowercase spelling is an alias on it. Two canonical rows whose ids differ
-    only by case are a dedup failure."""
+    """Two canonical ids differing only by case is a dedup failure: the HF-cased
+    id wins and the lowercase spelling must be an alias on it."""
     lc = Counter(i.lower() for i in models_df["id"])
     dups = {k: v for k, v in lc.items() if v > 1}
-    # Surface the actual colliding ids for a useful failure message.
     detail = {}
     if dups:
         by_lower = defaultdict(list)
@@ -289,17 +246,10 @@ def test_no_case_insensitive_duplicate_canonical_ids(models_df):
 # 3b. NO ENRICHMENT-MINT — enrichments/*.yaml bridge, never create a canonical
 # --------------------------------------------------------------------------
 def test_alias_enrichments_never_mint_canonicals():
-    """`enrichments/*.yaml` records (aliases.yaml AND parents.yaml, etc.) must
-    attach to an EXISTING canonical, never mint one. The loader (`cli.py::_absorb`)
-    creates a bare canonical for ANY enrichment-record id with no backing entity
-    def — a metadata-less row that silently shadows any real canonical it
-    normalize-duplicates. Every enrichment id must be a def id in core.yaml or
-    sources/*.generated.yaml.
-
-    `skip_source_ids` is subtracted: an id core deliberately skips is DROPPED by the
-    loader (`_absorb(..., extra_skip=skip_source_ids)`), never minted, so it can't
-    create a phantom. (A stale record pointing at a skipped id merely loses its
-    surface forms — a separate, lesser cleanup, not the mint bug this gate guards.)"""
+    """Every `enrichments/*.yaml` record id must be a def id in core.yaml or
+    sources/*.generated.yaml: for an unknown id the loader (`cli.py::_absorb`)
+    mints a bare, metadata-less canonical that can shadow a real one.
+    `skip_source_ids` are subtracted because the loader drops them, never mints."""
     seed_models = REGISTRY_ROOT / "seed" / "models"
 
     def _entry_ids(obj) -> set[str]:
@@ -348,9 +298,8 @@ def test_no_dangling_parent_edges(models_df):
 #    lineage_origin_model_id null-at-origin (NOT self)
 # --------------------------------------------------------------------------
 def test_group_and_family_membership_is_total(models_df):
-    """`model_group_id` and `model_family_id` are a TOTAL partition: NON-NULL
-    for every model, equal to SELF for singletons / roots (NOT null at root,
-    via the self-fallback). A null group/family is a membership break."""
+    """`model_group_id` and `model_family_id` are total: non-null for every
+    model, self for singletons and roots."""
     null_group = models_df[models_df["model_group_id"].isna()]
     null_family = models_df[models_df["model_family_id"].isna()]
     assert null_group.empty, (
@@ -361,26 +310,20 @@ def test_group_and_family_membership_is_total(models_df):
         f"{len(null_family)} models have null model_family_id "
         f"(must be self at root). e.g. {null_family['id'].head(10).tolist()}"
     )
-    # And the self-fallback must actually fire for at least the obvious
-    # singletons — guard against "non-null" being satisfied trivially by some
-    # other value while self-at-root regressed. Many rows are their own group.
+    # Guard against non-null being satisfied trivially while self-at-root regressed.
     self_group = (models_df["model_group_id"] == models_df["id"]).sum()
     assert self_group > 0, "no model is its own group root — self-fallback regressed"
 
 
 def test_lineage_origin_model_id_is_null_at_origin_not_self(models_df):
-    """`lineage_origin_model_id` (the id of the deepest non-variant ancestor)
-    is NULL when self is the origin — NO self-fallback (unlike the org_id
-    variant, which DOES self-fall-back). A row whose lineage_origin_model_id
-    equals its own id is a regression of the null-at-origin semantics."""
+    """`lineage_origin_model_id` is NULL at origin with no self-fallback (unlike
+    `model_group_id`); a self-pointing row regresses that semantics."""
     self_pointing = models_df[models_df["lineage_origin_model_id"] == models_df["id"]]
     assert self_pointing.empty, (
         f"{len(self_pointing)} models have lineage_origin_model_id == self "
         f"(must be null at origin). e.g. {self_pointing['id'].head(10).tolist()}"
     )
-    # Non-trivial: SOME rows must actually carry a (non-null, non-self) origin
-    # pointer — otherwise the column is uniformly null and the assertion above
-    # is vacuous. Finetunes/quants of upstream weights have one.
+    # Some rows must carry an origin, or the check above is vacuous.
     has_origin = models_df["lineage_origin_model_id"].notna().sum()
     assert has_origin > 0, (
         "no model carries a lineage_origin_model_id — the lineage walk produced "
@@ -392,11 +335,9 @@ def test_lineage_origin_model_id_is_null_at_origin_not_self(models_df):
 # 6. NO NAME-ONLY CROSS-ORG MERGE — a same model-name under two orgs stays distinct
 # --------------------------------------------------------------------------
 def test_no_name_only_cross_org_merge(resolver, models_df):
-    """Org-aware identity: a model NAME shared by two different orgs must NOT
-    collapse to a single canonical. Concrete known case: the `Llama-3-Instruct-
-    8B-SimPO` finetune exists independently under both `haoranxu` and
-    `princeton-nlp`. Both ids must (a) exist as distinct canonicals and (b)
-    resolve to THEMSELVES — not to each other or a shared merged id."""
+    """A model name shared by two orgs must not collapse to one canonical: both
+    known `Llama-3-Instruct-8B-SimPO` uploads exist as distinct canonicals and
+    resolve to themselves."""
     a = "haoranxu/Llama-3-Instruct-8B-SimPO"
     b = "princeton-nlp/Llama-3-Instruct-8B-SimPO"
     idset = set(models_df["id"])
@@ -404,7 +345,6 @@ def test_no_name_only_cross_org_merge(resolver, models_df):
         "spot-check canonicals missing from fixtures — pick a fresh known "
         f"multi-org name. have a={a in idset} b={b in idset}"
     )
-    # Same model name, different org → genuinely distinct identities.
     assert _name_of(a) == _name_of(b)
     assert _org_of(a) != _org_of(b)
 
@@ -432,12 +372,9 @@ def test_tier3_inferred_rows_are_draft(models_df):
 
 
 def test_orgless_inferred_rows_are_tagged_org_unknown(models_df):
-    """Free-text mints WITHOUT an extractable org go to the org-less bucket and
-    the registry never auto-guesses an org. The bucket is keyed by the `unknown`
-    sentinel org (a `null` org_id materialises to it from the `unknown/` prefix
-    at seed time). Every such inferred row MUST carry the `org-unknown` tag, so
-    the bucket is honestly surfaced for review whether a consumer filters on the
-    org FK or the tag."""
+    """Inferred rows without an extractable org land in the `unknown` sentinel
+    org and must carry the `org-unknown` tag, so the bucket is visible whether
+    a consumer filters on the FK or the tag."""
     inferred = models_df[models_df["resolution_source"] == "inferred"]
     orgless = inferred[inferred["org_id"].isna() | (inferred["org_id"] == "unknown")]
     assert not orgless.empty, (
@@ -455,9 +392,8 @@ def test_orgless_inferred_rows_are_tagged_org_unknown(models_df):
 
 
 # --------------------------------------------------------------------------
-# ORG-INTEGRITY (org-canonicalization gate) — every model's org FK resolves,
-# orgs are one-per-developer (no case-splits), and each oracle id is its own
-# real-HF-repo canonical (not a folded org-slug form).
+# ORG-INTEGRITY — org FKs resolve, one org row per developer, oracle ids are
+# real HF repos.
 # --------------------------------------------------------------------------
 @pytest.fixture(scope="module")
 def orgs_df() -> pd.DataFrame:
@@ -491,11 +427,9 @@ def test_no_case_split_orgs(orgs_df):
 
 @pytest.mark.slow
 def test_oracle_canonical_id_is_real_hf_repo_id(resolver, oracle):
-    """Real-HF-repo invariant: each oracle `fixed_hf_model_id` (the real HF repo
-    id) must resolve to a canonical that IS that real id (directly), OR — for the
-    rare oracle near-miss whose registry canonical sits under the original
-    publisher's namespace — reach it via a confirmed alias. canonical_ids are
-    never the synthetic org-folded form (`meta/Llama-…`) anymore."""
+    """Each oracle `fixed_hf_model_id` (a real HF repo id) must resolve: directly
+    as the canonical id, or via a confirmed alias when the canonical sits under
+    the original publisher's namespace."""
     fixed = [
         m["fixed_hf_model_id"] for m in oracle.values()
         if isinstance(m.get("fixed_hf_model_id"), str)
@@ -509,10 +443,9 @@ def test_oracle_canonical_id_is_real_hf_repo_id(resolver, oracle):
 
 
 def test_canonical_id_equals_metadata_hf_id(models_df):
-    """Real-HF-repo invariant for the hub-stats tail: a model that records a real
-    HF repo id in `metadata.hf_id` must USE it as its `canonical_id`. A mismatch
-    where the real id is ABSENT means the canonical is a synthetic/slugified
-    form that 404s on HF."""
+    """A model recording a real HF repo id in `metadata.hf_id` must use it as its
+    canonical_id (unless that id is already another canonical); otherwise the
+    canonical is a synthetic slug that 404s on HF."""
     ids = set(models_df["id"].astype(str))
     viol = []
     for r in models_df.itertuples():
@@ -532,12 +465,9 @@ def test_canonical_id_equals_metadata_hf_id(models_df):
 
 @pytest.mark.slow
 def test_old_folded_form_resolves_to_real_hf_id(resolver, models_df):
-    """Safety net (also guards the models.dev refresh cron): the org-folded id
-    spelling (`alibaba/Qwen2.5-7B`) must resolve to the real-HF canonical
-    (`Qwen/Qwen2.5-7B`) via an alias on it. That alias is what makes
-    `regenerate_catalog` (refresh_from_modelsdev) fold a folded-slug mint onto the
-    real canonical instead of minting a duplicate. A regression here = the cron
-    would re-introduce folded canonicals."""
+    """The org-folded spelling (`alibaba/Qwen2.5-7B`) resolves to the real-HF
+    canonical via an alias; that alias is what stops `regenerate_catalog`
+    (refresh_from_modelsdev) re-minting folded canonicals."""
     ids = set(models_df["id"].astype(str))
     pairs = [
         ("alibaba/Qwen2.5-7B", "Qwen/Qwen2.5-7B"),
@@ -555,14 +485,9 @@ def test_old_folded_form_resolves_to_real_hf_id(resolver, models_df):
 
 
 def test_no_separator_split_orgs(orgs_df):
-    """No two org ids differ ONLY by a separator/case (`prime-intellect` vs
-    `PrimeIntellect`) — the plain case-insensitive check misses these, but they
-    still fragment one developer into two rows downstream.
-
-    EXCEPTION: a curated allowlist (seed/orgs_distinct_allowlist.yaml) of pairs
-    verified to be GENUINELY DISTINCT real HF uploaders — merging those would be a
-    false same-uploader assertion the generators refuse. (A pair that IS the same
-    uploader is instead merged via a curated orgs.yaml alias, not allowlisted.)"""
+    """No two org ids differ only by separator/case (`prime-intellect` vs
+    `PrimeIntellect`); pairs verified as genuinely distinct HF uploaders are
+    allowlisted in seed/orgs_distinct_allowlist.yaml."""
     import yaml as _yaml
     allow_path = REGISTRY_ROOT / "seed" / "orgs_distinct_allowlist.yaml"
     allow = set(_yaml.safe_load(allow_path.read_text()) or []) if allow_path.exists() else set()
@@ -575,11 +500,9 @@ def test_no_separator_split_orgs(orgs_df):
 
 
 def test_no_real_hf_id_duplicated_by_slug(models_df):
-    """A real HF id (`Qwen/Qwen2.5-7B-Instruct`, oracle/hf-sourced) must never be
-    duplicated by a NON-real folded/slug variant (`alibaba/qwen-2-5-7b-instruct`)
-    — the dup-merge collapses those. Two distinct REAL repos that
-    happen to normalize alike (NAPS v-0.1.0 vs v0.1.0) are allowed; 0-real
-    API/spelling dups are a known residual."""
+    """A real HF id must never be duplicated by a non-real folded/slug variant
+    (`alibaba/qwen-2-5-7b-instruct`). Two distinct real repos that normalize
+    alike are allowed."""
     fixed = set()
     for v in json.loads(ORACLE_PATH.read_text())["resolutions"].values():
         fx = v.get("fixed_hf_model_id")
@@ -598,8 +521,7 @@ def test_no_real_hf_id_duplicated_by_slug(models_df):
         return re.sub(r"[-_ /]+", "-", s)
 
     def has_real_hf_id(row):
-        """True when the row's canonical_id is a verified real HF repo id —
-        an oracle fixed id, an hf-sourced mint, or == its own metadata.hf_id."""
+        """Oracle fixed id, hf-sourced mint, or == its own metadata.hf_id."""
         cid = str(row.id)
         if cid in fixed:
             return True
@@ -631,26 +553,14 @@ def test_no_real_hf_id_duplicated_by_slug(models_df):
 
 
 # --------------------------------------------------------------------------
-# No minted models.dev canonical still shadows a real HF id.
-#
-# This is the RULE-AS-ASSERTION gate: it re-runs the SAME confident-match
-# predicate the fold (scripts/fold_modelsdev_dupes.py) used — exact id / alias
-# linkage / normalized-name-with-ORG-AGREEMENT / brand-prefix-stripped-with-org
-# — over the materialised fixtures. If the fold cleaned everything, the predicate
-# now finds NOTHING; a reintroduced mint-dupe makes it find a fold and fail.
-#
-# Why this catches what test_no_real_hf_id_duplicated_by_slug misses: that test
-# clusters by a STRING normalisation of (folded-org, ndup(name)), so it cannot
-# group a dupe that differs in BOTH org spelling AND name across the brand
-# prefix (e.g. `alibaba/qwen-qwq-32b` vs real `Qwen/QwQ-32B` → dev `alibaba`):
-# the names `qwen-qwq-32b` and `qwq-32b` land in different ndup() buckets. The
-# fold predicate defers via the resolver's brand-prefix stripping + org
-# agreement, so re-running it as the gate closes that exact blind spot.
+# NO MINT-DUPE — no models.dev-minted canonical still confidently matches a
+# real HF id. Re-runs the fold script's own `decide_fold` predicate, which
+# catches brand-prefix + org-spelling dupes (`alibaba/qwen-qwq-32b` vs
+# `Qwen/QwQ-32B`) that test_no_real_hf_id_duplicated_by_slug cannot cluster.
 # --------------------------------------------------------------------------
 def _import_nearmiss_rule():
-    """The generator's near-miss block rule + its hf_to_dev builder — so the gate
-    derives its AUDIT_CORRECTED exemption from the SAME rule the generator uses
-    (no parallel hand-maintained list)."""
+    """The generator's near-miss rule + hf_to_dev builder, so the gate's
+    exemption set derives from the same rule."""
     scripts_dir = REGISTRY_ROOT / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
@@ -672,9 +582,7 @@ def _import_fold_module():
 
 
 def _model_aliases_by_canonical() -> dict[str, list[str]]:
-    """raw_value spellings declared for each model canonical, from the alias
-    table — so the gate feeds the fold predicate the same alias surface the
-    fold script reads off `core.yaml` entries."""
+    """Alias raw_values per model canonical: the surface the fold predicate reads."""
     apath = FIXTURES_DIR / "aliases.parquet"
     out: dict[str, list[str]] = defaultdict(list)
     if not apath.exists():
@@ -689,25 +597,16 @@ def _model_aliases_by_canonical() -> dict[str, list[str]]:
     return out
 
 
-# Allowlist of models.dev mints that the fold PREDICATE flags but which are NOT
-# true dupes: the predicate's normalized/brand-stripped tier can over-reach (a
-# base vs a specific dated/quant/size variant, a family pointer vs a leaf, or a
-# not-yet-real placeholder). Entries here are intentionally NOT folded so the gate
-# stays green for the legitimately-not-folded state while any NEW confident
-# mint-dupe still fails. Keep this list TIGHT — every entry is a reviewed
-# exception, not a blanket waiver; the gate fails on a dead (unused) waiver.
-# Currently EMPTY: org-canonicalization plus the shared decide_fold predicate fold
-# every known case correctly.
+# Reviewed models.dev mints the fold predicate flags but which are NOT dupes
+# (base vs dated/quant/size variant, family pointer vs leaf). The gate fails on
+# a dead (unused) waiver, so the list stays tight. Currently empty.
 _KNOWN_NON_DUPE_MINTS: frozenset[str] = frozenset()
 
 
 def test_no_minted_modelsdev_canonical_shadows_real_hf_id(models_df):
-    """GATE: NO canonical with resolution_source=models_dev still has a CONFIDENT
-    real-HF match — i.e. the fold found every mint-dupe and none can
-    silently return. Uses the fold script's own predicate (shared, not a third
-    matcher), so the gate and the cleanup agree by construction. A tight
-    allowlist (`_KNOWN_NON_DUPE_MINTS`) carries the reviewed predicate
-    over-reaches; any NEW confident mint-dupe outside it fails the gate."""
+    """No `resolution_source=models_dev` canonical still has a confident real-HF
+    match under the fold script's own `decide_fold`; every waiver in
+    `_KNOWN_NON_DUPE_MINTS` must still be live."""
     fold = _import_fold_module()
 
     # reconstruct the entry-list shape decide_fold expects, from the fixtures
@@ -747,9 +646,7 @@ def test_no_minted_modelsdev_canonical_shadows_real_hf_id(models_df):
         f"a real HF id (mint-dupe shadow not folded): {leftover[:12]}"
     )
 
-    # Self-policing: every allowlist entry must still be a live, flagged mint —
-    # an entry that no longer matches the predicate (renamed/removed/refolded) is
-    # a DEAD waiver and must be removed, so the list can't silently rot.
+    # A waiver that no longer matches the predicate is dead and must be removed.
     by_mint = {e["id"]: e for e in mints}
     dead = [
         a for a in _KNOWN_NON_DUPE_MINTS
@@ -766,14 +663,9 @@ def test_no_minted_modelsdev_canonical_shadows_real_hf_id(models_df):
 # org-conditional quant grouping: model_group_id never crosses a developer
 # --------------------------------------------------------------------------
 def test_model_group_id_does_not_cross_developer_org(models_df):
-    """A model and its `model_group_id` root MUST share the same developer
-    `org_id`. A first-party precision variant (same org) folds into the base
-    group; a THIRD-PARTY / community quant (e.g. `unsloth/...-bnb-4bit`
-    quantizing `microsoft/phi-4`) keeps its OWN group — its `quantized` edge
-    still records the link via `lineage_origin_model_id`, but its scores never
-    merge into the base lab's model. The same guard drops a spurious cross-org
-    version edge. A group root under a different developer is the
-    cross-org-identity-grouping bug this enforces against."""
+    """A model and its `model_group_id` root share the same developer `org_id`:
+    a third-party quant (`unsloth/...-bnb-4bit` of `microsoft/phi-4`) keeps its
+    own group, so its scores never merge into the base lab's model."""
     org_by_id = dict(
         zip(models_df["id"].astype(str), models_df["org_id"].astype("string"))
     )
@@ -799,29 +691,19 @@ def test_model_group_id_does_not_cross_developer_org(models_df):
 
 
 # --------------------------------------------------------------------------
-# BEHAVIORAL ORACLE SNAPSHOT — resolution must not regress an already-seen
-# canonical/alias. The HF-id oracle gates above only police the ~4074
-# HF-resolvable ids in hf_model_id_resolution.json; they are BLIND to the
-# closed-API, NA-source, and reviewed curated canonicals the curated floor exists
-# to preserve. This gate guards the FULL snapshot at curation/oracle_snapshot/
-# (canonical_models.parquet + aliases.parquet, 7196 canonicals / 28900 aliases):
-# every snapshot canonical id (and every snapshot alias raw) must still resolve to
-# a NON-NULL canonical whose developer is ORG-AWARE-equal to the snapshot's. Names
-# are NOT required equal — id spellings may differ from the snapshot
-# (meta/llama-3-70b -> meta-llama/Meta-Llama-3-70B); the invariant is "same
-# developer, still resolves". Outcomes that intentionally differ from the snapshot
-# are enumerated in the exemption sets (kept tight + justified) so drift stays
-# visible.
+# ORACLE SNAPSHOT — resolution never regresses an already-seen canonical/alias.
+# The HF-id gates above cover only HF-resolvable ids; this guards the full
+# snapshot at curation/oracle_snapshot/ (incl. closed-API / NA / curated
+# canonicals): every snapshot id and alias still resolves to the same
+# developer. Names need not match (id spellings may change). Intentional
+# divergences are enumerated in the exemption sets below.
 # --------------------------------------------------------------------------
 ORACLE_SNAPSHOT_DIR = REGISTRY_ROOT / "curation" / "oracle_snapshot"
 
-# Invented `{wrong-developer}/{slug}` ids the June 2026 generator minted for
-# community models (a Llama finetune keyed under `meta/`, a NIM-served model
-# under `nvidia/`, ...). They survived the real-HF-id rework as alias bridges in
-# enrichments/aliases.yaml and core.yaml, but none was ever a raw string in
-# the EEE data or a models.dev provider key, and each mislabels the developer.
-# Dropped 2026-10-16; the snapshots below still carry them, so the snapshot
-# gates skip them.
+# Invented `{wrong-developer}/{slug}` ids an earlier generator minted for
+# community models (a Llama finetune under `meta/`, a NIM-served model under
+# `nvidia/`). Never a raw in EEE data or a models.dev key, and each mislabels
+# the developer; dropped from the seed but still present in the snapshots.
 _INVENTED_WRONG_ORG_IDS: frozenset = frozenset({
     "alibaba/cogview4",
     "alibaba/qwen3-coder-480b-a35b-instruct-int4-mixed-ar",
@@ -881,41 +763,29 @@ _INVENTED_WRONG_ORG_IDS: frozenset = frozenset({
     "zai/intellect-3",
 })
 
-# Oracle-snapshot canonical ids whose resolution intentionally lands on a
-# different developer in a way the same-model leaf rule below can't auto-detect
-# (the snapshot id was MALFORMED — an embedded org or a placeholder host — so the
-# corrected leaf legitimately differs). Each is a reviewed exception.
+# Snapshot ids whose resolution lands on a different developer AND a different
+# leaf (malformed snapshot id: embedded org or placeholder host). Reviewed.
 _ORACLE_CANON_EXEMPT: frozenset = frozenset({
     "openai/aion-labs-aion-2-0",           # oracle embedded the org in the leaf -> aion-labs/aion-2-0
     "unknown/perplexity-sonar-reasoning",  # `unknown/` placeholder host -> perplexity/sonar-reasoning
     "unknown/cohere-embed-v-4-0",          # `unknown/` placeholder host -> cohere/embed-v4-0 (collision fold)
     "unknown/writer.palmyra-x4",           # `unknown/` placeholder host, org in the leaf -> writer/palmyra-x4
-    # ai21 == ai21-labs (same developer; HF org is ai21-labs). The leaf also
-    # gains an `ai21-` brand prefix in the real repo so the same-model-leaf rule
-    # can't auto-detect it; resolving to ai21-labs/ai21-jamba-* is correct.
+    # ai21 == ai21-labs; the real repo leaf gains an `ai21-` brand prefix.
     "ai21/jamba-1.5-large",
     "ai21/jamba-1.5-mini",
-    # EVA finetune mis-filed under alibaba (it's a Qwen finetune) with the `eva`
-    # brand as a leaf SUFFIX. Real HF repo is EVA-UNIT-01/EVA-Qwen2.5-32B-v0.2 —
-    # right org, brand moves to a PREFIX, so the same-model-leaf rule can't match
-    # the two spellings. Resolving to EVA-UNIT-01/eva-qwen2-5-32b-v0-2 is correct.
+    # Qwen finetune mis-filed under alibaba; the real repo moves the `eva` brand
+    # from leaf suffix to prefix -> EVA-UNIT-01/eva-qwen2-5-32b-v0-2.
     "alibaba/qwen2-5-32b-eva-v0-2",
-    # Lunaris is Sao10K's model; the snapshot's `meta/` attribution was wrong
-    # (same class as the `meta/l3-euryale` example above). The corrected id
-    # also swaps the size token's position, so the same-model-leaf rule can't
-    # auto-detect it. Resolving to sao10k/l3-lunaris-8b is correct.
+    # Sao10K's model mis-attributed to `meta/`; the corrected id also moves the
+    # size token -> sao10k/l3-lunaris-8b.
     "meta/l3-8b-lunaris",
 }) | _INVENTED_WRONG_ORG_IDS
 
-# Oracle-snapshot aliases intentionally NOT resolved — the snapshot's attribution
-# was itself wrong. Reviewed exceptions only.
-# Keyed either by bare raw_value or by (entity_type, raw_value).
+# Snapshot aliases whose attribution was itself wrong. Keyed by bare raw_value
+# or (entity_type, raw_value).
 _ORACLE_ALIAS_EXEMPT: frozenset = frozenset({
-    # `vercel` is an inference platform / AI gateway (seed/inference_platforms.yaml
-    # + the resolver host-prefix strip list), NOT a model developer. The snapshot's
-    # `vercel` org (3 models mis-attributed to the host) is a host-mislabel: the
-    # host is stripped, so resolving `vercel` as a developer org is correctly
-    # no_match.
+    # `vercel` is an inference platform (seed/inference_platforms.yaml), not a
+    # developer; the host prefix is stripped, so no_match is correct.
     ("org", "vercel"),
 }) | _INVENTED_WRONG_ORG_IDS
 
@@ -934,17 +804,10 @@ def _leaf_norm(cid: str) -> str:
 
 @pytest.mark.slow
 def test_phase0_oracle_canonicals_preserved(resolver, hf_to_dev):
-    """GATE: every oracle-snapshot canonical id still resolves NON-NULL to an
-    org-aware-equal developer (no curated/closed-API/NA entity silently orphaned
-    to no_match or re-attributed to a different developer).
-
-    A resolution to a DIFFERENT developer is permitted ONLY when the model leaf
-    is identical (same model, corrected org) — that corrects wrong developer
-    attributions in the snapshot (the models.dev provider mislabels
-    `meta/aion-1-0` -> real `aion-labs/aion-1-0`, `amazon/manta-*` ->
-    `meganova-ai/manta-*`, `meta/l3-euryale` -> `sao10k/...`). A different-developer
-    resolution with a DIFFERENT leaf is a genuine re-attribution and fails (unless
-    explicitly exempted as a malformed snapshot id)."""
+    """Every snapshot canonical id still resolves non-null to an org-aware-equal
+    developer. A different developer is allowed only when the model leaf is
+    identical (a corrected attribution, `meta/aion-1-0` -> `aion-labs/aion-1-0`);
+    a different developer AND leaf is a re-attribution and fails unless exempted."""
     import pandas as pd
     oc = pd.read_parquet(ORACLE_SNAPSHOT_DIR / "canonical_models.parquet")
     no_match, wrong_dev = [], []
@@ -971,11 +834,8 @@ def test_phase0_oracle_canonicals_preserved(resolver, hf_to_dev):
 
 @pytest.mark.slow
 def test_phase0_oracle_aliases_preserved(resolver):
-    """GATE: every oracle-snapshot alias raw still resolves NON-NULL — for ITS OWN
-    entity_type (model / benchmark / org / metric / harness / composite / family),
-    with the alias's source_config — so no already-seen resolution regresses for
-    ANY entity type, not just models. The coverage backstop the HF-id coverage
-    gate cannot provide for non-EEE / non-model aliases."""
+    """Every snapshot alias raw still resolves non-null for its own entity_type
+    and source_config: the backstop for non-model / non-EEE aliases."""
     import pandas as pd
     apath = ORACLE_SNAPSHOT_DIR / "aliases.parquet"
     adf = pd.read_parquet(apath)
@@ -1001,11 +861,9 @@ def test_phase0_oracle_aliases_preserved(resolver):
 
 
 def test_model_display_names_are_humanized(models_df):
-    """GATE: every canonical model carries a real, human-facing display_name —
-    non-empty and never just the canonical id. The seed loader humanizes the
-    tail at load time (tier-3 `inferred` raws, empty rows, and id-placeholder
-    rows where a source set display_name to the id itself), so a regression here
-    means a model would render as a raw slug in the frontend."""
+    """Every model has a non-empty display_name that is not just its id; the
+    seed loader humanizes the tail, so a failure means a raw slug would render
+    in the frontend."""
     dn = models_df["display_name"].fillna("").astype(str).str.strip()
     ids = models_df["id"].astype(str)
     empty = sorted(models_df.loc[dn == "", "id"].tolist())
@@ -1017,31 +875,17 @@ def test_model_display_names_are_humanized(models_df):
     )
 
 
-# Snapshot (oracle_id, parent_id) edges that are allowed not to land. Each is an
-# enumerated, justified exception — any OTHER lost edge fails the gate.
-#
-# Dated-snapshot reclassification (finetune -> variant/version): each of these is
-# a pinned release snapshot of its SAME-org base (e.g. gpt-5.4-pro-2026-03-05 of
-# gpt-5.4-pro). The snapshot recorded the edge as `finetune`, which is not
-# identity-preserving — it broke the model-group walk so every snapshot surfaced
-# as a SEPARATE model page from its base. They are now `variant/version` edges
-# (same release along the version line) so they fold into the base's group; the
-# old `finetune` tuple intentionally no longer lands.
+# Snapshot (id, parent_id) edges allowed not to land; any other lost edge fails.
 _ORACLE_EDGE_EXEMPT: frozenset = frozenset({
-    # The snapshot's tier3 name-inference produced an INVERTED edge (the base
-    # Qwen coder as a "finetune" of Intel's int4 quant). The raw now folds
-    # onto the real HF base repo; the junk edge is deliberately dropped.
+    # Inverted tier3 edge (the base coder as a "finetune" of Intel's int4 quant).
     ("alibaba/qwen-3-coder-480b", "Intel/Qwen3-Coder-480B-A35B-Instruct-int4-mixed-AutoRound"),
-    # Snapshot holds the tier3 draft edge; the real parent is
-    # deepseek-ai/DeepSeek-Coder-V2-Base (finetune, per hub-stats baseModels).
+    # Real parent is deepseek-ai/DeepSeek-Coder-V2-Base (per hub-stats baseModels).
     ("deepseek-ai/DeepSeek-Coder-V2-Instruct", "deepseek/deepseek-coder-v2"),
-    # Snapshot edge is inverted: Lite-Base is the pretrained ORIGIN (parents: []),
-    # not a finetune of the Lite umbrella (which folds to Lite-Instruct) — keeping
-    # it would make Lite-Base a finetune of its own instruct sibling (a cycle).
+    # Inverted: Lite-Base is the pretrained origin; keeping the edge would make it
+    # a finetune of its own instruct sibling.
     ("deepseek/deepseek-coder-v2-lite-base", "deepseek/deepseek-coder-v2-lite"),
-    # Dated snapshots re-typed from the snapshot's conservative `finetune` to the
-    # correct identity-preserving `variant/version` (same parent) — a relationship
-    # refinement, not a lost edge.
+    # Dated snapshots re-typed from `finetune` to identity-preserving
+    # `variant/version` (same parent): a refinement, not a lost edge.
     ("google/gemini-1.5-pro-0514", "google/gemini-1.5-pro"),
     ("google/gemini-1.5-pro-0924", "google/gemini-1.5-pro"),
     ("google/gemini-exp-1114", "google/gemini-exp"),
@@ -1069,12 +913,9 @@ _ORACLE_EDGE_EXEMPT: frozenset = frozenset({
 
 @pytest.mark.slow
 def test_phase0_oracle_edges_preserved(resolver, models_df):
-    """GATE: every oracle-snapshot TYPED parent edge (relationship + axis:
-    variant/finetune/quantized/merge/adapter, all axes incl. training_stage) on
-    a surviving canonical is preserved — repointed to the parent's surviving
-    canonical. Guards the full typed lineage GRAPH, not just the derived
-    group/family/lineage_origin fields. Edges whose parent model is genuinely
-    absent from the registry (no surviving canonical to link to) are allowed."""
+    """Every snapshot typed parent edge (relationship + axis) on a surviving
+    canonical is preserved, repointed to the parent's surviving canonical.
+    Edges whose parent is absent from the registry are allowed."""
     import json as _json
     oc = pd.read_parquet(ORACLE_SNAPSHOT_DIR / "canonical_models.parquet")
 
@@ -1087,10 +928,8 @@ def test_phase0_oracle_edges_preserved(resolver, models_df):
         return v if isinstance(v, list) else []
 
     def _edge_key(target, rel, axis):
-        # `axis` is a variant-only concept (the closed enum lives on variant
-        # edges); a stray axis on a finetune/quantized/merge/adapter edge —
-        # e.g. the field-merge of two sources typing the same edge
-        # differently — must not read as a lost edge.
+        # `axis` is variant-only; a stray axis on another relationship (two
+        # sources typing one edge differently) must not read as a lost edge.
         return (target, rel, axis if rel == "variant" else None)
 
     cur: dict[str, set] = {}
@@ -1138,12 +977,8 @@ def test_phase0_oracle_edges_preserved(resolver, models_df):
 
 @pytest.mark.slow
 def test_resolve_surfaces_typed_edges_and_ancestry(resolver, models_df):
-    """GATE: the typed edge graph is queryable AT RESOLVE TIME, not merely stored.
-    For every model canonical with stored parents, resolve(id) surfaces a
-    non-empty `parents` list; and when the model belongs to a group/family (root
-    != id), resolve(id) surfaces a non-empty `ancestry` chain. Guards that edge
-    preservation (the parents-enrichment) actually flows through resolution +
-    ancestry computation — not just sits in the fixtures."""
+    """The typed edge graph is queryable at resolve time: a model with stored
+    parents surfaces `parents`, and a group/family member surfaces `ancestry`."""
     missing_parents, missing_ancestry = [], []
     for r in models_df.itertuples():
         cid = str(r.id)
@@ -1168,37 +1003,26 @@ def test_resolve_surfaces_typed_edges_and_ancestry(resolver, models_df):
     )
 
 
-# Snapshot (field, id) lineage memberships that cannot be preserved: the group/
-# family ROOT model is not a distinct canonical in the registry (its base was
-# coarsened into a variant or is absent), so the variant has no root to group
-# under. Enumerated, justified — each variant resolves correctly but as a
-# singleton root.
+# Snapshot (field, id) lineage memberships that cannot be preserved: the root is
+# no longer a distinct canonical, so the model is correctly a singleton root.
 _ORACLE_LINEAGE_EXEMPT: frozenset = frozenset({
-    # Gemini dated snapshots re-typed finetune -> variant/version (a dated
-    # snapshot is the SAME identity as its family, not a finetune of it), so
-    # they correctly no longer carry a separate lineage origin.
+    # Dated snapshots re-typed finetune -> variant/version: same identity as the
+    # family, so no separate lineage origin.
     ("lineage_origin_model_id", "google/gemini-1.5-pro-0514"),
     ("lineage_origin_model_id", "google/gemini-1.5-pro-0924"),
     ("lineage_origin_model_id", "google/gemini-exp-1114"),
     ("lineage_origin_model_id", "google/gemini-exp-1121"),
-    # DeepSeek-Coder-V2-Instruct family root shifted when its parent edge was
-    # corrected from the tier3 draft `deepseek/deepseek-coder-v2` to the
-    # authoritative deepseek-ai/DeepSeek-Coder-V2-Base (see _ORACLE_EDGE_EXEMPT).
+    # Family root shifted with the parent-edge correction (see _ORACLE_EDGE_EXEMPT).
     ("model_family_id", "deepseek-ai/DeepSeek-Coder-V2-Instruct"),
-    # Folds into the curated HF-true DeepSeek-Coder-V2-Lite-Base (a clean root);
-    # its snapshot lineage_origin was the deepseek/deepseek umbrella.
+    # Folds into the HF-true DeepSeek-Coder-V2-Lite-Base, a clean root.
     ("lineage_origin_model_id", "deepseek/deepseek-coder-v2-lite-base"),
-    # HF promotion (models.dev refresh + hub_stats_index): the snapshot family
-    # root of each of these was an invented mint of the SAME model
-    # (`alibaba/qwen3-coder-480b-a35b` over its only child, the Instruct
-    # repo), so the root folded into the repo and the repo is now its own
-    # single-member family.
+    # The snapshot family root was an invented mint of the same model; it folded
+    # into the repo, which is now its own single-member family.
     ("model_family_id", "Qwen/Qwen3-Coder-480B-A35B-Instruct"),
     ("model_family_id", "Qwen/Qwen3.6-35B-A3B"),
     ("model_family_id", "alibaba/qwen3-coder-30b-a3b-instruct"),
-    # The undated Bedrock `mistralai/ministral-3-8b-instruct` and the dated
-    # tier3 draft are both the one HF repo Ministral-3-8B-Instruct-2512; the
-    # version edge between them collapsed with the fold.
+    # Undated and dated spellings are the one HF repo Ministral-3-8B-Instruct-2512;
+    # the version edge between them collapsed with the fold.
     ("model_group_id", "mistral/ministral-3-8b-instruct-2512"),
     ("model_group_id", "Qwen/Qwen3-235B-A22B-Instruct-2507"),
     ("model_group_id", "Qwen/Qwen3-VL-32B-Thinking"),
@@ -1209,19 +1033,12 @@ _ORACLE_LINEAGE_EXEMPT: frozenset = frozenset({
     ("model_family_id", "Qwen/Qwen3-VL-8B-Thinking"),
     ("model_family_id", "microsoft/Phi-4-mini-reasoning"),
     ("model_family_id", "xiaomi/mimo-v2-flash"),
-    # The models.dev SLUG `nvidia/nemotron-3-super-120b-a12b` folds into the real
-    # HF canonical nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16 (curated, recent
-    # model absent from the frozen HF oracle). The snapshot's non-trivial family
-    # root for the slug was an artifact of the slug arrangement (a size edge to a
-    # non-existent `…-120b` base; A12B is the MoE active-param notation, not a
-    # separate size); the real canonical is correctly a singleton root.
+    # The slug folds into nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16; the
+    # snapshot's family root was a size edge to a non-existent `...-120b` base
+    # (A12B is MoE active-param notation, not a size).
     ("model_family_id", "nvidia/nemotron-3-super-120b-a12b"),
-    # Dated-snapshot reclassification (finetune -> variant/version): a pinned
-    # release snapshot of its same-org base is the SAME model along the version
-    # line, so it correctly has NO finetune/quant lineage origin. The snapshot's
-    # (buggy) finetune edge walked to a lineage_origin; that origin is
-    # intentionally dropped now the edge is variant/version. (model_group_id is
-    # GAINED here, not lost — these now fold into the base group.)
+    # Dated snapshots re-typed finetune -> variant/version: no finetune/quant
+    # lineage origin (model_group_id is gained, not lost).
     ("lineage_origin_model_id", "alibaba/qwen3-vl-plus-2025-09-23"),
     ("lineage_origin_model_id", "anthropic/claude-sonnet-4-5-thinking-20250929"),
     ("lineage_origin_model_id", "openai/gpt-4-5-2025-02-27"),
@@ -1240,56 +1057,35 @@ _ORACLE_LINEAGE_EXEMPT: frozenset = frozenset({
     ("lineage_origin_model_id", "openai/gpt-5.2-pro-2025-12-11"),
     ("lineage_origin_model_id", "openai/gpt-5.4-2026-03-05"),
     ("lineage_origin_model_id", "openai/gpt-5.4-pro-2026-03-05"),
-    # Normalize-collision fold (lib/collision_fold.py): these dated Claude 3.5
-    # Sonnet snapshots are the surviving canonical after folding the dashed/
-    # compact-date spelling in; as version snapshots they correctly carry a
-    # variant/version edge (no finetune lineage origin). The oracle recorded a
-    # finetune-derived origin on the folded spelling; intentionally dropped.
+    # Surviving canonical of a collision fold (lib/collision_fold.py); as version
+    # snapshots they carry a variant/version edge, so no finetune origin.
     ("lineage_origin_model_id", "anthropic/claude-3.5-sonnet-2024-06-20"),
     ("lineage_origin_model_id", "anthropic/claude-3.5-sonnet-2024-10-22"),
-    # The snapshot origin came from the inverted tier3 edge to Intel's quant
-    # (see _ORACLE_EDGE_EXEMPT); the raw now folds onto the real HF base repo,
-    # which is correctly at origin.
+    # Origin came from the inverted tier3 edge (see _ORACLE_EDGE_EXEMPT); the raw
+    # now folds onto the real base repo, which is at origin.
     ("lineage_origin_model_id", "alibaba/qwen-3-coder-480b"),
-    # Bare tier3 scaffolds (`meta/llama4-maverick`, `…-scout`) carried a
-    # finetune edge to the real Llama-4 canonicals; they are now curated
-    # ALIASES of those canonicals (core skip + enrichment bridge), which are
-    # themselves at origin — the scaffold's self-referential origin is
-    # intentionally gone.
+    # Tier3 scaffolds now curated aliases of the real Llama-4 canonicals, which
+    # are themselves at origin.
     ("lineage_origin_model_id", "meta/llama4-maverick"),
     ("lineage_origin_model_id", "meta/llama4-scout"),
-    # The `microsoft/phi-4-multimodal` mint (the API spelling) merged into the
-    # real repo Phi-4-multimodal-instruct; the snapshot's family root WAS that
-    # mint, so the surviving canonical is now correctly its own family root.
+    # The API-spelling mint merged into the real repo; the snapshot's family root
+    # WAS that mint.
     ("model_family_id", "microsoft/Phi-4-multimodal-instruct"),
-    # The curated edge between the Phi-4-mini siblings now points the right
-    # way: Phi-4-mini-REASONING is the mode variant derived from
-    # Phi-4-mini-instruct (the served "phi-4-mini"), not vice versa. The
-    # snapshot's family root on instruct walked the inverted edge; instruct is
-    # correctly its own family root now.
+    # Phi-4-mini-reasoning is the mode variant of Phi-4-mini-instruct, not vice
+    # versa; the snapshot's family root walked the inverted edge.
     ("model_family_id", "microsoft/Phi-4-mini-instruct"),
-    # Curated fold (core.yaml skip_source_ids): the tier3 `…-reasoning` mint and
-    # the models.dev slug stub both fold into the real HF repo
-    # Qwen/Qwen3-Omni-30B-A3B-Thinking ("reasoning" IS the Thinking repo, not a
-    # finetune of a base). The snapshot's lineage origin was an artifact of the
-    # tier3-inferred finetune edge to the slug stub; the real canonical is
-    # correctly at origin (no base Qwen/Qwen3-Omni-30B-A3B canonical exists).
+    # "reasoning" IS the real Thinking repo (core.yaml skip_source_ids fold), not
+    # a finetune of a base; no base Qwen3-Omni-30B-A3B canonical exists.
     ("lineage_origin_model_id", "alibaba/qwen3-omni-30b-a3b-reasoning"),
 })
 
 
 @pytest.mark.slow
 def test_phase0_oracle_lineage_no_loss(resolver, models_df):
-    """GATE: no oracle-snapshot canonical LOSES its lineage. For every surviving
-    snapshot canonical that had a non-trivial model_group_id / model_family_id /
-    lineage_origin_model_id (root != self, or non-null lineage origin), the
-    canonical it now resolves to must ALSO have that field non-trivial.
-
-    Checks PRESENCE, not exact value: the union of snapshot + generator edges may
-    walk to a deeper/truer origin (an ENRICHMENT, not a regression). The exact raw
-    edges are guarded by test_phase0_oracle_edges_preserved; this guards the
-    DERIVED lineage fields against being dropped (so e.g. a change to the org-map
-    or lineage-derivation can't silently un-group a model)."""
+    """No surviving snapshot canonical loses a non-trivial model_group_id /
+    model_family_id / lineage_origin_model_id. Checks presence, not value: added
+    edges may walk to a truer origin; exact edges are guarded by
+    test_phase0_oracle_edges_preserved."""
     oc = pd.read_parquet(ORACLE_SNAPSHOT_DIR / "canonical_models.parquet")
     cur = {str(x.id): x for x in models_df.itertuples()}
     home: dict = {}
@@ -1330,12 +1126,10 @@ def test_phase0_oracle_lineage_no_loss(resolver, models_df):
 
 
 # --------------------------------------------------------------------------
-# BARE-NAME OWNERSHIP (prefer-official gate) — when several models share a
-# normalized leaf name, the un-namespaced alias must belong to the owner the
-# seed precedence selects (lab first, else the unique confirmed entry), not
-# to whichever entry a regen happens to seed first. Guards the redirect in
-# cli.py `seed` (lab_leaf_owner / strong_leaf_owner) against silent flips
-# from the daily source refreshes.
+# BARE-NAME OWNERSHIP — when several models share a normalized leaf, the bare
+# alias belongs to the owner seed precedence selects (lab first, else the
+# unique confirmed entry), not to whichever entry seeds first. Guards
+# cli.py `seed` (lab_leaf_owner / strong_leaf_owner) against regen flips.
 # --------------------------------------------------------------------------
 @pytest.fixture(scope="module")
 def aliases_df() -> pd.DataFrame:
@@ -1358,10 +1152,8 @@ def _nz(v) -> str:
 
 @pytest.fixture(scope="module")
 def leaf_ownership(models_df, orgs_df):
-    """Recompute the leaf-ownership maps from the OUTPUT tables (the seed
-    builds them from the merged YAML; org_id in fixtures is the derived
-    superset of the load-time signal, so this is the post-hoc view of the
-    same precedence)."""
+    """Leaf-ownership maps recomputed from the output tables (the post-hoc
+    view of the seed's precedence)."""
     from eval_entity_resolver.normalization import normalize
 
     kind = dict(zip(orgs_df["id"].astype(str), orgs_df["kind"].astype(str)))
@@ -1453,10 +1245,8 @@ def test_bare_alias_points_at_unique_confirmed_owner(aliases_df, leaf_ownership)
 
 
 def test_every_model_id_is_a_resolvable_raw(models_df, aliases_df):
-    """Every canonical model id must appear as an alias raw_value — the
-    anti-shadow display drop must never eat an entity's own id alias (it did
-    once: an id-placeholder display colliding with a lab norm discarded the
-    shared string from the alias set)."""
+    """Every canonical model id appears as an alias raw_value: the anti-shadow
+    display drop must never discard an entity's own id alias."""
     raws = set(
         aliases_df[aliases_df["entity_type"] == "model"]["raw_value"].astype(str)
     )
@@ -1465,7 +1255,7 @@ def test_every_model_id_is_a_resolvable_raw(models_df, aliases_df):
 
 
 # --------------------------------------------------------------------------
-# OPENROUTER ID ADOPTION gates (specs/model-id-resolution PLAN.md G3).
+# OPENROUTER ID ADOPTION gates
 # --------------------------------------------------------------------------
 MODELSDEV_SNAPSHOT = REGISTRY_ROOT / "tests" / "fixtures" / "modelsdev_api.snapshot.json"
 OPENROUTER_BEFORE_SNAPSHOT = REGISTRY_ROOT / "curation" / "openrouter_adoption_before.parquet"
@@ -1504,10 +1294,8 @@ def _core_skip_ids() -> set[str]:
 
 
 def test_no_parent_edge_names_a_renamed_away_id():
-    """GATE (adoption 1/5): no `parents[].id` in any source or in core names a
-    renamed-away id — every edge target must be a FULL entry's canonical id in
-    the merged source universe, never a form that survives only as an ALIAS on
-    some entry (which is what a renamed-away id becomes)."""
+    """No `parents[].id` in core or any source names a renamed-away id: every
+    edge target must be a full entry's id, never a form surviving only as an alias."""
     recs = _load_source_entries()
     skip = _core_skip_ids()
     full_ids = {e["id"] for _, e in recs if "display_name" in e and e["id"] not in skip}
@@ -1531,10 +1319,8 @@ def test_no_parent_edge_names_a_renamed_away_id():
     )
 
 
-# Pinned PRE-EXISTING non-adoption duplicate-identity clusters (gate 2's
-# ratchet baseline): spelling twins that predate the adoption gates and are
-# follow-up curation, not adoption regressions. The tail may only SHRINK —
-# any cluster not listed here fails the gate as a NEW duplicate.
+# Pinned pre-existing non-adoption duplicate clusters (spelling twins awaiting
+# curation). Ratchet: may only shrink; an unlisted cluster fails as a new dup.
 _PREEXISTING_DUP_TAIL: frozenset = frozenset({
     ("ai2/molmo-7b-d", "allenai/molmo-7b-d"),
     ("ai2/olmo-3-7b-instruct", "allenai/olmo-3-7b-instruct"),
@@ -1561,9 +1347,8 @@ _PREEXISTING_DUP_TAIL: frozenset = frozenset({
     ("anthropic/claude-4.5-sonnet-thinking", "anthropic/claude-sonnet-4.5-thinking"),
     ("anthropic/claude-4.6-opus-thinking", "anthropic/claude-opus-4-6-thinking"),
     ("google/gemini-1.5-flash", "google/gemini-flash-1-5"),
-    # Veo 3.1 vs Veo 3.1 Fast are DISTINCT video products; they cluster only
-    # because the tag-strip fold eats the `fast` token. False positive, kept
-    # apart deliberately (2026-08-13 models.dev catch-up).
+    # Veo 3.1 vs Veo 3.1 Fast are distinct products; they cluster only because
+    # the tag-strip fold eats the `fast` token.
     ("google/veo-3-1", "google/veo-3.1-fast"),
     ("google/text-bison", "google/text-bison@001"),
     ("google/text-unicorn", "google/text-unicorn@001"),
@@ -1592,22 +1377,12 @@ _PREEXISTING_DUP_TAIL: frozenset = frozenset({
 
 
 def test_no_two_full_entries_share_folded_identity(hf_to_dev):
-    """GATE (adoption 2/5): no ADOPTION-TOUCHED cluster of FULL entries shares
-    the same curated-org-folded, tag-stripped, order-insensitive
-    variant-preserving identity — the duplicate class the carry-forward would
-    otherwise retain forever when an id is renamed (`anthropic/claude-haiku-3`
-    vs the adopted `anthropic/claude-3-haiku`). A cluster counts as
-    adoption-touched when at least one member is an OpenRouter-adopted entry
-    (`metadata.openrouter_adopted`) OR carries an id present in the frozen
-    OpenRouter snapshot key set — the flag alone must not scope the gate,
-    because an invented mint that already EQUALS the key is the same id-thrash
-    class. The registry carries a separate pre-existing tail of non-adoption
-    dup clusters (jamba spelling twins, nova sentinel twins, …) that predate
-    this gate: that tail is PINNED below and may only SHRINK — a new
-    non-adoption dup cluster fails the gate too. Clusters made ONLY of
-    real-HF-attested repos are allowed (two genuinely distinct repos may
-    normalize alike); a size-signature difference also keeps entries apart
-    (opt-1.3b vs opt-13b)."""
+    """No adoption-touched cluster of full entries shares a folded identity
+    (curated-org-folded, tag-stripped, order-insensitive): the dup class a
+    rename would otherwise carry forward forever. A cluster is touched when a
+    member is OpenRouter-adopted or its id is an OpenRouter snapshot key. The
+    pre-existing non-adoption tail is pinned in `_PREEXISTING_DUP_TAIL` and may
+    only shrink. All-real-HF clusters and size-signature differences are allowed."""
     rfm = _import_refresh_module()
     from eval_entity_registry.lib.collision_fold import _bsizes
 
@@ -1672,9 +1447,7 @@ def test_no_two_full_entries_share_folded_identity(hf_to_dev):
         f"OpenRouter-adopted / OpenRouter-key id (adoption id-thrash class): "
         f"{dups[:10]}"
     )
-    # RATCHET on the pre-existing non-adoption dup tail: it may only SHRINK.
-    # A cluster not in the pinned set is a NEW duplicate (fails, visible); a
-    # pinned cluster that disappears just shrinks the tail (fine). Re-pin
+    # Ratchet: a cluster not in the pinned set is a new duplicate; re-pin
     # deliberately when curating one away.
     new_tail = [c for c in sorted(map(tuple, tail)) if c not in _PREEXISTING_DUP_TAIL]
     assert new_tail == [], (
@@ -1688,10 +1461,8 @@ def test_no_two_full_entries_share_folded_identity(hf_to_dev):
 
 @pytest.mark.slow
 def test_every_openrouter_snapshot_key_resolves(resolver):
-    """GATE (adoption 3/5): every OpenRouter model key in the frozen snapshot
-    resolves — to an HF canonical through the crossmap, to its own adopted
-    canonical, or to another owning canonical (all count as success).
-    `openrouter/*` router pseudo-endpoints are routing products, excluded."""
+    """Every OpenRouter model key in the frozen snapshot resolves to some
+    canonical. `openrouter/*` router pseudo-endpoints are routing products, excluded."""
     snap = json.loads(MODELSDEV_SNAPSHOT.read_text())
     keys = [
         k for k in (snap.get("openrouter", {}).get("models") or {})
@@ -1711,16 +1482,10 @@ _BARE_ID_CEILING = 250
 
 
 def test_bare_canonical_org_ambiguity_is_explicit(models_df):
-    """Bare upstream ids are legitimate but lack a namespace from which the
-    generator can safely infer a developer. Their count naturally grows with
-    models.dev, so a frozen size ceiling turns every upstream addition into a
-    manual cron outage. Pin the correctness property instead: a bare row has
-    ``org-unknown`` exactly when its ``org_id`` remains unresolved.
-
-    This keeps the ambiguous tail visible without inventing org ownership. The
-    ceiling retains the existing growth ratchet with bounded headroom for a
-    normal upstream refresh.
-    """
+    """A bare (org-less) canonical id carries ``org-unknown`` exactly when its
+    ``org_id`` is unresolved, so the ambiguous tail stays visible without
+    inventing ownership. The ceiling is a growth ratchet with headroom for a
+    normal upstream refresh."""
     bad = []
     for row in models_df.itertuples():
         cid = str(row.id)
@@ -1743,14 +1508,10 @@ def test_bare_canonical_org_ambiguity_is_explicit(models_df):
 
 
 def test_canonical_id_prefix_is_external_or_folds_to_org(models_df, hf_to_dev):
-    """GATE (adoption 4/5, the amended id-space rule): every canonical id
-    prefix is a real external namespace adopted verbatim (HF-attested or an
-    OpenRouter catalog key whose prefix org AGREES with the entry's curated
-    developer — the same `_openrouter_org_agrees` fold the generator's
-    adoption guard applies) OR folds through the curated org map to the
-    entry's `org_id` (case/separator-insensitively). Invented ids may only use
-    the curated developer prefix. Bare ids are checked separately by
-    ``test_bare_canonical_org_ambiguity_is_explicit``."""
+    """Every canonical id prefix is a real external namespace adopted verbatim
+    (HF-attested, or an OpenRouter key whose prefix org agrees with the entry's
+    developer) or folds through the curated org map to the entry's `org_id`.
+    Bare ids are covered by test_bare_canonical_org_ambiguity_is_explicit."""
     from eval_entity_resolver.fold import _norm_org_key
 
     oracle_fixed = set()
@@ -1767,10 +1528,8 @@ def test_canonical_id_prefix_is_external_or_folds_to_org(models_df, hf_to_dev):
     def fold(o: str) -> str:
         return hf_to_dev.get(o.lower(), o)
 
-    # Curated core.yaml defs are explicit judgment calls: a curated entry may
-    # deliberately keep a raw's mis-prefixed spelling as its id while carrying
-    # the corrected developer org (e.g. `alibaba/dolphin-2-9.2-qwen2-72b`,
-    # org cognitivecomputations).
+    # Curated core.yaml defs are judgment calls: a raw's mis-prefixed spelling
+    # may be kept as the id with the corrected developer org.
     core_doc = yaml.safe_load((SEED_MODELS_DIR / "core.yaml").read_text())
     core_defs = {
         e["id"] for e in (core_doc.get("entries") or [])
@@ -1789,9 +1548,8 @@ def test_canonical_id_prefix_is_external_or_folds_to_org(models_df, hf_to_dev):
         if cid in oracle_fixed or cid in core_defs:
             continue
         if cid in or_keys:
-            # or_keys exemption requires prefix-org agreement (the generator's
-            # `_openrouter_org_agrees` fold): a key under a different
-            # developer's namespace must not launder a mis-attributed row.
+            # A key under another developer's namespace must not launder a
+            # mis-attributed row (the generator's `_openrouter_org_agrees` fold).
             a0, b0 = fold(prefix), fold(org_id) if org_id else None
             if org_id and (a0 == b0 or _norm_org_key(a0) == _norm_org_key(b0)):
                 continue
@@ -1822,29 +1580,20 @@ def test_canonical_id_prefix_is_external_or_folds_to_org(models_df, hf_to_dev):
     )
 
 
-# Deliberate curated CORRECTIONS during the adoption migration: raws whose
-# pre-migration resolution was itself a mis-attribution (a turbo serving
-# spelling bridged onto the base product, a base spelling bridged onto a
-# sibling variant). Reviewed exceptions only.
+# Curated corrections: raws whose pre-migration resolution was itself a
+# mis-attribution. Reviewed exceptions only.
 _ADOPTION_REGRESSION_EXEMPT: frozenset = frozenset({
-    "z-ai-glm-5-turbo",     # was bridged onto zai-org/GLM-5 (base); turbo is a sibling product
-    "z-ai-glm-5v-turbo",    # was bridged onto the 5V base record; same correction
-    # 2026-08-13 catch-up corrections: raw now reaches the TRUE product entity
-    # that didn't exist before the refresh (previous home was a normalized/
-    # fuzzy near-miss, not this model).
-    "Veo-3.1-Fast",                        # was google/veo3-1; now the real google/veo-3.1-fast
-    "deepseek/deepseek-v4-pro-lightning",  # was fuzzy-folded onto DeepSeek-V4-Pro; Lightning is its own product
-    # Sentinel-org scaffold raw: tier3 keeps it on its org-less draft
-    # (`unknown/amazon.nova-premier-v10`); the org-present twin draft
-    # `amazon/nova-premier-v1:0` still resolves by its own id. Same model,
-    # split across the pre-existing tier3 sentinel drafts — reviewed.
+    "z-ai-glm-5-turbo",     # turbo is a sibling product, not the GLM-5 base
+    "z-ai-glm-5v-turbo",    # same correction for 5V
+    # Raw now reaches the true product entity; the old home was a near-miss.
+    "Veo-3.1-Fast",                        # google/veo-3.1-fast, not veo3-1
+    "deepseek/deepseek-v4-pro-lightning",  # Lightning is its own product, not DeepSeek-V4-Pro
+    # Same model split across two tier3 sentinel drafts (org-less and org-present).
     "unknown/amazon.nova-premier-v1:0",
-    # The 5V-Turbo split's inverse leg: the BASE spellings had been absorbed
-    # by the turbo entity; both now resolve to the 5V base `zai/z-ai-glm-5v`.
+    # Inverse leg of the 5V-Turbo split: base spellings resolve to the 5V base.
     "glm-5v",
     "zai/glm-5v",
-    # The served "phi-4-mini" IS microsoft/Phi-4-mini-instruct (API names
-    # drop -instruct); the reasoning attribution named a different model.
+    # The served "phi-4-mini" IS Phi-4-mini-instruct (API names drop -instruct).
     "Phi-4 Mini",
     "microsoft/phi-4-mini",
 }) | _INVENTED_WRONG_ORG_IDS
@@ -1852,16 +1601,10 @@ _ADOPTION_REGRESSION_EXEMPT: frozenset = frozenset({
 
 @pytest.mark.slow
 def test_openrouter_adoption_no_resolution_regression(resolver, aliases_df):
-    """GATE (adoption 5/5, no-regression): every canonical id and alias that
-    resolved before the adoption migration (snapshotted in
-    curation/openrouter_adoption_before.parquet) still resolves to the same
-    entity — an identity shift counts as the same entity only when the old
-    canonical id is carried as an alias on the new entry.
-
-    Provenance of the snapshot: a one-shot resolve sweep over ALL seeded
-    aliases + canonical ids (18,999 raws) at the pre-adoption state — the
-    parent of commit 1104fc5 ("chore(gates): snapshot pre-OpenRouter-adoption
-    model resolution state"), which committed the parquet."""
+    """Every canonical id and alias that resolved before the adoption migration
+    (curation/openrouter_adoption_before.parquet) still resolves to the same
+    entity; an identity shift counts as the same entity only when the old id
+    is an alias on, or resolves exact/normalized to, the new entry."""
     before = pd.read_parquet(OPENROUTER_BEFORE_SNAPSHOT)
     alias_pairs = set(
         zip(
@@ -1872,11 +1615,7 @@ def test_openrouter_adoption_no_resolution_regression(resolver, aliases_df):
     old_home: dict[str, str | None] = {}
 
     def _old_home(old: str):
-        # The old-id-follows rescue accepts EXACT/NORMALIZED resolution ONLY.
-        # A fuzzy hit must not count: it would launder a dropped draft whose
-        # raw degraded from an exact alias (1.0) to a fuzzy stem match (0.9)
-        # as a "rename" — the tier3 carry-forward floor exists precisely so
-        # every dropped draft's forms stay exact/normalized-resolvable.
+        # Exact/normalized only: a fuzzy hit would launder a dropped draft as a rename.
         if old not in old_home:
             res = resolver.resolve(old, "model")
             old_home[old] = (
@@ -1896,9 +1635,7 @@ def test_openrouter_adoption_no_resolution_regression(resolver, aliases_df):
             continue
         if got == old or (old, got) in alias_pairs:
             continue
-        # Same entity iff the OLD canonical id itself follows to the entity
-        # the raw now resolves to (rename/fold with the old id resolvable),
-        # via alias or normalized match.
+        # Rename/fold: the old id itself follows to the new entity.
         if _old_home(old) == got:
             continue
         moved.append((raw, old, got))
@@ -1912,25 +1649,22 @@ def test_openrouter_adoption_no_resolution_regression(resolver, aliases_df):
 
 
 def test_prefer_official_pinned_examples(aliases_df):
-    """Concrete regression pins for the ownership precedence — each one is a
-    case that WAS wrong (or luck-dependent) before the redirect existed."""
+    """Concrete pins for the ownership precedence; each was wrong or
+    load-order-dependent without the redirect."""
     mal = aliases_df[
         (aliases_df["entity_type"] == "model") & aliases_df["source_config"].isna()
     ]
     lookup = dict(zip(mal["raw_value"].astype(str), mal["canonical_id"].astype(str)))
     pins = {
-        # fork's bare display must not shadow the official repo (tier 1)
+        # a fork's bare display must not shadow the official repo (tier 1)
         "Llama-3.1-8B-Instruct": "meta-llama/Llama-3.1-8B-Instruct",
-        # models.dev draft with a mis-attributed org prefix loses the bare
-        # name to the real hf repo (tier 2)
+        # a mis-prefixed draft loses the bare name to the real repo (tier 2)
         "dolphin-2-9.2-qwen2-72b": "dphn/dolphin-2.9.2-qwen2-72b",
-        # tier3 bare-slug draft loses its id-shaped claim to the curated
-        # official entry that lists it as an alias
+        # a bare-slug draft loses to the curated entry that lists it as an alias
         "llama-4-maverick-17b-128e-instruct": "meta-llama/Llama-4-Maverick-17B-128E-Instruct",
-        # a name-inferred `meta/...` draft must NOT own the bare name of a
-        # real community repo (confirmed-only ownership)
+        # a name-inferred draft must not own a real community repo's bare name
         "Reflection-Llama-3.1-70B": "mattshumer/Reflection-Llama-3.1-70B",
-        # the entity healed by the display==id guard resolves by its own id
+        # an entity whose display equals its id still resolves by that id
         "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL": "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL",
     }
     wrong = {
@@ -1961,11 +1695,8 @@ def benchmarks_df() -> pd.DataFrame:
 
 def test_no_separator_split_benchmarks(benchmarks_df):
     """No two benchmark ids differ only by separators/case (`wild-bench` vs
-    `wildbench`) — each such pair fragments one benchmark's results across
-    two entities and two eval pages. The seed loader enforces the same rule
-    at seed time (incl. aliases); this gate keeps the committed fixtures
-    honest. Genuinely distinct pairs go in
-    seed/benchmarks_distinct_allowlist.yaml."""
+    `wildbench`), which would split one benchmark across two eval pages.
+    Genuinely distinct pairs go in seed/benchmarks_distinct_allowlist.yaml."""
     allow_path = REGISTRY_ROOT / "seed" / "benchmarks_distinct_allowlist.yaml"
     allow: list[set] = []
     if allow_path.exists():
@@ -1992,14 +1723,11 @@ def test_no_slash_in_benchmark_ids(benchmarks_df):
 # ---------------------------------------------------------------------------
 # Dated snapshots inherit their base's openness
 # ---------------------------------------------------------------------------
-# A dated API snapshot (`openai/o3-2025-04-16`) is the same model identity as
-# its moving pointer (`openai/o3`) along the version line, and a reasoning
-# effort row is that dated snapshot served differently. Without the typed edges
-# they are parentless leaves with a null verdict, and the site renders an
-# API-only model as openness "Unknown". Each chain must therefore be present,
-# fold into the base's group and family, and carry the base's explicit
-# `open_weights` down, while every dated id stays its OWN canonical leaf so a
-# result reported against a snapshot is not silently collapsed onto the pointer.
+# A dated API snapshot (`openai/o3-2025-04-16`) is the same identity as its
+# moving pointer along the version line; a reasoning-effort row is that
+# snapshot served differently. Without typed edges they are parentless leaves
+# with a null openness verdict. Each chain must fold into the base's group and
+# family and inherit `open_weights`, while every dated id stays its own leaf.
 O3_CHAINS = [
     # (id, parent id, axis, expected group/family base)
     ("openai/o3-2025-04-16", "openai/o3", "version", "openai/o3"),
@@ -2042,10 +1770,9 @@ def test_dated_snapshot_chain_inherits_base_openness(models_df, resolver, cid, p
 
 
 def test_o3_chain_rows_have_a_single_parent(models_df):
-    """The curated enrichment is UNIONed by parent id onto whatever a source
-    emits. A second edge from another layer would give one row two identities:
-    the group walk would follow the version/mode edge while the lineage walk
-    followed the other, so these rows must carry exactly one parent each."""
+    """Layers union edges by parent id; a second edge from another layer would
+    give one row two identities (group walk vs lineage walk), so each o3 chain
+    row must carry exactly one parent."""
     multi = {
         cid: models_df[models_df["id"] == cid].iloc[0]["parents"]
         for cid, _p, _a, _b in O3_CHAINS
@@ -2054,19 +1781,15 @@ def test_o3_chain_rows_have_a_single_parent(models_df):
     assert multi == {}, f"o3 chain row(s) with more than one parent: {multi}"
 
 
-# Legacy rows that already carry `axis: version` on a `finetune` edge. Curated
-# and generated layers field-merge an edge by parent id, so a layer that says
-# `finetune` and one that says `variant` produce this hybrid. The 8 below
-# predate the o3 chains; the count is a ratchet, not an endorsement.
+# Legacy `finetune` edges carrying `axis: version` (a field-merge of two layers
+# that disagreed on the relationship). Ratchet, not an endorsement.
 AXIS_ON_NON_VARIANT_FLOOR = 8
 
 
 def test_axis_only_ever_qualifies_a_variant_edge(models_df):
-    """`axis` is meaningful only on a `variant` edge. A non-variant edge
-    carrying one is the signature of a field-merge between two layers that
-    disagreed on the relationship, which silently changes what the lineage and
-    group walks mean. The o3 chains must be clean outright; the corpus must not
-    grow new instances."""
+    """`axis` is meaningful only on a `variant` edge; a non-variant edge carrying
+    one means two layers disagreed on the relationship. The o3 chains must be
+    clean outright; the corpus must not grow new instances."""
     bad: list[tuple[str, dict]] = []
     for cid, parents in zip(models_df["id"], models_df["parents"]):
         for edge in _parse_parents(parents):

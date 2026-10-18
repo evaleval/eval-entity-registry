@@ -3,48 +3,33 @@
 Generate the HF source-of-truth seed from the frozen HuggingFace oracle
 (`hf_model_id_resolution.json`).
 
-OFFLINE. The only HF data source is the oracle JSON at the evaleval root,
-which carries, for each raw EEE `model_id`, the HF-true repo id
-(`fixed_hf_model_id`) and a `resolution_status` in
-{fixed_exact, fixed_near_miss, unresolved_not_found_or_inaccessible}.
-We materialise the 4,074 HF-present ids (fixed_exact + fixed_near_miss).
+Offline and deterministic. The oracle carries, for each raw EEE `model_id`,
+the HF-true repo id (`fixed_hf_model_id`) and a `resolution_status` in
+{fixed_exact, fixed_near_miss, unresolved_not_found_or_inaccessible}; the
+HF-present ids (fixed_exact + fixed_near_miss) are materialised.
 
-What this script does (deterministic, re-runnable):
+Canonical id rule: `{HF-ORG}/{HF-NAME}` verbatim (HF casing preserved, org
+never folded into the id); `org_id` = the curated developer slug when the HF
+org maps to one (meta-llama->meta, qwen->alibaba, ...), else the HF org.
 
-1. Builds a SINGLE-SOURCED two-tier org map (`hf_to_dev`) from
-   `canonical_orgs.hf_org` AND `strategies/fuzzy.py:_ORG_ALIASES` — no third
-   hardcoded copy. Applies the canon-id rule:
-     - curated developer namespace (meta-llama->meta, qwen->alibaba, ...) =>
-       canonical id `{dev_slug}/{HF-NAME}`, org_id = dev_slug;
-     - otherwise => `{HF-ORG}/{HF-NAME}` verbatim (HF org casing preserved),
-       org_id = HF-ORG.
-   The model-NAME part ALWAYS keeps HF casing, case-sensitive.
+Each oracle entry's target is canon_id(fixed_hf_model_id) and the raw EEE id
+becomes a confirmed alias of it (for fixed_near_miss the target is the HF
+redirect repo, possibly a different org). Targets are partitioned against the
+current seed YAML: present -> nothing minted; present under a casing variant
+-> re-keyed in place; otherwise -> minted.
 
-2. Computes each oracle entry's target canonical:
-     - fixed_exact:      target = canon_id(fixed_hf_model_id)  (== raw)
-     - fixed_near_miss:  target = canon_id(fixed_hf_model_id)  (the HF REDIRECT
-       repo, possibly a different org); the raw EEE id becomes an ALIAS -> target.
-   In all cases the raw EEE id is a confirmed alias of the target.
-
-3. Partitions targets against the CURRENT canonical_models fixtures:
-     - present exact (HF-cased id already there)  -> ok, nothing minted;
-     - present case-insensitively (lowercase id)  -> RE-KEY in place;
-     - brand new                                  -> MINT.
-
-4. Writes/overwrites:
-   (a) seed/models/sources/hf_oracle.generated.yaml — the brand-new canonicals
-       (id HF-cased, org_id, display_name, resolution_source: hf,
-       review_status: reviewed, aliases incl raw EEE id(s) + lowercase form).
-       Sparse metadata; NO invented parents.
-   (b) RE-KEYS the colliding lowercase canonicals IN-PLACE wherever they live
+Writes:
+   (a) seed/models/sources/hf_oracle.generated.yaml — the minted canonicals
+       (HF-cased id, org_id, display_name, resolution_source: hf,
+       review_status: reviewed, aliases incl. raw EEE id(s) + lowercase form).
+       Sparse metadata; no invented parents.
+   (b) re-keys colliding lowercase canonicals in place wherever they live
        (core.yaml / sources/models_dev.generated.yaml /
-       sources/hub_stats.generated.yaml): id lowercase->HF-cased, old lowercase
-       appended to that entry's aliases, raw EEE id(s) appended to aliases.
-   (c) Builds a GLOBAL rename map {old_lower -> hf_cased} and rewrites EVERY
-       parents[].id reference AND model_group_id / model_family_id /
-       lineage_origin_model_id references across ALL model entries in ALL three
-       files so no edge dangles.
-   (d) seed/orgs.generated.yaml — the new HF-cased orgs (kind community,
+       sources/hub_stats.generated.yaml), appending the old id and raw EEE
+       id(s) to that entry's aliases, and rewrites every parents[].id /
+       model_group_id / model_family_id / lineage_origin_model_id reference
+       across all three files so no edge dangles.
+   (c) seed/orgs.generated.yaml — new HF-cased orgs (kind community,
        review_status reviewed, hf_org set). Curated orgs.yaml wins on collision.
 
 Usage:
@@ -68,7 +53,7 @@ from eval_entity_registry.lib.seed_io import (
 
 from eval_entity_resolver.strategies.fuzzy import _ORG_ALIASES
 
-REGISTRY_ROOT = Path(__file__).resolve().parents[1]            # eval-entity-registry/
+REGISTRY_ROOT = Path(__file__).resolve().parents[1]
 ORACLE = resolve_oracle_path()
 
 SEED = REGISTRY_ROOT / "seed"
@@ -82,8 +67,7 @@ HUB_STATS_YAML = SOURCES_DIR / "hub_stats.generated.yaml"
 ORGS_YAML = SEED / "orgs.yaml"
 ORGS_GENERATED_YAML = SEED / "orgs.generated.yaml"
 
-# Files whose model entries may carry edge references that must be rewritten on
-# re-key (in-place candidates + their parents/group/family pointers).
+# Files whose model entries may carry edge references rewritten on re-key.
 EDIT_FILES = [CORE_YAML, MODELS_DEV_YAML, HUB_STATS_YAML]
 EDGE_ID_KEYS = ("model_group_id", "model_family_id", "lineage_origin_model_id")
 
@@ -107,8 +91,8 @@ def _entries_view(doc: object) -> list[dict]:
 
 
 def _load_curated_orgs() -> list[dict]:
-    """Curated orgs from seed/orgs.yaml (the source of truth — fixtures are a
-    build artifact and may be stale/polluted, so we never read them here)."""
+    """Curated orgs from seed/orgs.yaml; fixtures are a build artifact and are
+    never read here."""
     if not ORGS_YAML.exists():
         return []
     with open(ORGS_YAML) as f:
@@ -117,10 +101,8 @@ def _load_curated_orgs() -> list[dict]:
 
 def build_hf_to_dev(curated_orgs: list[dict]) -> dict[str, str]:
     """HF-org-lowercase -> curated developer slug (see
-    `eval_entity_registry.lib.seed_io.build_hf_to_dev_from_orgs_yaml`). Reading the alias tier lets
-    ai2->allenai / aws->amazon / kimi->moonshotai / prime-intellect->PrimeIntellect
-    resolve instead of dangling. `curated_orgs` is accepted for call-site
-    compatibility; the org map is rebuilt from `ORGS_YAML` (identical result)."""
+    seed_io.build_hf_to_dev_from_orgs_yaml). `curated_orgs` is unused; kept
+    for call-site compatibility."""
     return build_hf_to_dev_from_orgs_yaml(ORGS_YAML)
 
 
@@ -134,13 +116,12 @@ def canon_id(hf_model_id: str, hf_to_dev: dict[str, str]) -> tuple[str, str]:
 
 
 # --- near-miss identity guard ----------------------------------------------
-# HF `fixed_near_miss` redirects are "did-you-mean" matches that sometimes map a
-# raw EEE string to a DIFFERENT model (size/generation/uploader swap). Such a
-# redirect must NOT become a confirmed alias (it mis-resolves real evals). A
-# curated denylist (audit_bad_nearmiss.json) confirmed a set of these; we also
-# block any near-miss that changes a genuine size token or crosses a developer
-# org. Conservative on purpose — never flags version-vs-size
-# (`Yi-1.5-34B`) or MoE active-param (`A22B`), which are the same model.
+# HF `fixed_near_miss` redirects are did-you-mean matches that can map a raw
+# EEE string to a different model (size/generation/uploader swap); such a
+# redirect must not become a confirmed alias. Blocked by the curated denylist
+# (curation/audit_bad_nearmiss.json), a genuine size-token change, or a
+# cross-developer org. Version-vs-size (`Yi-1.5-34B`) and MoE active-param
+# (`A22B`) tokens are not size changes.
 _NM_SIZE_RE = re.compile(r'(?<![a-z0-9.])(\d+(?:\.\d+)?)b(?![a-z])', re.I)
 _NM_ACTIVE_RE = re.compile(r'(?<![a-z0-9])a\d+(?:\.\d+)?b', re.I)
 
@@ -161,24 +142,17 @@ _AUDIT_BAD_NEARMISS = _load_audit_bad_nearmiss()
 
 
 def _fold_org(org: str, hf_to_dev: dict[str, str]) -> str:
-    """Developer identity of an HF org spelling: apply the curated two-tier remap
-    THEN collapse separators + case to one token. So a pure separator/case rename
-    of the SAME uploader folds equal (`DeepAutoAI` == `DeepAuto-AI`), while a
-    genuine cross-uploader move stays distinct (`ai4free` != `helpingai`)."""
+    """Developer identity of an HF org spelling: curated remap, then separators
+    and case collapsed, so a same-uploader rename folds equal (`DeepAutoAI` ==
+    `DeepAuto-AI`) while a cross-uploader move stays distinct."""
     return re.sub(r"[^a-z0-9]", "", hf_to_dev.get(org.lower(), org.lower()))
 
 
 def nearmiss_changes_identity(raw: str, fixed: str, hf_to_dev: dict[str, str]) -> str | None:
-    """Reason a fixed_near_miss raw->fixed redirect must NOT be aliased (changes
-    model identity), else None. Signals: audit denylist; genuine size change;
-    cross-developer org.
-
-    The org check is SEPARATOR/CASE aware (via `_fold_org`): an owner RENAME of
-    the same uploader (`DeepAutoAI/X` -> `DeepAuto-AI/X`, same model name) is the
-    same developer and SHOULD be aliased onto the HF-true canonical, so it is NOT
-    flagged. A genuine cross-uploader migration (`AI4free/X` -> `HelpingAI/X`) is
-    a different developer and stays flagged (handled via audit_bad_nearmiss so it
-    resolves to its own canonical, never mis-aliased cross-developer)."""
+    """Reason a fixed_near_miss raw->fixed redirect must not be aliased (it
+    changes model identity), else None. Signals: audit denylist; genuine size
+    change; cross-developer org (per `_fold_org`, so a same-uploader rename is
+    not flagged)."""
     if raw in _AUDIT_BAD_NEARMISS:
         return "audit-confirmed wrong redirect"
     rn, fn = raw.split("/", 1)[-1], fixed.split("/", 1)[-1]
@@ -195,19 +169,10 @@ def nearmiss_changes_identity(raw: str, fixed: str, hf_to_dev: dict[str, str]) -
     return None
 
 
-# --- authoritative-repo marker --------------------------------------------
-# Every hf_oracle mint id IS the real HF repo id (canon_id returns it verbatim),
-# so the mint is AUTHORITATIVE: it must WIN id+casing over any colliding curated
-# slug, never be suppressed in favor of one. We record `metadata.hf_id == id` so
-# consumers (and the seed loader's merge) recognise the id must not be rewritten.
-# When a real HF repo and a dev-org slug name the same model, the slug canonical
-# is the one removed — never the authoritative HF repo.
-
-
 def authoritative_metadata(hf_repo_id: str) -> str:
     """metadata JSON marking a mint as the authoritative real HF repo
-    (`hf_id == id`). An id whose metadata.hf_id equals itself must never be
-    rewritten/suppressed in favor of a different (e.g. dev-org-slug) id."""
+    (`hf_id == id`): such an id must never be rewritten or suppressed in favor
+    of a colliding dev-org slug."""
     return json.dumps({"hf_id": hf_repo_id}, sort_keys=True)
 
 
@@ -217,21 +182,16 @@ def main() -> None:
 
     hf_to_dev = build_hf_to_dev(curated_orgs)
 
-    # "Existing" = every model id authored in the seed YAML source files (the
-    # SOURCE OF TRUTH). We deliberately do NOT read fixtures/*.parquet: those
-    # are a regenerated build artifact and become polluted after a `seed`
-    # materialises the mints, which would make a re-run see everything as
-    # already-present. Reading only the git-tracked YAML keeps the generator
-    # deterministic and re-runnable from a clean checkout.
+    # Only the seed YAML counts as existing: fixtures/*.parquet already hold
+    # prior mints after a seed, which would make a re-run see everything as
+    # present.
     existing_ids: set[str] = set()
     for path in EDIT_FILES:
         _doc, _entries = _load_yaml_entries(path)
         for e in _entries:
-            # Only DEFINING records count as existing: an enrich record (no
-            # display_name — e.g. every hub_stats row, which enriches a
-            # canonical defined elsewhere) defines nothing, and counting it
-            # would make a non-reset re-run classify every oracle target as
-            # "already present" and gut this file down to the residual mints.
+            # Only defining records (with display_name) count: an enrich
+            # record defines nothing, and counting it would make a re-run
+            # classify every target as present.
             if (
                 isinstance(e, dict)
                 and isinstance(e.get("id"), str)
@@ -246,9 +206,8 @@ def main() -> None:
         e["id"] for e in curated_orgs if isinstance(e.get("id"), str)
     }
 
-    # --- Incumbent index: which canonical does each HF/raw id resolve to TODAY?
-    # The fixtures lag the YAML, so we read the seed YAML aliases (the truth)
-    # plus each entry's own id. Two lookups: exact raw_value and normalized.
+    # Incumbent index: the canonical each HF/raw id resolves to today, from
+    # the seed YAML (fixtures lag it).
     from eval_entity_registry.services.hub_stats import normalize as _nz
 
     incumbent_exact: dict[str, str] = {}
@@ -287,7 +246,6 @@ def main() -> None:
         return None
 
     # --- Compute targets ---------------------------------------------------
-    # target_canonical -> {"org_id","name","raws":set,"fixed":set}
     targets: dict[str, dict] = {}
     skipped_nearmiss: list[tuple[str, str, str]] = []
     for raw, meta in oracle.items():
@@ -303,11 +261,8 @@ def main() -> None:
             tgt, {"org_id": org_id, "name": name, "raws": set(), "fixed": set()}
         )
         bucket["fixed"].add(fixed)
-        # The raw EEE id is always a confirmed alias of the target. For
-        # fixed_exact raw == fixed (a no-op self-alias the seed CLI emits);
-        # for fixed_near_miss raw differs -> real alias — UNLESS the redirect
-        # changes model identity (a bad HF "did-you-mean"); those are NOT aliased
-        # (the raw resolves to its own/corrected canonical via Tier-3 instead).
+        # A near_miss raw is a real alias unless the redirect changes model
+        # identity; those raws resolve via Tier-3 instead.
         if raw != tgt:
             reason = (nearmiss_changes_identity(raw, fixed, hf_to_dev)
                       if status == "fixed_near_miss" else None)
@@ -320,18 +275,14 @@ def main() -> None:
               f"redirect(s) (NOT aliased): e.g. {skipped_nearmiss[:5]}")
 
     # --- Partition: ok / re-key / mint ------------------------------------
-    # A target's INCUMBENT is the canonical its raw/fixed ids resolve to today.
-    #   - incumbent == target            -> ok (already correct casing).
-    #   - incumbent is a casing-variant  -> RE-KEY incumbent id -> target
-    #       (same model, name-token-equal under normalize). The HF casing wins.
-    #   - incumbent token-different OR none -> MINT a new HF-cased canonical.
-    #       When an incumbent (a curated short-slug like meta/llama-3-8b) still
-    #       claims the HF/raw id as an alias, we STRIP that alias off the
-    #       incumbent so resolve(raw) reaches the new HF canonical (no collision).
+    # By the incumbent (the canonical the target's raw/fixed ids resolve to):
+    #   incumbent == target -> ok; a casing variant (name-token-equal under
+    #   normalize) -> re-key it to the HF casing; token-different or none ->
+    #   mint, stripping the HF/raw aliases off the incumbent so resolve(raw)
+    #   reaches the new canonical.
     ok_targets: dict[str, dict] = {}
-    rekey_targets: dict[str, dict] = {}   # target -> info (+ old_id)
+    rekey_targets: dict[str, dict] = {}
     mint_targets: dict[str, dict] = {}
-    # aliases to remove from incumbents, keyed by incumbent canonical id:
     incumbent_alias_strip: dict[str, set[str]] = {}
 
     for tgt, info in targets.items():
@@ -339,37 +290,25 @@ def main() -> None:
         lookup_ids = sorted(info["fixed"]) + sorted(info["raws"]) + [tgt]
         inc = incumbent_for(*lookup_ids)
 
-        # When a token-equal incumbent exists, PRESERVE its org identity (a
-        # curated dev org like `cohere` must not be re-orged to a raw HF org
-        # like `CohereLabs`). The re-key only adopts the HF NAME casing under
-        # the incumbent's existing org. Re-key key becomes {inc_org}/{hf_name}.
+        # The re-key adopts the HF name casing but keeps the incumbent's id
+        # prefix; the curated developer goes on `org_id` only. Folding the
+        # prefix into the dev slug (`zai-org/x` -> `zai/x`) would re-mint a
+        # shadow id that collides with the committed enrichment alias and abort
+        # the seed.
         if inc is not None and _nz(inc.split("/", 1)[-1]) == _nz(hf_name):
             inc_org = inc.split("/", 1)[0]
-            # The re-key adopts the HF NAME casing but KEEPS the incumbent's id
-            # prefix (the real HF repo namespace, e.g. `zai-org`, or a curated
-            # dev slug). The curated developer is recorded on `org_id` ONLY —
-            # canonical_id stays the real HF repo id, decoupled from the org (the
-            # two-tier rule). Folding the prefix into the dev slug here
-            # (`zai-org/x` -> `zai/x`) would re-mint a shadow id that collides
-            # with the committed `zai/x` -> `zai-org/x` enrichment alias and abort
-            # the seed.
             dev_org = hf_to_dev.get(inc_org.lower(), inc_org)
             rekey_tgt = f"{inc_org}/{hf_name}"
             if rekey_tgt == inc:
-                # Name already correctly cased under the incumbent's id prefix.
-                # "ok" ONLY when a DEFINING record elsewhere carries the id —
-                # an incumbency claimed solely by enrich records (hub_stats
-                # rows / this generator's own prior output reflected there)
-                # means THIS file is the definer and must re-emit the entry,
-                # or a non-reset re-run would gut the Tier-1 source.
+                # Already correctly cased. "ok" only when a defining record
+                # carries the id; an incumbency claimed solely by enrich
+                # records means this file is the definer and must re-emit.
                 if rekey_tgt in existing_ids:
                     ok_targets[rekey_tgt] = info
                 else:
                     mint_targets[rekey_tgt] = info
                 continue
-            # Guard: one re-key per incumbent. If another target already claims
-            # this incumbent, fold the current ids in as aliases on that re-key
-            # (don't double-rename one entry).
+            # One re-key per incumbent: further targets fold in as aliases.
             existing_rk = next(
                 (t for t, i in rekey_targets.items() if i["old_id"] == inc),
                 None,
@@ -396,12 +335,9 @@ def main() -> None:
             rekey_targets[tgt] = dict(info, old_id=existing_lower[tgt.lower()])
             continue
 
-        # near_miss where the incumbent's ID *is* the raw repo (HF renamed the
-        # repo entirely, e.g. `allenai/olmo-1.7-7b` -> `allenai/OLMo-7B-0424`).
+        # near_miss where the incumbent's id IS the raw repo (HF renamed it):
         # resolve(raw) hits the incumbent by exact id, so stripping aliases is
-        # not enough — MERGE the incumbent into the redirect target by re-keying
-        # its id (the raw becomes an alias). Skip if that incumbent is already a
-        # re-key source.
+        # not enough; merge it into the target by re-keying.
         all_src_ids = {x.lower() for x in (info["fixed"] | info["raws"])}
         if (
             inc is not None
@@ -414,25 +350,19 @@ def main() -> None:
             )
             continue
 
-        # Mint. Record the HF/raw ids to strip off a token-different incumbent
-        # (e.g. a curated short-slug) so resolution moves to the new canonical.
+        # Mint; strip the HF/raw ids off a token-different incumbent.
         if inc is not None and inc != tgt:
             strip = incumbent_alias_strip.setdefault(inc, set())
             for x in info["fixed"] | info["raws"]:
                 strip.add(x)
         mint_targets[tgt] = info
 
-    # Global rename map for edge rewriting: old_id -> hf_cased target.
     rename_map: dict[str, str] = {
         info["old_id"]: tgt for tgt, info in rekey_targets.items()
     }
 
-    # Case-collision consolidation: a re-key/mint may produce an HF-cased id
-    # that case-collides with a DIFFERENT existing id (e.g. a re-key
-    # `minimaxai/MiniMax-M2.1`->`minimax/MiniMax-M2.1` clashing with a curated
-    # `minimax/minimax-m2.1`). Fold those stragglers into the HF-cased target so
-    # no case-duplicate pair survives (the dedup obligation: the HF-cased id
-    # wins, the old lowercase becomes an alias).
+    # A re-key/mint can case-collide with a different existing id; fold the
+    # straggler into the HF-cased winner so no case-duplicate pair survives.
     final_targets = (
         set(rekey_targets) | set(mint_targets) | set(ok_targets)
     )
@@ -443,14 +373,12 @@ def main() -> None:
         winner = final_by_lower.get(cid.lower())
         if winner is not None and winner != cid and cid not in rename_map:
             rename_map[cid] = winner
-            # carry its old id as an alias on the winner where possible
             for tgt, info in rekey_targets.items():
                 if tgt == winner:
                     info.setdefault("raws", set()).add(cid)
                     break
 
-    # --- (b)+(c) Re-key in place across all edit files --------------------
-    # First pass: collect which entry id lives in which file; then rewrite.
+    # --- Re-key in place across all edit files ----------------------------
     rekey_by_old = {info["old_id"]: (tgt, info) for tgt, info in rekey_targets.items()}
     rekeyed_count = 0
 
@@ -464,14 +392,12 @@ def main() -> None:
         docs_before[path] = _copy.deepcopy(doc)
 
     def _rewrite_edges_in_entry(entry: dict) -> None:
-        # parents[].id
         parents = entry.get("parents")
         if isinstance(parents, list):
             for p in parents:
                 if isinstance(p, dict) and isinstance(p.get("id"), str):
                     if p["id"] in rename_map:
                         p["id"] = rename_map[p["id"]]
-        # scalar edge id pointers
         for key in EDGE_ID_KEYS:
             v = entry.get(key)
             if isinstance(v, str) and v in rename_map:
@@ -484,13 +410,9 @@ def main() -> None:
             if not isinstance(entry, dict):
                 continue
             cid = entry.get("id")
-            # Re-key this entry's own id if it is a collision target.
             if isinstance(cid, str) and cid in rekey_by_old:
                 tgt, info = rekey_by_old[cid]
                 entry["id"] = tgt
-                # Append old id + raw EEE id(s) + the HF-true id(s) to aliases
-                # (dedup) so resolution still hits the old id and the redirect
-                # sources continue to resolve.
                 aliases = list(entry.get("aliases") or [])
                 seen = {a.lower() for a in aliases if isinstance(a, str)}
                 for extra in [cid, *sorted(info["raws"]), *sorted(info["fixed"])]:
@@ -501,8 +423,7 @@ def main() -> None:
                 if isinstance(entry.get("org_id"), str):
                     entry["org_id"] = info["org_id"]
                 rekeyed_count += 1
-            # Case-collision straggler: id case-collides with an HF-cased target
-            # owned by another entry — fold this one into it (old id -> alias).
+            # Case-collision straggler: fold into the winner.
             elif isinstance(cid, str) and cid in rename_map:
                 winner = rename_map[cid]
                 entry["id"] = winner
@@ -515,9 +436,7 @@ def main() -> None:
                     win_org = winner.split("/", 1)[0]
                     entry["org_id"] = hf_to_dev.get(win_org.lower(), win_org)
                 rekeyed_count += 1
-            # Strip HF/raw ids that a MINT is taking over from this incumbent
-            # (token-different curated short-slugs) so the alias doesn't collide
-            # and resolution moves to the new HF canonical.
+            # Aliases a mint takes over from a token-different incumbent.
             elif isinstance(cid, str) and cid in incumbent_alias_strip:
                 strip = incumbent_alias_strip[cid]
                 aliases = list(entry.get("aliases") or [])
@@ -527,19 +446,14 @@ def main() -> None:
                 ]
                 stripped_alias_count += len(aliases) - len(kept)
                 entry["aliases"] = kept
-            # Always rewrite edge references (some entries point at a re-keyed
-            # parent without themselves being a target).
+            # Any entry may point at a re-keyed parent.
             _rewrite_edges_in_entry(entry)
 
-    # (Edit files persisted at the very end, after the global de-collision pass.)
-
     # --- Global claimed-alias set ----------------------------------------
-    # Every alias the seed CLI will emit from SURVIVING (non-mint) entries:
-    # their final id + display_name + explicit aliases. The seed run aborts if
-    # two canonicals declare the same alias, so a mint must never re-emit one of
-    # these, and the mints must not collide with each other. Keyed by EXACT
-    # string (the CLI's collision check is exact, case-sensitive).
-    claimed: dict[str, str] = {}  # alias -> owning canonical id
+    # Aliases the seed CLI will emit from surviving entries (id + display_name
+    # + aliases). The seed aborts on a duplicate alias, so mints must not
+    # re-emit one; the check is exact and case-sensitive.
+    claimed: dict[str, str] = {}
 
     def _claim(alias: str, owner: str) -> None:
         if isinstance(alias, str) and alias:
@@ -566,12 +480,11 @@ def main() -> None:
         name = info["name"]
         org_id = info["org_id"]
 
-        # display_name = HF NAME, unless that bare name is already claimed by a
-        # different canonical (cross-org name clash, e.g. multiple
-        # `zephyr-7b-beta`). Then qualify with the org so the auto-emitted
-        # display alias stays unique. The id is always unique (HF-cased).
+        # A bare HF name already claimed by another canonical (cross-org
+        # clash) is qualified with the org so the auto-emitted display alias
+        # stays unique.
         if name in claimed and claimed[name] != tgt:
-            display = tgt  # org-qualified, equals the id (no extra alias)
+            display = tgt
         else:
             display = name
             _claim(name, tgt)
@@ -584,12 +497,11 @@ def main() -> None:
             if not a or a.lower() in seen:
                 return
             if a in claimed and claimed[a] != tgt:
-                return  # already owned by another canonical — skip
+                return
             aliases.append(a)
             seen.add(a.lower())
             _claim(a, tgt)
 
-        # raw EEE id(s) + HF-true id(s) + lowercase canonical form
         for a in sorted(info["raws"]) + sorted(info["fixed"]):
             _add_alias(a)
         low = tgt.lower()
@@ -602,8 +514,6 @@ def main() -> None:
             "org_id": org_id,
             "resolution_source": "hf",
             "review_status": "reviewed",
-            # tgt IS the real HF repo id -> mark it authoritative: never to
-            # be rewritten/suppressed in favor of a colliding dev-org slug.
             "metadata": authoritative_metadata(tgt),
         }
         if aliases:
@@ -612,25 +522,19 @@ def main() -> None:
         _claim(tgt, tgt)
 
     # --- Global de-collision pass ----------------------------------------
-    # The seed CLI emits {id, display_name} ∪ aliases for every entry and ABORTS
-    # if two canonicals declare the same exact alias. A few pre-existing seed
-    # duplicates (e.g. competing minimax/skywork entries) plus the casing
-    # re-keys can leave residual clashes. Deterministically keep the FIRST
-    # declarer of each exact alias (priority: core > models_dev > hub_stats >
-    # hf_oracle mints) and drop the duplicate alias from later entries. An
-    # entry's own `id` is never dropped; on an id-vs-alias clash the alias loses.
+    # The seed CLI aborts if two canonicals declare the same exact alias. Keep
+    # the first declarer (core > models_dev > hub_stats > mints); an entry's
+    # own id is never dropped and beats any alias.
     decollide_owner: dict[str, str] = {}
     dropped_collisions = 0
     all_entry_groups = [_entries_view(docs[p]) for p in EDIT_FILES] + [mint_entries]
 
-    # Pass 1: every canonical `id` claims itself FIRST, globally. An id is
-    # immutable, so it must win over any other entry's display_name/alias.
+    # Ids claim first: an id is immutable and beats any display_name/alias.
     for grp in all_entry_groups:
         for e in grp:
             if isinstance(e, dict) and isinstance(e.get("id"), str):
                 decollide_owner.setdefault(e["id"], e["id"])
 
-    # Pass 2: display_names then aliases, keeping the first non-id declarer.
     def _decollide(entries: list[dict]) -> None:
         nonlocal dropped_collisions
         for e in entries:
@@ -641,7 +545,7 @@ def main() -> None:
             if isinstance(dn, str) and dn != cid:
                 owner = decollide_owner.get(dn)
                 if owner is not None and owner != cid:
-                    e["display_name"] = cid  # fall back to the (unique) id
+                    e["display_name"] = cid
                 else:
                     decollide_owner.setdefault(dn, cid)
             new_aliases = []
@@ -657,13 +561,11 @@ def main() -> None:
             if "aliases" in e:
                 e["aliases"] = new_aliases
 
-    for grp in all_entry_groups:      # core, models_dev, hub_stats, then mints
+    for grp in all_entry_groups:
         _decollide(grp)
 
-    # Persist edited edit-files (preserve original doc shape). Only files whose
-    # entries actually CHANGED are rewritten — a yaml re-dump of an untouched
-    # file would still destroy its comments (hand-curated core.yaml carries
-    # documentation comments a wholesale dump hoists).
+    # Rewrite only files whose entries changed: a yaml re-dump destroys
+    # comments (core.yaml carries curated ones).
     for path in EDIT_FILES:
         if docs[path] != docs_before[path]:
             with open(path, "w") as f:
@@ -684,21 +586,15 @@ def main() -> None:
             mint_entries, f, sort_keys=False, allow_unicode=True, width=10_000
         )
 
-    # --- (d) New HF-cased orgs -------------------------------------------
-    # Union of org_ids referenced by mint + re-key targets that are not curated
-    # and not already in canonical_orgs. Only auto-org (non-dev-remap) orgs
-    # need creating — a dev-remap target's org_id is a curated slug already.
+    # --- New HF-cased orgs -----------------------------------------------
     needed_orgs: set[str] = set()
     for info in list(mint_targets.values()) + list(rekey_targets.values()):
         oid = info["org_id"]
         if oid and oid not in existing_org_ids:
             needed_orgs.add(oid)
 
-    # Curated orgs.yaml wins on id collision AND on alias collision: the seed
-    # CLI emits {id, display_name, hf_org, *aliases} as org aliases and aborts
-    # if a new org id duplicates one (e.g. curated `huggingface` already claims
-    # `HuggingFaceTB` as an alias). Exclude any needed org whose id is already
-    # spoken for by a curated org's id/display_name/hf_org/alias.
+    # The seed CLI aborts if a new org id duplicates a curated org's
+    # id/display_name/hf_org/alias, so those are excluded.
     curated_org_claims: set[str] = set()
     if ORGS_YAML.exists():
         with open(ORGS_YAML) as f:

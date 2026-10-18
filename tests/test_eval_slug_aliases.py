@@ -1,9 +1,6 @@
-"""Raw eval-harness model slugs resolve to a real, unique canonical model.
-
-Guards that each slug in SLUG_CANONICALS attaches to an existing canonical entity
-(not an alias-minted phantom) at its HF-true id, with no shadow duplicate under a
-different spelling or org namespace. Skips if fixtures aren't built (run
-`eval-entity-registry seed --local` first).
+"""Raw eval-harness model slugs resolve to a real, unique canonical: an
+existing row at its HF-true id, with no shadow duplicate under another
+spelling or org namespace. Skips without fixtures.
 """
 import re
 from pathlib import Path
@@ -20,11 +17,8 @@ _ORGS_YAML = _REPO_ROOT / "seed" / "orgs.yaml"
 
 
 def _ndup_leaf(name: str) -> str:
-    """Normalized model leaf (mirrors the `ndup` in
-    test_gate_invariants.test_no_real_hf_id_duplicated_by_slug): case-fold, glue
-    letter->digit boundaries, split a version dot (3.1 -> 3-1) while keeping size
-    tokens (7b), collapse separators. Two leaves that normalize equal are the same
-    model spelled differently."""
+    """Normalized model leaf (same rule as test_gate_invariants): two leaves
+    that normalize equal are the same model spelled differently."""
     s = name.lower()
     s = re.sub(r"([a-z])[-_ /]+(\d)", r"\1\2", s)
     s = re.sub(r"(\d)\.(\d)(?![bmkt])", r"\1-\2", s)
@@ -32,11 +26,10 @@ def _ndup_leaf(name: str) -> str:
 
 
 def _dev_identity(cid: str, fold) -> tuple[str, str]:
-    """(developer-org, normalized-leaf) — the org-AWARE identity. Catches
-    cross-namespace shadows (deepseek/deepseek-v3-1 vs deepseek-ai/DeepSeek-V3.1)
-    that a plain collision_key misses because the org prefix differs."""
+    """(developer-org, normalized-leaf): catches cross-namespace shadows a
+    plain collision_key misses."""
     org, _, name = cid.partition("/")
-    if not name:  # bare id, no org
+    if not name:
         org, name = "", org
     return (fold(org.lower()), _ndup_leaf(name))
 
@@ -90,23 +83,16 @@ def org_fold():
 @pytest.mark.parametrize("slug,expected", SLUG_CANONICALS.items())
 def test_eval_slug_resolves(resolver, models_df, org_fold, slug, expected):
     res = resolver.resolve(slug, entity_type="model")
-    # Must attach to a canonical (no_match -> None) AND use the exact HF repo id
-    # (HF-true casing) per the registry's canonical-id standard.
     assert res.canonical_id is not None, f"{slug} did not resolve"
     assert res.canonical_id == expected, (
         f"{slug} -> {res.canonical_id} (expected {expected})"
     )
-    # The target must be a REAL canonical entity — not an alias-minted phantom
-    # (a dangling alias would still "resolve" to a string with no backing row).
+    # A dangling alias would still "resolve" to a string with no backing row.
     ids = set(models_df["id"])
     assert expected in ids, (
         f"{slug} resolves to {expected} which is NOT a canonical_models row "
         f"(alias-minted phantom / dangling target)"
     )
-    # And it must be the SOLE canonical for its ORG-AWARE identity — no shadow
-    # duplicate under a different spelling OR org namespace (e.g. deepseek/deepseek-v3-1
-    # shadowing deepseek-ai/DeepSeek-V3.1, which a plain collision_key misses because
-    # the org prefix differs).
     want = _dev_identity(expected, org_fold)
     twins = sorted(i for i in ids if _dev_identity(i, org_fold) == want)
     assert twins == [expected], (

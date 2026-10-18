@@ -1,21 +1,9 @@
-"""Seed-time org attribution for malformed-org canonical ids.
-
-A draft id with no `/` whose leading token is a known developer org couldn't have
-its org parsed — the org delimiter is a `-`/`.` instead of `/` — so it lands with
-a null org_id, orphaned from its developer (`cohere-march-2024`, `deepseek-coder`).
-This pass attributes the org from that leading token. org_id is DECOUPLED from the
-id string (the registry already maps `Qwen/…` → org `alibaba`), so attribution is
-safe even when the org token also appears in the model NAME (`deepseek-coder` →
-org `deepseek`, id kept verbatim).
-
-It does NOT touch an entry that is actually a DUPLICATE of an existing real repo
-of the same developer (`deepseek-v2-lite-chat` ≡ `deepseek-ai/DeepSeek-V2-Lite-Chat`,
-`nvidia.nemotron-nano-9b-v2` ≡ `nvidia/NVIDIA-Nemotron-Nano-9B-v2`). Those don't
-normalize-collide (the real repo's name repeats the org), and org-tagging them in
-isolation would collide on the humanized display name — they need a fold into the
-real repo, which is a separate concern. Detection: same developer + same
-org-token-stripped model name as a more-canonical (slashed) entry.
-"""
+"""Seed-time org attribution for slash-less draft ids whose leading token is
+a known developer org (`cohere-march-2024`). The id stays verbatim; only
+org_id is set. An entry that duplicates a real repo of the same developer
+(`deepseek-v2-lite-chat` vs `deepseek-ai/DeepSeek-V2-Lite-Chat`) is instead
+returned for a fold: org-tagging it alone would collide on the humanized
+display name."""
 import re
 from collections import defaultdict
 
@@ -49,15 +37,11 @@ def _name_key(cid: str, dev: str | None) -> str:
 
 
 def attribute_orgs(entries: list[dict], hf_to_dev: dict[str, str]):
-    """For each malformed-org draft id whose leading token is a known org:
-    - if it DUPLICATES an existing real repo of that org (same developer + same
-      org-token-stripped model name), return it in the merge map {draft -> real
-      repo} so the fold collapses it into the real repo;
-    - otherwise attribute org_id (standalone draft) in place.
+    """Attribute org_id in place for standalone malformed-org drafts; return
+    duplicates of a real repo (same developer + same org-token-stripped name)
+    in the merge map {draft -> real repo} for the fold.
 
-    Returns (entries, merge_map). The merge map carries the cross-spelling
-    duplicates the resolver's normalize missed (it's org-blind: `deepseek` vs
-    `deepseek-ai`, the org repeated in the model name, letter-dot not split)."""
+    Returns (entries, merge_map)."""
     seen: dict[tuple, list[str]] = defaultdict(list)
     for e in entries:
         dev = _dev_of(e, hf_to_dev)
@@ -80,7 +64,7 @@ def attribute_orgs(entries: list[dict], hf_to_dev: dict[str, str]):
             continue
         twins = [i for i in seen.get((dev, _name_key(cid, dev)), []) if i != cid and "/" in i]
         if twins:
-            merges[cid] = sorted(twins)[0]   # fold the draft into the real repo
+            merges[cid] = sorted(twins)[0]
         else:
-            e["org_id"] = dev                 # standalone draft: just attribute
+            e["org_id"] = dev
     return entries, merges

@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
 """Validate the resolver against a real sample of the EEE datastore.
 
-Complements the frozen-oracle gate suite (tests/test_gate_invariants.py): that
-checks resolution against a snapshot, this measures live coverage + correctness
-on actual evaluation rows from `evaleval/EEE_datastore` on HF — surfacing
-no_match / mis-resolution patterns the snapshot can't.
-
-For each sampled record it extracts the raw model / harness / benchmark / metric
-strings the SAME way the ingestion pipeline does (services/ingestion.py), then
-resolves each (resolve-only, against the committed fixtures — NOT auto-create)
-and reports, per entity type: coverage (% non-null), strategy breakdown
-(exact/normalized/fuzzy/no_match), the most-frequent no_match strings, and a
-random sample of resolutions to eyeball for correctness.
+Unlike the frozen-oracle gate suite, this measures coverage on live rows from
+`evaleval/EEE_datastore`. For each sampled record it extracts the raw model /
+harness / benchmark / metric strings the same way services/ingestion.py does,
+resolves each (resolve-only, no auto-create) against the committed fixtures,
+and reports per entity type: coverage, strategy breakdown, the most-frequent
+no_match strings, and a random sample of resolutions.
 
 Needs network (pulls EEE configs from HF) + the seeded fixtures
 (`LOCAL_MODE=true uv run eval-entity-registry seed --local` first).
@@ -32,8 +27,7 @@ from pathlib import Path
 REGISTRY_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = REGISTRY_ROOT / "fixtures"
 
-# Faithful raw-string extraction: reuse the exact helpers the ingestion pipeline
-# uses, so this measures what the producer would actually feed the resolver.
+# Raws must be extracted exactly as services/ingestion.py does.
 from eval_entity_registry.services.ingestion import _detect_sub_categories
 from eval_entity_resolver.eee import clean_eval_name, extract_metric
 from eval_entity_resolver.resolver import Resolver
@@ -83,10 +77,9 @@ def _extract_bench_metric(out, evaluation_results, eval_to_parent):
 
 
 def _config_names(datasets) -> list[str]:
-    """EEE config names. get_dataset_config_names needs network; offline it
-    returns the useless ['default'], so fall back to scanning the local HF
-    datasets cache (skipping -samples auxiliary configs + the synthetic
-    'default-*' fallback)."""
+    """EEE config names; offline, get_dataset_config_names returns ['default'],
+    so fall back to the local HF datasets cache (minus -samples auxiliary
+    configs and the synthetic 'default-*' fallback)."""
     def _from_cache() -> list[str]:
         root = Path.home() / ".cache" / "huggingface" / "datasets" / "evaleval___eee_datastore"
         if not root.exists():
@@ -144,7 +137,6 @@ def main() -> int:
 
     resolver = Resolver.from_parquet(str(FIXTURES))
 
-    # distinct raw -> (count, source_config) per entity type
     raw_counts: dict[str, Counter] = defaultdict(Counter)
     raw_sc: dict[str, dict[str, str | None]] = defaultdict(dict)
     for cfg in configs:
@@ -164,7 +156,6 @@ def main() -> int:
                     raw_sc[etype].setdefault(raw, sc)
         print(f"[validate]   {cfg}: {n} rows", file=sys.stderr)
 
-    # Resolve each DISTINCT raw once; weight coverage by occurrence count.
     print("\n" + "=" * 72)
     print("RESOLVER VALIDATION — real EEE sample (resolve-only, vs committed fixtures)")
     print("=" * 72)

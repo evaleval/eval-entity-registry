@@ -1,10 +1,6 @@
-"""lm-evaluation-harness task and metric slugs resolve to the intended canonicals.
-
-Covers the GLUE / SuperGLUE / ANLI / HEAD-QA / LAMBADA task families and the
-harness metric vocabulary. Each expected id is the entity a harness-derived
-converter (every_eval_ever's lm_harmony adapter) joins on, so a regression here
-fragments one benchmark's results across two ids. Skips if fixtures aren't
-built (run `eval-entity-registry seed --local` first).
+"""lm-evaluation-harness task and metric slugs resolve to the canonicals the
+harness-derived converter joins on; a miss fragments one benchmark's results
+across two ids. Skips without fixtures.
 """
 import json
 from pathlib import Path
@@ -15,7 +11,6 @@ from eval_entity_resolver import Resolver
 
 _FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
-# Harness task slug -> canonical benchmark id.
 HARNESS_BENCHMARKS = {
     # GLUE (nine tasks; the harness ships eight plus the mismatched MNLI split)
     "glue": "glue",
@@ -65,7 +60,6 @@ HARNESS_BENCHMARKS = {
     "natural_questions": "naturalquestions",
 }
 
-# Harness metric key -> canonical metric id.
 HARNESS_METRICS = {
     "acc": "accuracy",
     "acc_norm": "normalized-accuracy",
@@ -81,10 +75,8 @@ HARNESS_METRICS = {
     "bits_per_byte": "bits-per-byte",
 }
 
-# Family -> standalone members. Suites whose parts are separately reported
-# datasets are families (like `livebench`), never parent_benchmark_id edges:
-# the producer renders a parented benchmark as a slice with no page of its
-# own, and drops its rows from the merged view once the parent has data.
+# Suites whose parts are separately reported datasets are families, never
+# parent_benchmark_id edges (a parented benchmark is a slice to the producer).
 FAMILIES = {
     "glue": {"glue", "cola", "mnli", "mnli-mismatched", "mrpc", "qnli", "qqp", "rte", "sst2", "stsb", "wnli"},
     "superglue": {"superglue", "boolq", "cb", "copa", "multirc", "record", "wic", "wsc"},
@@ -137,9 +129,8 @@ def test_harness_suite_is_a_family(families_df, family, members):
 
 @pytest.mark.parametrize("member", sorted(set().union(*FAMILIES.values())))
 def test_harness_suite_members_are_standalone(benchmarks_df, member):
-    """No member carries a parent edge: a parented benchmark is a slice to
-    the producer (no merged page, hidden once the parent has top-level
-    data), which is exactly what a separately reported dataset must not be."""
+    """No member carries a parent edge: a separately reported dataset must
+    not render as a slice."""
     row = benchmarks_df[benchmarks_df["id"] == member]
     assert len(row) == 1, f"{member} missing from canonical_benchmarks"
     parent = row.iloc[0]["parent_benchmark_id"]
@@ -147,8 +138,8 @@ def test_harness_suite_members_are_standalone(benchmarks_df, member):
 
 
 def test_perplexity_variants_are_distinct(resolver):
-    """word / byte / token perplexity are different numbers for the same
-    model on the same text, so none may fold into the unqualified id."""
+    """word / byte / token perplexity are different numbers; none may fold
+    into the unqualified id."""
     ids = {
         resolver.resolve(k, entity_type="metric").canonical_id
         for k in ("perplexity", "word_perplexity", "byte_perplexity", "bits_per_byte")
@@ -157,13 +148,13 @@ def test_perplexity_variants_are_distinct(resolver):
 
 
 def test_no_bare_nq_canonical(benchmarks_df):
-    """`nq` was a second canonical for Natural Questions (llm-stats slug);
-    it is now an alias, so exactly one entity carries that corpus."""
+    """`nq` is an alias, not a second canonical: one entity carries Natural
+    Questions."""
     assert "nq" not in set(benchmarks_df["id"])
 
 
 def test_harness_compound_keys_are_not_aliases(resolver):
-    """`metric,filter` is the harness results-file key shape; splitting it
-    is the converter's job, so the registry carries no compound alias."""
+    """Splitting the harness `metric,filter` key is the converter's job; the
+    registry carries no compound alias."""
     for key in ("acc,none", "acc_norm,none", "exact_match,flexible-extract"):
         assert resolver.resolve(key, entity_type="metric").canonical_id is None, key

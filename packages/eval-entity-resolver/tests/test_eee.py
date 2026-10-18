@@ -74,7 +74,7 @@ class TestExtractMetric:
         assert extract_metric("Judge Scores on Open Questions") != "Open Question Judge Score"
         # `lc` is anchored: a word merely ending in "lc" is not length-controlled.
         assert extract_metric("Calc Win Rate") == "Win Rate"
-        # The generic forms still extract as before.
+        # The generic forms still extract.
         assert extract_metric("Win Rate") == "Win Rate"
         assert extract_metric("Exact match") == "Exact Match"
         assert extract_metric("Mean Win Rate") == "Mean Win Rate"
@@ -224,8 +224,8 @@ class TestCleanEvalName:
 
 
 class TestMidSentenceOnTruncation:
-    """The "X on Y" pattern must not truncate prose sentences — keywords
-    disclosed after a mid-sentence " on " were previously never seen."""
+    """The "X on Y" pattern must not truncate prose: a keyword after a
+    mid-sentence " on " must still be seen."""
 
     def test_prose_with_mid_sentence_on_keeps_late_keyword(self):
         desc = (

@@ -1,17 +1,7 @@
-"""
-Shared hub-stats integration: helpers for normalizing HF metadata, plus
-a `HubStatsClient` that wraps a DuckDB connection for single-id lookups
-against the `cfahlgren1/hub-stats` parquet.
-
-Used by:
-  - `scripts/refresh_from_hub_stats.py` — bulk backfill of existing
-    canonicals' metadata
-  - `services/resolution_service.py` — on-demand enrichment of model
-    drafts at auto-create time
-
-Both paths share the same row-shape parsing so behavior stays consistent
-between the bulk pre-load and the live lookup.
-"""
+"""Shared hub-stats integration: HF metadata normalizers plus a DuckDB-backed
+`HubStatsClient` for single-id lookups against the `cfahlgren1/hub-stats`
+parquet. The bulk refresh script and live draft enrichment share one
+row-shape parser so they cannot drift."""
 from __future__ import annotations
 
 import json
@@ -21,10 +11,8 @@ import threading
 from datetime import datetime, date
 from typing import Optional
 
-# Offline read path: when HUB_STATS_LOCAL_PARQUET points at a local hub-stats
-# parquet, every hub-stats query reads that file instead of the pinned remote
-# snapshot (services/hub_stats_snapshot.py). Read at call time so tests can
-# set/unset it per test.
+# Offline read path: a local hub-stats parquet replaces the pinned remote
+# snapshot. Read at call time so tests can set/unset it per test.
 HUB_STATS_LOCAL_PARQUET_ENV = "HUB_STATS_LOCAL_PARQUET"
 
 
@@ -40,8 +28,7 @@ def is_local_parquet() -> bool:
     """True when the offline local-parquet read path is active."""
     return local_parquet_path() is not None
 
-# Columns the queries fetch. Centralized so the bulk and lookup paths
-# parse the same row shape.
+# Shared so the bulk and lookup paths parse the same row shape.
 QUERY_COLUMNS = (
     "id, author, createdAt, lastModified, downloads, downloadsAllTime, "
     "likes, trendingScore, tags, cardData, safetensors, gguf, baseModels, "
@@ -50,7 +37,7 @@ QUERY_COLUMNS = (
 
 
 # ---------------------------------------------------------------------------
-# Slug + normalization helpers (mirror the resolver/promotion script style)
+# Slug + normalization helpers
 # ---------------------------------------------------------------------------
 
 def normalize(s: str) -> str:
@@ -73,14 +60,9 @@ def hf_id_to_canonical(
     hf_id: str,
     org_alias_map: dict[str, str],
 ) -> tuple[str, str]:
-    """Convert an HF id like `'meta-llama/Llama-3.1-70B'` into our
-    canonical form `('meta/llama-3.1-70b', 'meta')`. The HF org segment
-    maps via `org_alias_map`; unknown orgs slug-normalize their author
-    name and become their own org id (auto-org).
-
-    Ids without `/` use `unknown` as the org placeholder — matches the
-    resolver's convention for raw values without a dev prefix.
-    """
+    """`'meta-llama/Llama-3.1-70B'` -> `('meta/llama-3.1-70b', 'meta')`: the
+    HF org maps via `org_alias_map`, an unknown org becomes its own slug.
+    Ids without `/` get the resolver's `unknown` org placeholder."""
     if "/" not in hf_id:
         return f"unknown/{slugify(hf_id)}", "unknown"
     org_part, name_part = hf_id.split("/", 1)
@@ -94,21 +76,11 @@ def hf_id_to_canonical_cased(
     hf_id: str,
     hf_to_dev: dict[str, str],
 ) -> tuple[str, str]:
-    """Canonical id = the real HF repo id verbatim; org_id = the canonical
-    parent. The id and the org are DECOUPLED — the id is the model's true HF
-    identity (a consumer can build `huggingface.co/{id}`), while `org_id`
-    carries developer grouping. The HF org spelling is never folded into the
-    id:
-
-      - id  = `{HF-ORG}/{HF-NAME}` verbatim (e.g. `Qwen/Qwen2-7B-Instruct`);
-      - org_id = the curated parent if the HF org maps to one
-        (meta-llama->meta, qwen->alibaba, facebook->meta, ...), else the
-        HF org itself.
-
-    `hf_to_dev` keys are LOWERCASE HF org spellings (built single-sourced from
-    `canonical_orgs.hf_org` + `_ORG_ALIASES`). Ids without `/` fall back to
-    `unknown/{HF-NAME}`.
-    """
+    """Canonical id = the real HF repo id verbatim (`Qwen/Qwen2-7B-Instruct`);
+    org_id = the curated parent when the HF org maps to one (qwen->alibaba),
+    else the HF org itself. The org spelling is never folded into the id, so
+    `huggingface.co/{id}` stays valid. `hf_to_dev` keys are lowercase HF org
+    spellings. Ids without `/` fall back to `unknown/{HF-NAME}`."""
     if "/" not in hf_id:
         return f"unknown/{hf_id}", "unknown"
     org_part, name_part = hf_id.split("/", 1)
@@ -132,10 +104,8 @@ def coerce_date(value) -> Optional[str]:
 
 
 def has_downloadable_weights(row: dict) -> bool:
-    """An HF model row in hub-stats has open weights iff it carries
-    safetensors and/or gguf data — the formats users actually download.
-    Models without either are typically inference-only API endpoints
-    (rare in the HF index) or deleted/empty repos."""
+    """Open weights iff the row carries safetensors and/or gguf data; a row
+    with neither is an inference-only endpoint or a deleted/empty repo."""
     if row.get("safetensors"):
         return True
     gguf = row.get("gguf")
@@ -143,13 +113,9 @@ def has_downloadable_weights(row: dict) -> bool:
 
 
 def approx_params_billions(safetensors) -> Optional[float]:
-    """Parameter count in billions from safetensors metadata.
-
-    hub-stats' `safetensors.total` is the total PARAMETER COUNT (not bytes) —
-    e.g. `meta-llama/Llama-3.1-8B` -> 8_030_261_248, `…-70B` -> 70_553_706_496
-    (verified against the hub-stats parquet). So billions = total / 1e9.
-    (A `/2` bytes-at-BF16 assumption would be wrong for this schema and
-    would produce half the true count.)"""
+    """Parameter count in billions. hub-stats' `safetensors.total` is the
+    parameter count, not bytes (`Llama-3.1-8B` -> 8_030_261_248), so
+    billions = total / 1e9."""
     if safetensors is None:
         return None
     if isinstance(safetensors, dict):
@@ -176,9 +142,8 @@ def extract_license(card_data) -> Optional[str]:
 
 
 def filter_useful_tags(raw_tags) -> list[str]:
-    """Pick only tags worth surfacing on the canonical: language codes,
-    eval-results, license markers, format markers. Drop noisy
-    library/region/pipeline tags."""
+    """Keep language codes, eval-results, license and format markers; drop
+    noisy library/region/pipeline tags."""
     if not raw_tags:
         return []
     tags = list(raw_tags) if not isinstance(raw_tags, str) else [raw_tags]
@@ -200,35 +165,27 @@ def filter_useful_tags(raw_tags) -> list[str]:
 # Family-version parent inference
 # ---------------------------------------------------------------------------
 #
-# Hub-stats `baseModels` records *upstream* lineage (finetune / quantized /
-# merge / adapter), never the family-version relationship between a dated
-# snapshot and its moving pointer canonical (`Olmo-3-1125-32B` ↔ our
-# `allenai/olmo-3-32b`). The pointer isn't an HF id — it only exists in our
-# registry — so HF can't surface that edge. Without inference here, dated
-# snapshots auto-create as orphaned canonicals: `release_date` lands fine
-# but `parents`/`model_group_id` stay empty, root-collapse never fires, and
-# the snapshot shows up as a separate model in consumers.
+# Hub-stats `baseModels` records upstream lineage only, never the edge from
+# a dated snapshot to its moving-pointer canonical (`Olmo-3-1125-32B` ->
+# `allenai/olmo-3-32b`): the pointer exists only in this registry. Without
+# inference, such snapshots auto-create as orphan canonicals.
 
 _INTERNAL_DATE_RE = re.compile(r"^(.+?)-(\d{4})-([^-].*)$")
 _TRAILING_4DIGIT_RE = re.compile(r"^(.+)-(\d{4})$")
 _TRAILING_6DIGIT_RE = re.compile(r"^(.+)-(\d{6})$")
 _TRAILING_8DIGIT_RE = re.compile(r"^(.+)-(\d{8})$")
-# ISO date patterns (anchored, full-string). Strict component widths
-# stop us from peeling tokens that aren't dates (a 5-digit numeric tail
-# won't match `\d{4}-\d{2}`).
+# Strict component widths keep non-date numeric tails from being peeled.
 _ISO_FULL_DATE_RE = re.compile(r"^(.+)-(\d{4})-(\d{2})-(\d{2})$")
 _ISO_MONTH_DATE_RE = re.compile(r"^(.+)-(\d{4})-(\d{2})$")
 _ISO_YEAR_DATE_RE = re.compile(r"^(.+)-(\d{4})$")
 
-# Plausible release-year window; guards against 4-digit tails (param counts,
-# batch numbers) being mis-read as a release year.
+# Keeps 4-digit tails (param counts, batch numbers) from reading as a year.
 _VALID_YEAR_RANGE = (2015, 2035)
 
 
 def _looks_like_mmdd(token: str) -> bool:
-    """4-digit MMDD where MM ∈ [01,12] and DD ∈ [01,31]. Used to gate
-    snapshot-token stripping on shapes that actually look like dates,
-    avoiding false-positives on numeric size/version tokens like `8000`."""
+    """4-digit MMDD with MM in [01,12] and DD in [01,31]; rejects size/version
+    tokens like `8000`."""
     if len(token) != 4 or not token.isdigit():
         return False
     mm, dd = int(token[:2]), int(token[2:])
@@ -236,8 +193,7 @@ def _looks_like_mmdd(token: str) -> bool:
 
 
 def _looks_like_yyyymm(token: str) -> bool:
-    """6-digit YYYYMM (year+month). Stepfun and several Chinese-lab
-    release tags use this convention, e.g. `step-2-16k-202411`."""
+    """6-digit YYYYMM, the Stepfun-style release tag (`step-2-16k-202411`)."""
     if len(token) != 6 or not token.isdigit():
         return False
     yyyy, mm = int(token[:4]), int(token[4:])
@@ -266,49 +222,23 @@ def infer_family_parent_edge(
     aliases_to_canonical: dict[str, str],
     target_canonical: Optional[str] = None,
 ) -> Optional[dict]:
-    """Detect snapshot-shape ids whose stripped form matches an existing
-    canonical, and return a `{id, relationship: variant, axis: version}`
-    edge pointing at it. Returns None when the id has no snapshot shape
-    or the stripped form doesn't match any known canonical/alias.
-
-    Patterns recognized (single-pass strip — does NOT compose with
-    mode/quant suffix stripping):
-      - internal MMDD token: `Olmo-3-1125-32B` → `Olmo-3-32B`
-        also `Olmo-3-1125-7B-Instruct` → `Olmo-3-7B-Instruct`
-      - trailing MMDD token: `kimi-k2-0905` → `kimi-k2`
-      - trailing YYYYMM token: `step-2-16k-202411` → `step-2-16k`
-      - trailing YYYYMMDD: `claude-haiku-4-5-20251001` → `claude-haiku-4-5`
-      - trailing ISO date ladder: `gpt-5-2025-08-07` →
-        `gpt-5-2025-08` → `gpt-5-2025` → `gpt-5`
-
-    Only fires when the candidate stripped form resolves through the
-    alias index — no false matches manufactured by stripping alone.
-    For compound mode+date inputs (`claude-4-5-thinking-20251001`), the
-    strip resolves to the mode-promoted canonical iff one exists; if
-    not, returns None (the snapshot still gets `release_date` from
-    hub-stats but lands without a parent edge).
-
-    `target_canonical` is the canonical id the inferred edge will be
-    attached to. When provided, suppresses self-edges (matters in the
-    bulk-refresh path where an HF id may be aliased directly to its
-    family pointer rather than a separate snapshot canonical — without
-    this guard the family pointer gains a parent edge to itself,
-    breaking the lineage walker). Live auto-create can also pass the
-    proposed draft id; it just makes the guard tighter.
-    """
+    """`{id, relationship: variant, axis: version}` edge for a snapshot-shaped
+    id whose stripped form resolves through the alias index; None otherwise.
+    Single-pass strips (no composing with mode/quant suffixes): internal MMDD
+    (`Olmo-3-1125-32B`), trailing MMDD (`kimi-k2-0905`), YYYYMM
+    (`step-2-16k-202411`), YYYYMMDD (`claude-haiku-4-5-20251001`) and the ISO
+    ladder (`gpt-5-2025-08-07` -> `-08` -> `-2025` -> `gpt-5`).
+    `target_canonical` suppresses a self-edge: the bulk refresh may alias an
+    HF id to its own family pointer, and a self-edge breaks the lineage walker."""
     candidates: list[str] = []
 
-    # Internal MMDD: `Olmo-3-1125-32B` shape. Tries first because
-    # internal-token strips give a more specific lookup target than
-    # trailing-token strips.
+    # Internal-token strips first: a more specific lookup target than trailing strips.
     m = _INTERNAL_DATE_RE.match(hf_id)
     if m and _looks_like_mmdd(m.group(2)):
         prefix, _, suffix = m.groups()
         candidates.append(f"{prefix}-{suffix}")
 
-    # ISO ladder (full → month → year). The three regexes match
-    # mutually exclusive tail shapes (`-YYYY-MM-DD` vs `-YYYY-MM` vs
-    # `-YYYY`), so each input fires at most one branch.
+    # The three ISO tail shapes are mutually exclusive; at most one branch fires.
     m = _ISO_FULL_DATE_RE.match(hf_id)
     if m:
         prefix, y, mo, d = m.groups()
@@ -357,9 +287,8 @@ def infer_family_parent_edge(
 
 
 def extract_base_models(base_models) -> list[dict]:
-    """Decode the `baseModels` struct into a list of typed parent edges.
-    Returns `[{id, relationship}, ...]` — caller resolves each id to our
-    canonical via the alias index. Empty list when no baseModels."""
+    """`[{id, relationship}, ...]` from the `baseModels` struct; ids are raw
+    HF ids for the caller to resolve."""
     if base_models is None:
         return []
     if isinstance(base_models, dict):
@@ -383,24 +312,16 @@ def extract_base_models(base_models) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class HubStatsClient:
-    """Single-id lookup against the hub-stats parquet via DuckDB.
-
-    Used by draft enrichment in write mode (a `sync` run); the read-only Space
-    confirms HF ids against the published `hub_stats_index` table instead.
-
-    Source: a pinned commit of `main/models.parquet` resolved on first use
-    (`hf://datasets/<repo>@<sha>/...`), or `$HUB_STATS_LOCAL_PARQUET`.
-    The parquet is materialized into a local DuckDB table on first use (one
-    bulk fetch instead of thousands of per-id range reads); if that fails,
-    lookups fall back to per-id remote queries against the same pinned source.
-
-    Any DuckDB or network error, including failing to resolve the snapshot,
-    makes `lookup()` return None and log. Callers treat None as "no
-    enrichment available"; it never raises."""
+    """Single-id lookup against the hub-stats parquet via DuckDB (write-mode
+    draft enrichment; the read-only Space uses `hub_stats_index`). Source: a
+    pinned commit resolved on first use, or `$HUB_STATS_LOCAL_PARQUET`,
+    materialized into a local table (one bulk fetch instead of thousands of
+    per-id range reads) with per-id remote queries as fallback. `lookup()`
+    never raises."""
 
     def __init__(self, parquet_url: Optional[str] = None) -> None:
-        # Explicit source > local file > pinned snapshot resolved lazily in
-        # _ensure_con. Construction never touches the network.
+        # Explicit source > local file > pinned snapshot (resolved lazily;
+        # construction never touches the network).
         self.parquet_url: Optional[str] = parquet_url or local_parquet_path()
         self._con = None
         self._local_table_ready: bool = False
@@ -411,8 +332,7 @@ class HubStatsClient:
     def _ensure_con(self):
         if self._con is not None:
             return self._con
-        # Import lazily so processes that never call lookup() don't pay
-        # the duckdb import cost.
+        # Lazy: processes that never call lookup() skip the duckdb import cost.
         import os
         import duckdb
         from eval_entity_registry.services.hub_stats_snapshot import (
@@ -436,13 +356,10 @@ class HubStatsClient:
         return con
 
     def _ensure_local_table(self, con) -> bool:
-        """Materialize the remote parquet into a local DuckDB table. Returns
-        True when the table is queryable, False when the bulk fetch failed
-        (caller should fall through to per-id remote query). Idempotent.
-
-        Caller must pass an already-prepared connection so this method
-        doesn't double-count `_ensure_con` invocations under tests that
-        patch the latter as a call counter."""
+        """Materialize the remote parquet into a local table; False when the
+        bulk fetch failed (caller falls back to per-id remote queries).
+        Idempotent. Takes the connection so it never calls `_ensure_con`
+        itself, which tests patch as a call counter."""
         if self._local_table_ready:
             return True
         if self._local_table_failed:
@@ -454,17 +371,11 @@ class HubStatsClient:
                 "hub-stats: bulk-loading remote parquet into local table "
                 "(one-time cost; avoids per-id rate limits)..."
             )
-            # `id` is included implicitly via QUERY_COLUMNS. Materializing
-            # only the columns we need keeps the local table small enough
-            # to live in memory comfortably.
+            # Only QUERY_COLUMNS, to keep the in-memory table small.
             con.execute(
                 f"CREATE TABLE hub_stats AS "
                 f"SELECT {QUERY_COLUMNS} FROM read_parquet('{self.parquet_url}')"
             )
-            # Indexed lookup — DuckDB handles a single-column equality
-            # filter on a string column efficiently without an explicit
-            # index, but adding one explicitly costs ~ms and makes the
-            # plan unambiguous to anyone reading EXPLAIN later.
             con.execute("CREATE INDEX hub_stats_id_idx ON hub_stats(id)")
             row_count = con.execute("SELECT COUNT(*) FROM hub_stats").fetchone()[0]
             log.info("hub-stats: local table loaded (%d rows)", row_count)
@@ -491,24 +402,16 @@ class HubStatsClient:
             self._local_table_failed = False
 
     def lookup(self, hf_id: str) -> Optional[dict]:
-        """Query hub-stats for one HF id. Returns the row as a dict, or
-        None if not found / on any error. Threadsafe + cached.
-
-        Prefers the locally-materialized table (one bulk fetch upfront);
-        falls back to a per-id remote query if the bulk fetch failed."""
+        """Row dict for one HF id, or None when not found or on any error.
+        Thread-safe and cached."""
         with self._lock:
             if hf_id in self._cache:
                 return self._cache[hf_id]
         try:
             con = self._ensure_con()
             use_local = self._ensure_local_table(con)
-            # Case-insensitive match — HF stores ids with the upstream
-            # author's original casing (`allenai/Olmo-3-1125-32B`); EEE
-            # surfaces values in mixed conventions (some leaderboards
-            # lowercase, some preserve). An exact-case `=` filter
-            # silently misses any casing mismatch and the draft lands
-            # without enrichment metadata. LOWER() forces a match
-            # regardless of the surface form.
+            # HF ids keep the author's casing while EEE values arrive in mixed
+            # casing; an exact `=` would silently miss and leave the draft unenriched.
             escaped = hf_id.lower().replace("'", "''")
             if use_local:
                 sql = f"SELECT * FROM hub_stats WHERE LOWER(id) = '{escaped}' LIMIT 1"
@@ -523,8 +426,7 @@ class HubStatsClient:
             row = cursor.fetchone()
             result = dict(zip(cols, row)) if row else None
         except Exception as e:
-            # Log-and-continue: live lookup is best-effort enrichment,
-            # never blocks draft creation.
+            # Best-effort enrichment never blocks draft creation.
             import logging
             logging.getLogger(__name__).warning(
                 "hub-stats lookup failed for %r: %s", hf_id, e
@@ -536,8 +438,7 @@ class HubStatsClient:
 
 
 # ---------------------------------------------------------------------------
-# High-level enrichment: take a hub-stats row + the registry's alias index
-# and return a dict of fields ready to merge into a draft canonical_models row.
+# Draft enrichment
 # ---------------------------------------------------------------------------
 
 def enrich_draft_from_row(
@@ -546,18 +447,10 @@ def enrich_draft_from_row(
     org_alias_map: dict[str, str],
     target_canonical: Optional[str] = None,
 ) -> dict:
-    """Convert one hub-stats row into a partial canonical_models dict
-    suitable for merging into an auto-created draft. Computes:
-      - release_date (from createdAt)
-      - params_billions (approx from safetensors)
-      - tags (filtered list)
-      - parents (resolved against our canonical alias index when possible)
-      - lineage_origin_model_org_id (= upstream lab when a parent edge resolves)
-      - metadata (license, downloads, etc.)
-
-    Caller decides what to actually write — none of these fields are
-    forced. Returns an empty dict if the row carries no usable info.
-    """
+    """Partial canonical_models dict from one hub-stats row (release_date,
+    params_billions, tags, parents, lineage_origin_model_org_id, metadata,
+    hf_id). Nothing is forced: the caller decides what to write. Empty dict
+    when the row carries no usable info."""
     out: dict = {}
 
     release = coerce_date(row.get("createdAt"))
@@ -568,8 +461,7 @@ def enrich_draft_from_row(
     if params is not None:
         out["params_billions"] = params
 
-    # Anything we can pull from hub-stats with downloadable artifacts is
-    # by definition open weights. Closed-API models aren't on HF.
+    # Downloadable artifacts on HF mean open weights.
     if has_downloadable_weights(row):
         out["open_weights"] = True
 
@@ -577,9 +469,7 @@ def enrich_draft_from_row(
     if useful_tags:
         out["tags"] = json.dumps(useful_tags)
 
-    # Resolve baseModels parents to OUR canonical ids when possible.
-    # Drop edges we can't resolve — a parents edge pointing at an HF id
-    # we don't track would dangle.
+    # Unresolvable base ids are dropped so no parent edge dangles.
     parents: list[dict] = []
     lineage_origin_org_id: Optional[str] = None
     for edge in extract_base_models(row.get("baseModels")):
@@ -587,28 +477,20 @@ def enrich_draft_from_row(
         n = normalize(base_hf)
         parent_canonical = aliases_to_canonical.get(n)
         if parent_canonical is None:
-            # Try slugifying via org map (covers HF ids that aren't yet
-            # in our aliases but whose org we know).
+            # Second chance for an HF id not yet aliased but whose org is known.
             slugified, _ = hf_id_to_canonical(base_hf, org_alias_map)
             parent_canonical = aliases_to_canonical.get(normalize(slugified))
         if parent_canonical:
             parents.append({"id": parent_canonical, "relationship": edge["relationship"]})
-            # First resolved non-variant edge sets the lineage origin
-            # (matches `derive_model_lineage_fields` semantics).
+            # First resolved non-variant edge sets the origin, as in
+            # `derive_model_lineage_fields`.
             if lineage_origin_org_id is None and edge["relationship"] != "variant":
                 if "/" in parent_canonical:
-                    # The parent canonical id is the real HF repo id, so its
-                    # prefix is the HF org — fold it to the canonical developer
-                    # (meta-llama -> meta) for the lineage-origin ORG field.
+                    # The prefix is the HF org; fold to the curated developer
+                    # (meta-llama -> meta).
                     _pp = parent_canonical.split("/", 1)[0]
                     lineage_origin_org_id = org_alias_map.get(_pp.lower(), _pp)
 
-    # Family-version inference: hub-stats `baseModels` only records
-    # upstream-lineage edges (finetune/quantized/merge/adapter), never
-    # the dated-snapshot ↔ moving-pointer relationship that lives only
-    # in our registry. Without this, snapshots like `Olmo-3-1125-32B`
-    # auto-create as orphan canonicals — release_date lands but parents
-    # stays empty and root-collapse never fires.
     hf_id = row.get("id")
     if isinstance(hf_id, str) and not any(
         p.get("relationship") == "variant" and p.get("axis") == "version"
@@ -623,12 +505,8 @@ def enrich_draft_from_row(
     if parents:
         out["parents"] = json.dumps(parents)
     if lineage_origin_org_id:
-        # Output key matches the renamed canonical_models column so it lands
-        # in the right column when merged into an auto-created draft.
         out["lineage_origin_model_org_id"] = lineage_origin_org_id
 
-    # Stash extra hub-stats context in metadata so consumers can find it
-    # without re-querying.
     metadata: dict = {"source": "hub_stats", "hf_id": row.get("id")}
     if row.get("downloadsAllTime") is not None:
         metadata["downloads_all_time"] = int(row["downloadsAllTime"])
@@ -644,11 +522,8 @@ def enrich_draft_from_row(
     if len(metadata) > 2:  # has more than just source + hf_id
         out["metadata"] = json.dumps(metadata, sort_keys=True)
 
-    # Promote the HF-true repo id as a first-class key UNCONDITIONALLY
-    # (bypasses the `len(metadata) > 2` guard that otherwise drops it for
-    # sparse rows). `_auto_create_entity` reads this to mint the canonical id
-    # + display_name in HF-true casing instead of a lowercased slug. Without
-    # it, HF-confirmed models land under a stale lowercase id.
+    # Always set, independent of the metadata guard: `_auto_create_entity`
+    # reads it to mint the canonical id and display_name in HF-true casing.
     if isinstance(hf_id, str) and hf_id.strip():
         out["hf_id"] = hf_id
 

@@ -9,20 +9,14 @@ def normalized_match(
     alias_store,
     source_config: Optional[str] = None,
 ) -> Optional[str]:
-    """Normalize input and look up against normalized alias index.
+    """Look the normalized input up in the normalized alias index (scoped
+    aliases included only when ``source_config`` is given).
 
-    When ``source_config`` is given, scoped aliases for that config are
-    considered in addition to global aliases; otherwise scoped aliases are
-    excluded.
-
-    No org-agreement guard here (unlike fuzzy): normalized matching is org-safe
-    BY CONSTRUCTION. It matches the WHOLE normalized id/alias, so an `org/name`
-    raw only hits an `org/name` alias whose org+name collapse to the same string
-    — the same developer modulo case/separator (`ai21labs/x` -> `ai21-labs/x`),
-    never a genuinely different developer (whose org token would change the
-    normalized string). An org-LESS raw (bare leaf) has no developer to disagree
-    on, and a leaf shared by two developers is already deduped to one owner by the
-    seed's alias-collision detector.
+    No org-agreement guard, unlike fuzzy: the WHOLE normalized string must
+    match, so an `org/name` raw only hits the same developer modulo
+    case/separator (`ai21labs/x` -> `ai21-labs/x`); a different developer's org
+    token would change the string. A bare leaf shared by two developers is
+    deduped to one owner at seed time.
     """
     norm = normalize(raw_value)
     lookup = alias_store.get_normalized_lookup(entity_type, source_config)

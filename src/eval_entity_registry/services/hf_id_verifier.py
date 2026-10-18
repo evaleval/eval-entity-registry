@@ -1,34 +1,12 @@
-"""Runtime HF repo-id verifier — the injected `hf_id_checker` for the
-resolver chain (policy step 1: a string that IS a valid HF model id resolves
-to itself).
+"""Runtime HF repo-id verifier, the resolver chain's injected `hf_id_checker`.
 
-Lookup order per raw value:
-  1. In-memory result cache. Positive entries (id confirmed) live 24 h;
-     negative entries (authoritative 404) live 1 h, so a repo created today
-     becomes resolvable without a restart.
-  2. The cron-built `hub_stats_index` dict (normalized id -> HF-true id),
-     provided by the service. Answers the bulk of lookups with no network.
-  3. Live Hub API fallback: one GET to `/api/models/{id}`. The Hub API is
-     the source hub-stats itself is built from, answers a single-id question
-     with one small request, and has no staleness. (The old shard-0-limited
-     `HubStatsClient` is NOT used here — it stays draft-enrichment-only.)
-
-The live path is defended against rate limits and thread starvation. All
-acquisitions are NON-BLOCKING — when a guard says no, the verifier answers
-"unknown" (None, uncached) immediately instead of pinning a request thread:
-  - single-flight per id (a concurrent duplicate answers unknown rather
-    than waiting on the in-flight call);
-  - a global concurrency cap (default 4 simultaneous live calls);
-  - a token-bucket budget (default 60 live calls per minute);
-  - a circuit breaker (default: 5 consecutive failures open the live path
-    for 5 minutes);
-  - the `hf_live_id_check_enabled` config flag turns the live path off
-    entirely.
-
-Outcome semantics: only an authoritative 404 is negative-cached. Budget
-exhaustion, breaker-open, transport errors, and the disabled flag all
-return None WITHOUT caching, so the resolver chain falls through to the
-alias/fuzzy steps exactly as it does today, and a later call may retry.
+Lookup order: in-memory cache (positive 24 h; negative 1 h so a new repo
+becomes resolvable without a restart) -> cron-built `hub_stats_index` ->
+live Hub API GET. Every live-path guard (single-flight, concurrency cap,
+per-minute budget, circuit breaker, `hf_live_id_check_enabled`) is
+non-blocking and answers None uncached rather than pinning a thread. Only
+an authoritative 404 is negative-cached, so any other non-answer falls
+through to alias/fuzzy and a later call may retry.
 """
 from __future__ import annotations
 
@@ -49,18 +27,16 @@ BREAKER_COOLDOWN_SECONDS = 300.0
 # Sentinel stored in the cache for an authoritative "not on the Hub".
 _MISS = ""
 
-# Soft cap on cached results; oldest tenth evicted past it, so a long-lived
-# process scanning unique never-repeated ids can't grow the dict unboundedly.
+# Soft cap; the oldest tenth is evicted past it so unique never-repeated ids
+# cannot grow the dict unboundedly.
 _MAX_CACHE_ENTRIES = 100_000
 
 
 class HfIdVerifier:
     """Checks whether a raw string is a valid HF model repo id.
 
-    `index_provider` returns the current `normalized id -> HF-true id` dict
-    (the service rebuilds it after entity churn; the verifier re-reads it on
-    every check, so invalidation needs no coupling here). `clock` is
-    injectable for tests and must be monotonic."""
+    `index_provider` is re-read on every check so the service can rebuild the
+    index without invalidation coupling. `clock` must be monotonic."""
 
     def __init__(
         self,
@@ -132,10 +108,8 @@ class HfIdVerifier:
         if not entry:
             return None
         if isinstance(entry, dict):
-            # Two distinct repos collapse to this id_norm — normalized
-            # matching is ambiguous here, so only a verbatim
-            # (case-insensitive) match may answer; anything else falls
-            # through to the live tier, which can disambiguate.
+            # Two repos share this id_norm: only a case-insensitive verbatim
+            # match may answer; the live tier disambiguates the rest.
             hf_id = entry.get(raw_value.lower())
             if not hf_id:
                 return None
@@ -159,9 +133,8 @@ class HfIdVerifier:
         try:
             if not acquired:
                 return None
-            # Budget is taken LAST, inside the acquired region, so a
-            # single-flight duplicate or a semaphore miss never burns a
-            # token that a genuine lookup could have used.
+            # Budget is taken last so a single-flight duplicate or semaphore
+            # miss never burns a token a genuine lookup could have used.
             if not self._budget_take(self._clock()):
                 return None
             return self._live_lookup(raw_value, key)
@@ -192,23 +165,20 @@ class HfIdVerifier:
                 raw_value, timeout=settings.hf_live_id_check_timeout
             )
         except GatedRepoError:
-            # Gated repos exist; metadata may be withheld, so fall back to
-            # the raw spelling for casing. MUST be caught before
-            # RepositoryNotFoundError — GatedRepoError subclasses it, and
-            # the wrong order would negative-cache every gated repo.
+            # A gated repo exists (metadata withheld, so the raw spelling is
+            # the casing). GatedRepoError subclasses RepositoryNotFoundError
+            # and must be caught first or every gated repo is negative-cached.
             self._record_success()
             self._cache_put(key, raw_value, self._positive_ttl)
             return self._hit(raw_value, raw_value, "hf_live")
         except RepositoryNotFoundError:
-            # Authoritative miss (includes private repos we can't see, which
-            # is the right answer for resolution purposes).
+            # Authoritative miss; a private repo we cannot see counts as one.
             self._record_success()
             self._cache_put(key, _MISS, self._negative_ttl)
             return None
         except HFValidationError:
-            # Client-side rejection of a malformed-but-HF-shaped value
-            # (e.g. an inner space). Not a transport failure — must not
-            # poison the breaker; cache as a miss so it isn't retried.
+            # Client-side rejection of a malformed value (e.g. an inner space):
+            # not a transport failure, so it must not trip the breaker.
             self._cache_put(key, _MISS, self._negative_ttl)
             return None
         except Exception:
@@ -225,9 +195,7 @@ class HfIdVerifier:
 
     def _hit(self, raw_value: str, hf_id: str, source: str) -> HfIdHit:
         # HF repo ids are case-insensitively unique, so a case-insensitive
-        # match identifies the repo exactly — that's "verbatim". Anything
-        # else (separator collapse via the index, a followed rename redirect
-        # from the live API) is the weaker "normalized" tier.
+        # match is exact; separator collapse or a rename redirect is not.
         return HfIdHit(
             hf_id=hf_id,
             verbatim=raw_value.lower() == hf_id.lower(),
@@ -248,7 +216,7 @@ class HfIdVerifier:
     def _cache_put(self, key: str, value: str, ttl: float) -> None:
         with self._cache_lock:
             if len(self._cache) >= _MAX_CACHE_ENTRIES:
-                # Dict preserves insertion order — drop the oldest tenth.
+                # Insertion order makes the first entries the oldest.
                 for stale in list(self._cache)[: _MAX_CACHE_ENTRIES // 10]:
                     del self._cache[stale]
             self._cache[key] = (self._clock() + ttl, value)

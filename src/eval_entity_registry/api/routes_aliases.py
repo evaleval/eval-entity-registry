@@ -1,4 +1,4 @@
-"""Alias management routes — v0-defer (read + patch only; no review UI yet)."""
+"""Alias management routes (list + patch)."""
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException

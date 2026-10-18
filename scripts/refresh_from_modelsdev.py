@@ -1,36 +1,16 @@
 #!/usr/bin/env python3
 """
-Generate seed/models/sources/models_dev.generated.yaml from models.dev.
+Generate seed/models/sources/models_dev.generated.yaml from https://models.dev/api.json.
 
-This script writes ONE data source — pure models.dev output, no curated
-overlays. The seed CLI loader applies `seed/models/core.yaml` (curated
-canonicals) and `seed/models/enrichments/aliases.yaml` (optional alias
-additions) at load time.
-
-models.dev is strong on hosted-API model catalogs (Anthropic, OpenAI, xAI,
-Google Gemini), weaker on open-weight families released directly to
-HuggingFace (Meta Llama, Mistral / Mixtral, Qwen open weights, Gemma, Phi,
-Yi, OLMo, Falcon, Granite, etc.). Curated entries in `core.yaml` cover
-those and win at load time on id collision.
-
-The right policy: prioritize correct expected coverage of what EEE actually
-contains over the bounds of any single upstream catalog. When a refresh PR
-introduces an unexpected drop or a too-coarse family, prefer adding/keeping
-a `core.yaml` entry over chasing the upstream catalog.
-
-This script fetches https://models.dev/api.json, filters to known
-model-author providers (labs that release their own models, not re-hosting
-inference providers), collapses models to family granularity, and writes
-the generated YAML. Curated entries in core.yaml are NOT merged here — the
-output is pure data-source.
+Pure models.dev output, no curated overlays: the seed loader applies
+`seed/models/core.yaml` and `seed/models/enrichments/aliases.yaml` on top, and
+curated entries win on id collision. models.dev covers hosted-API catalogs well
+and HF-released open-weight families poorly; core.yaml covers the latter.
 
 Usage:
     python scripts/refresh_from_modelsdev.py              # fetch + write
     python scripts/refresh_from_modelsdev.py --no-fetch   # use /tmp cache
     python scripts/refresh_from_modelsdev.py --dry-run    # diff vs current
-
-Re-running this is safe: it overwrites the generated YAML. The seed CLI
-(`uv run eval-entity-registry seed --local`) is idempotent over the result.
 
 Source: https://models.dev (MIT, (c) 2025 models.dev)
 """
@@ -49,9 +29,8 @@ import yaml
 
 
 class UnionFind:
-    """Disjoint-set with path compression. Shared by the two grouping passes
-    (catalog-wide dedup and intra-output reconciliation) so the merge semantics
-    stay identical between them."""
+    """Disjoint-set with path compression, shared by both grouping passes so
+    their merge semantics stay identical."""
 
     def __init__(self) -> None:
         self._parent: dict[str, str] = {}
@@ -73,15 +52,11 @@ from eval_entity_registry.lib.seed_io import (
     safe_load_yaml,
 )
 
-# Resolver lives in the workspace package; this script runs from the repo
-# root via `uv run`, so the import resolves through pyproject's path dep.
 from eval_entity_resolver.display import humanize_model_slug
 from eval_entity_resolver.strategies.fuzzy import _ORG_ALIASES
 
-# Strip trailing date suffixes and `-latest` to collapse a model down to its
-# major-version family slug. Mirrors the resolver's fuzzy stem so per-snapshot
-# entries from models.dev (e.g. `gpt-4o-2024-05-13`, `claude-opus-4-5-20251101`)
-# fold into a single canonical with the dated snapshots as aliases.
+# Suffixes stripped to reach the family slug; mirrors the resolver's fuzzy stem
+# so dated snapshots fold into one canonical.
 _FAMILY_DATE_RES = [
     re.compile(r"-\d{8}$"),                  # YYYYMMDD: -20251101
     re.compile(r"-\d{4}-\d{2}-\d{2}$"),      # YYYY-MM-DD: -2024-05-13
@@ -91,12 +66,11 @@ _FAMILY_DATE_RES = [
     re.compile(r"-latest$"),                 # -latest hosting tag
     re.compile(r"-v\d+(\.\d+)*$", re.IGNORECASE),  # version suffix: -v0.3, -v1, -v1.0.0
 ]
-# Legacy alias names kept for any external callers (tests etc.)
+# Kept for external callers (tests).
 _FAMILY_LATEST_RE = _FAMILY_DATE_RES[-1]
 _FAMILY_PREVIEW_RE = _FAMILY_DATE_RES[-2]
 
-# Training-stage suffixes — matches the resolver's _STRIP_SUFFIXES. Stripped
-# from canonical so base / instruct / chat / it variants share one entry.
+# Must match the resolver's _STRIP_SUFFIXES.
 _FAMILY_STAGE_SUFFIXES = ("-instruct", "-chat", "-it", "-base")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -105,9 +79,8 @@ ORGS_SEED_PATH = REPO_ROOT / "seed" / "orgs.yaml"
 CACHE_PATH = Path("/tmp/modelsdev_api.json")
 SOURCE_URL = "https://models.dev/api.json"
 
-# Map models.dev provider slug -> our canonical_orgs.id.
-# Most match by name; a few need translation. Providers not listed here are
-# skipped (most are inference re-hosts, gateways, regional duplicates).
+# models.dev provider slug -> canonical_orgs.id; unlisted providers (re-hosts,
+# gateways, regional duplicates) are skipped.
 PROVIDER_TO_ORG: dict[str, str] = {
     "anthropic": "anthropic",
     "openai": "openai",
@@ -125,16 +98,13 @@ PROVIDER_TO_ORG: dict[str, str] = {
     "upstage": "upstage",
     "perplexity": "perplexity",
     "nvidia": "nvidia",
-    # Add more here as we extend the allowlist; each must have a matching
-    # entry in seed/orgs.yaml or the validator will fail.
+    # Every entry must have a matching seed/orgs.yaml row.
 }
 
 # --- inference_platforms single-source --------------------------------------
-# Path to the curated platform catalog (source of truth). The same file
-# seeds seed/inference_platforms.yaml; we read its `models_dev_provider` field
-# to build PROVIDER_TO_INFERENCE_PLATFORM so the host-token→platform map stays
-# byte-identical between seed generation here and runtime capture in fuzzy.py
-# (single-source mandate — DO NOT hand-maintain a parallel dict).
+# The curated platform catalog also seeds seed/inference_platforms.yaml; the
+# provider->platform map must stay identical to the runtime map in fuzzy.py,
+# so never hand-maintain a parallel dict.
 INFERENCE_PLATFORMS_JSON = (
     REPO_ROOT  / "curation" / "inference_platforms.proposed.json"
 )
@@ -143,12 +113,8 @@ INFERENCE_PLATFORMS_JSON = (
 def _load_provider_to_inference_platform(
     path: Path = INFERENCE_PLATFORMS_JSON,
 ) -> dict[str, str]:
-    """Build {models.dev provider slug -> inference_platforms.id} from the
-    curated catalog. Every platform built from a models.dev provider declares
-    its `models_dev_provider` (null only for non-provider platforms, e.g.
-    prodia); this maps all of them, so every provider with a catalog entry is
-    processed (PROVIDER_TO_ORG, narrower, only governs which providers can
-    anchor a group's authorship)."""
+    """{models.dev provider slug -> inference_platforms.id} from the curated
+    catalog (every provider-backed platform declares `models_dev_provider`)."""
     data = json.loads(path.read_text())
     mapping: dict[str, str] = {}
     for plat in data.get("platforms", []):
@@ -160,9 +126,6 @@ def _load_provider_to_inference_platform(
     return mapping
 
 
-# Module-level singleton. Falls back to an empty dict if the curated catalog
-# file is not present; in that case source the map from
-# seed/inference_platforms.yaml instead.
 try:
     PROVIDER_TO_INFERENCE_PLATFORM: dict[str, str] = _load_provider_to_inference_platform()
 except FileNotFoundError:  # pragma: no cover - catalog file absent
@@ -171,10 +134,8 @@ except FileNotFoundError:  # pragma: no cover - catalog file absent
 
 # --- Author-lab classification + org inference -----------------------------
 
-# Author-lab provider slugs, sourced from the SAME curated catalog (kind ==
-# "author_lab"). These are the providers whose spelling can anchor a group's
-# authorship (but only when their org matches the family-implied org — a lab
-# can re-host others' models too).
+# Providers whose spelling may anchor a group's authorship, and only when their
+# org matches the family-implied org (a lab can re-host others' models too).
 def _load_strict_author(path: Path = INFERENCE_PLATFORMS_JSON) -> set[str]:
     try:
         data = json.loads(path.read_text())
@@ -189,8 +150,7 @@ def _load_strict_author(path: Path = INFERENCE_PLATFORMS_JSON) -> set[str]:
 
 STRICT_AUTHOR: set[str] = _load_strict_author()
 
-# Author-lab provider id -> HF-style org slug (used when that provider's
-# spelling anchors a group).
+# Author-lab provider id -> HF-style org slug.
 AUTHOR_PROV_ORG: dict[str, str | None] = {
     "anthropic": "anthropic", "openai": "openai", "google": "google",
     "mistral": "mistralai", "cohere": "cohere", "zai": "zai-org",
@@ -241,11 +201,8 @@ def org_from_family(fam: str | None) -> str | None:
     return None
 
 
-# Map HF-style org slugs onto the registry's CURATED developer-org slugs
-# (org identity & casing model: curated dev org ids keep their authored slug;
-# HF namespaces are recorded as aliases and RESOLVE to the dev org). Built once
-# from seed/orgs.yaml alias index, with a few explicit overrides for HF slugs
-# that aren't already aliased.
+# HF-style org slugs -> curated developer ids not already covered by the
+# orgs.yaml alias index.
 _ORG_SLUG_OVERRIDES: dict[str, str] = {
     "meta-llama": "meta",
     "qwen": "alibaba",
@@ -255,13 +212,8 @@ _ORG_SLUG_OVERRIDES: dict[str, str] = {
 
 
 def _build_org_alias_index() -> dict[str, str]:
-    """{lowercased org id / hf_org / alias / _ORG_ALIASES key -> curated org id}.
-
-    Built by the shared eval_entity_resolver.fold.build_curated_org_map:
-    `_ORG_ALIASES` UNION every curated org's id + hf_org + `aliases`. Using the
-    shared builder (rather than reading orgs.yaml directly) is what folds e.g.
-    `minimaxai`->minimax via `_ORG_ALIASES`, and keeps this map identical to the
-    one the resolver uses."""
+    """{lowercased org id / hf_org / alias -> curated org id}, built by the
+    resolver's `build_curated_org_map` so it stays identical to the resolver's."""
     from eval_entity_resolver.fold import build_curated_org_map
     data = safe_load_yaml(ORGS_SEED_PATH.read_text()) if ORGS_SEED_PATH.exists() else []
     return build_curated_org_map(data or [])
@@ -271,7 +223,7 @@ _DEV_ALIAS_INDEX: dict[str, str] | None = None
 
 
 def _dev_alias_index() -> dict[str, str]:
-    """Module-cached org alias index (orgs.yaml parsed once, not per group)."""
+    """Module-cached org alias index."""
     global _DEV_ALIAS_INDEX
     if _DEV_ALIAS_INDEX is None:
         _DEV_ALIAS_INDEX = _build_org_alias_index()
@@ -279,9 +231,8 @@ def _dev_alias_index() -> dict[str, str]:
 
 
 def normalize_org_slug(hf_org: str | None, alias_index: dict[str, str]) -> str | None:
-    """Map an HF-style org slug to the registry's curated org id when one
-    exists; else return the HF slug unchanged (a new HF-derived org row will be
-    auto-created with HF casing). Returns None for None in."""
+    """Map an HF-style org slug to the curated org id when one exists, else
+    return it unchanged (an HF-cased org row is auto-created at seed)."""
     if not hf_org:
         return None
     if hf_org in _ORG_SLUG_OVERRIDES:
@@ -291,32 +242,21 @@ def normalize_org_slug(hf_org: str | None, alias_index: dict[str, str]) -> str |
 
 
 # --- Developer (org) derivation: PREFIX-authoritative ----------------------
-# The model id's org prefix is the developer. The model NAME only says what a
-# model is DERIVED FROM (base lineage), not who MADE it, so name-matching is
-# used ONLY for bare ids / serving-hosted ids (no genuine prefix), NEVER to
-# override a prefix (`3rd-Degree-Burn/Llama-...` is by 3rd-Degree-Burn, NOT
-# meta; `nvidia/llama-nemotron` is nvidia's, NOT meta). Serving hosts are
-# stripped; a curated-prefix model whose name disagrees (a possible re-host,
-# e.g. nvidia/whisper) is FLAGGED for curation, not auto-flipped.
-# Serving / gateway platforms (where a model is SERVED, not DEVELOPED) — a model
-# id prefixed with one of these is stripped and the developer taken from the
-# name. Single-sourced from the curated inference_platforms catalog: every
-# models.dev provider that is NOT an author_lab (those re-host others' models —
-# fireworks, together, volcengine, fal-ai, openrouter, ...), plus host
-# scaffolding tokens. (nvidia IS an author_lab, so it stays out and its genuine
-# re-hosts are handled by explicit curation, not stripped here.)
+# The id's org prefix is the developer. The model NAME only says what a model
+# derives from, so name-matching applies only to bare / serving-hosted ids and
+# never overrides a prefix (`nvidia/llama-nemotron` is nvidia's, not meta's); a
+# curated prefix whose name disagrees is flagged for curation, not flipped.
+# Serving hosts: every non-author_lab models.dev provider plus host scaffolding
+# tokens; an id under one of these takes its developer from the name.
 _SERVING_HOSTS = {
     "accounts", "clarifai", "route", "orcarouter", "workers-ai", "openrouter",
     "stealth", "hf", "cf", "@cf",
-    # serving-brand id namespaces (not top-level providers, but appear as id
-    # prefixes): ByteDance's Volcano Engine cloud, fal's image-serving, etc.
+    # serving-brand namespaces that appear only as id prefixes
     "volcengine", "fal-ai", "fal", "kilo", "kilo-auto",
-    # nano-gpt's trusted-execution serving namespace (`TEE/gemma4-31b`) — a
-    # serving mode like the `-tee` suffix, NOT an uploader org.
+    # nano-gpt's `TEE/` namespace is a serving mode, not an uploader org
     "tee",
 } | ({p.lower() for p in PROVIDER_TO_INFERENCE_PLATFORM} - {a.lower() for a in STRICT_AUTHOR})
-# model NAME starts with TOKEN -> HF-style developer slug (normalize_org_slug
-# maps to the curated org). Longest-prefix-first.
+# Leading model-name token -> HF-style developer slug, longest-prefix-first.
 _NAME_VENDOR_MAP: list[tuple[str, str]] = sorted([
     ("meta-llama", "meta-llama"), ("codellama", "meta-llama"), ("llama", "meta-llama"),
     ("ministral", "mistralai"), ("mixtral", "mistralai"), ("pixtral", "mistralai"),
@@ -342,9 +282,9 @@ _NAME_VENDOR_MAP: list[tuple[str, str]] = sorted([
 
 
 def developer_from_name(name: str | None) -> str | None:
-    """HF-style developer slug from a LEADING vendor token in the model name.
-    Leading-token only, so a derivative's base token mid-name can't hijack it.
-    For BARE / serving-hosted ids only — never to override a real prefix."""
+    """HF-style developer slug from the LEADING vendor token of a model name
+    (a derivative's base token mid-name must not hijack it); for bare /
+    serving-hosted ids only."""
     if not name:
         return None
     s = re.sub(r"^[a-z]+\.", "", str(name).strip().lower())
@@ -361,16 +301,14 @@ def _derive_group_org(
 ) -> tuple[str | None, str | None]:
     """Developer org for a models.dev underlying group (prefix-authoritative).
 
-    Returns (hf_org_slug | None, rehost_review | None). `rehost_review` is the
-    disagreeing name-vendor when a CURATED-org prefix's model name points to a
-    different vendor (a possible re-host to curate, e.g. nvidia/whisper)."""
+    Returns (hf_org_slug | None, rehost_review | None); `rehost_review` is the
+    disagreeing name-vendor when a curated-org prefix's model name points at a
+    different vendor (a possible re-host, e.g. nvidia/whisper)."""
     prefix_orgs: list[str] = []
     name_orgs: list[str] = []
     for r in recs:
-        # Strip provider prefixes the same way normalize_modelsdev_id does BEFORE
-        # taking the org, so an id like `hf:nvidia/...` yields org `nvidia`, not
-        # `hf:nvidia` (which would mint a malformed `hf:nvidia/...` canonical + a
-        # dangling org FK). Mirrors the `^hf:` strip on the normalize path.
+        # `hf:` must come off before the org is taken (as normalize_modelsdev_id
+        # does), or `hf:nvidia/...` yields a malformed org and a dangling FK.
         raw = re.sub(r"^hf:", "", (r.get("raw") or "").lstrip("~"))
         if "/" in raw and raw.split("/")[0].lower() not in _SERVING_HOSTS:
             prefix_orgs.append(raw.split("/")[0])          # uploader OR curated (raw spelling)
@@ -379,11 +317,8 @@ def _derive_group_org(
             if no:
                 name_orgs.append(no)
     if prefix_orgs:
-        # Take the prefix VERBATIM (most common spelling present). We do NOT
-        # reconcile spelling variants (e.g. 'TheDrummer 2' vs 'thedrummer') — we
-        # have no authoritative basis to assert they're the same uploader, so
-        # picking/cleaning one would be an arbitrary, unverified identity claim.
-        # Curated orgs.yaml is the place to assert such equivalences explicitly.
+        # Most common spelling, verbatim: equating uploader spelling variants is
+        # a curated orgs.yaml claim, not something to infer here.
         low = Counter(p.lower() for p in prefix_orgs).most_common(1)[0][0]
         org = next(p for p in prefix_orgs if p.lower() == low)
         rehost = None
@@ -404,17 +339,14 @@ _NUM_TOKEN_RE = re.compile(r"^\d+[a-z]?$")
 
 
 def normalize_modelsdev_id(raw: str, strip_variants: bool = True) -> str:
-    """Normalize a models.dev model id to an underlying-model spelling — strips
-    provider/host/region scaffolding, unifies separators.
+    """Normalize a models.dev model id to an underlying-model spelling
+    (host/region/account scaffolding stripped, separators unified).
 
-    `strip_variants` (default True): also collapse IDENTITY variant suffixes
-    (-turbo/-thinking/-reasoner/-fp8/...) so a variant groups with its base for
-    routing/dedup (build_underlying_groups). Pass False for ALIAS derivation so
-    a variant keeps its own identity and never emits the base id as an alias —
-    otherwise a variant (e.g. `gpt-4-turbo`) would claim the base canonical's id
-    (`gpt-4`) as one of its aliases, double-claiming it and aborting the seed.
-    Serving TAGS (`:free`, `-fast`, ...) are stripped regardless — they are
-    scaffolding, not a distinct model."""
+    `strip_variants=True` also collapses identity variants (-turbo/-thinking/
+    -fp8/...) for routing/dedup grouping. Pass False for alias derivation: a
+    variant must never emit its base's id as an alias, which double-claims it
+    and aborts the seed. Serving tags (`:free`, `-fast`, ...) are stripped
+    regardless."""
     s = raw.strip()
     s = s.lstrip("~")  # openrouter '~' latest marker
     s = re.sub(r"^accounts/[^/]+/models/", "", s)
@@ -440,11 +372,8 @@ def normalize_modelsdev_id(raw: str, strip_variants: bool = True) -> str:
     s = re.sub(r"@(\d{8})$", r"-\1", s)
     s = re.sub(r"@.*$", "", s)
     s = _BEDROCK_VER_RE.sub("", s)
-    # A trailing `:NNN<unit>` is a SIZE spec (e.g. `gpt-oss:120b`), not a serving
-    # tag — convert to `-NNN<unit>` so it survives the `:.*$` tag strip and keeps
-    # distinct sizes in distinct groups (gpt-oss:20b vs gpt-oss:120b). The size
-    # UNIT (b/m/k/t) is REQUIRED so a bare `:1024` / `:1.0` (thinking budget /
-    # version serving param) is still stripped as a tag, not kept as a size.
+    # A trailing `:NNN<unit>` is a size spec (`gpt-oss:120b`), not a serving tag;
+    # the unit is required so `:1024` / `:1.0` still strip as tags.
     s = re.sub(r":(\d+(?:\.\d+)?[bmkt])$", r"-\1", s)
     prev = None
     while prev != s:
@@ -462,29 +391,21 @@ def normalize_modelsdev_id(raw: str, strip_variants: bool = True) -> str:
 _HOST_PREFIXES = ["amazon.", "anthropic.", "qwen.", "meta.", "google.", "cohere.",
                   "ai21.", "deepseek.", "mistral."]
 _REGION_PREFIXES = ["us.", "eu.", "jp.", "au.", "apac.", "global."]
-# Serving/routing TAGS — pure scaffolding (a hosting tier / serving mode /
-# provider routing marker, NOT a distinct model). Always stripped, even for alias
-# derivation: `gpt-4o:free` and `gpt-4o` are the SAME canonical served at
-# different tiers. `-tee` (trusted-execution serving) and `-maas` (model-as-a-
-# service tier) are serving modes, not distinct models. NOTE: a trailing `:NNNb`
-# is a SIZE spec (gpt-oss:120b), NOT a tag — it is converted to `-NNNb` in
-# normalize_modelsdev_id BEFORE the `:.*$` strip fires, so it survives as a size.
+# Serving/routing tags: pure scaffolding, stripped even for alias derivation
+# (`gpt-4o:free` is `gpt-4o`); `-tee` / `-maas` are serving modes. A `:NNNb`
+# size spec is converted before this fires.
 _TAG_SUFFIX_RE = re.compile(r"(:.*$)|(-fast$)|(-precision$)|(-free$)|(-maas$)|(-tee$)")
-# The PREFIX spelling of the trusted-execution serving marker (`TEE/gemma4-31b`)
-# — stripped like the `-tee` suffix; the raw form is kept as an alias on the
-# stripped target.
+# Prefix spelling of the `-tee` serving marker; the raw form stays an alias on
+# the stripped target.
 _TEE_PREFIX_RE = re.compile(r"^TEE/", re.IGNORECASE)
-# IDENTITY variants — a genuinely DIFFERENT canonical (a decoding mode, a quant).
-# Stripped ONLY for routing/dedup grouping (strip_variants=True), NEVER for alias
-# derivation: collapsing `gpt-4-turbo`->`gpt-4` would emit the BASE id as one of
-# the VARIANT's aliases, stealing the base canonical's id (a double-claim that
-# aborts the seed).
+# Identity variants (a different canonical): stripped only for routing/dedup,
+# never for alias derivation (see normalize_modelsdev_id).
 _IDENTITY_VARIANT_RE = re.compile(
     r"(-thinking$)|(-think$)|(-reasoner$)|(-reasoning$)"
     r"|(-turbo$)"
     r"|(-fp8$)|(-bf16$)|(-int8$)|(-awq$)|(-gptq$)"
 )
-# Back-compat union (some external callers/tests referenced the old name).
+# Back-compat union for external callers/tests.
 _VARIANT_SUFFIX_RE = re.compile(
     _TAG_SUFFIX_RE.pattern + "|" + _IDENTITY_VARIANT_RE.pattern
 )
@@ -527,10 +448,9 @@ def safe_sig(key: str) -> str:
 
 
 def build_underlying_groups(api_json: dict) -> dict[str, list[dict]]:
-    """Group all (provider, model) records across the catalog into underlying
-    groups keyed by a canonical root via a union-find merge pass. Returns
-    {root_key -> [records]} where each record is
-    {provider, raw, norm, key, family, release, name, open_weights}."""
+    """Group every (provider, model) record into underlying groups via a
+    union-find merge pass. Returns {root_key -> [records]}, each record
+    {provider, raw, norm, key, family, release, name, open_weights, record}."""
     groups: dict[str, list[dict]] = defaultdict(list)
     for prov, pdata in api_json.items():
         for mid, mr in (pdata.get("models") or {}).items():
@@ -556,11 +476,8 @@ def build_underlying_groups(api_json: dict) -> dict[str, list[dict]]:
         mset[safe_sig(k)].append(k)
     for _ms, ks in sorted(mset.items()):
         if len(ks) > 1:
-            # Deterministic base (lexicographically first key, not models.dev's
-            # API iteration order) so grouping can't flip when upstream reorders
-            # keys. fam_a ACCUMULATES the families of every key already merged in,
-            # making the merge transitive: k1{A}, k2{A,B}, k3{B} all land in one
-            # group (k2 bridges k1 and k3) instead of splitting k3 off the base.
+            # Sorted so grouping cannot flip on upstream key order; fam_a
+            # accumulates so the merge is transitive (k2 bridging k1 and k3).
             ks = sorted(ks)
             base = ks[0]
             fam_a = {r["family"] for r in groups[base] if r["family"]}
@@ -578,26 +495,18 @@ def build_underlying_groups(api_json: dict) -> dict[str, list[dict]]:
 
 def pick_underlying(root: str, recs: list[dict]) -> dict:
     """Choose the authoritative (org, display_name, release, open_weights) and
-    head spelling for an underlying group. Returns a dict with a
-    `head_spelling` (the cleanest spelling to mint from).
-
-    Org returned is HF-style; callers normalize via normalize_org_slug() to the
-    curated dev org."""
+    `head_spelling` (the cleanest spelling to mint from) for an underlying
+    group. The org is HF-style; callers map it via normalize_org_slug()."""
     fams = [r["family"] for r in recs if r["family"]]
     fam_org = org_from_family(Counter(fams).most_common(1)[0][0]) if fams else None
     author_recs = [r for r in recs if r["provider"] in STRICT_AUTHOR]
-    # Sort by cleanest spelling (shortest normalized form, then lexicographic)
-    # so the head_spelling / display_name pick is deterministic — NOT models.dev's
-    # provider iteration order, which would otherwise flip the minted id when
-    # upstream reorders providers.
+    # Deterministic pick (shortest normalized form, then raw), not models.dev's
+    # provider order, so the minted id cannot flip on upstream reorders.
     true_author_recs = sorted(
         (r for r in author_recs
          if fam_org is None or AUTHOR_PROV_ORG.get(r["provider"]) == fam_org),
         key=lambda r: (len(r["norm"]), r["raw"]),
     )
-    # Developer org: PREFIX-authoritative (the id's namespace is the developer);
-    # name only for bare/serving ids; never name-override a prefix. Re-host
-    # disagreements (curated prefix vs name) are flagged for curation, not flipped.
     org, rehost_review = _derive_group_org(recs, _dev_alias_index())
     has_author = bool(true_author_recs)  # gates family-tree vs single mint downstream
 
@@ -607,8 +516,6 @@ def pick_underlying(root: str, recs: list[dict]) -> dict:
     else:
         names = [r["name"] for r in recs if r["name"]]
         disp = Counter(names).most_common(1)[0][0] if names else root
-        # Head spelling for a re-host-only group: the cleanest normalised
-        # spelling = the one whose normalized form is shortest / equals root.
         head_spelling = _cleanest_spelling(root, recs)
 
     rels = [r["release"] for r in recs if r["release"]]
@@ -626,10 +533,9 @@ def pick_underlying(root: str, recs: list[dict]) -> dict:
 
 
 def _cleanest_spelling(root: str, recs: list[dict]) -> str:
-    """Pick the cleanest raw spelling to mint a canonical from when no author
-    lab anchors the group: prefer a record whose normalized form equals the
-    canon root, else the shortest normalized form; tie-break alphabetically by
-    raw for determinism."""
+    """Cleanest raw spelling to mint from when no author lab anchors the group:
+    a record whose normalized form equals the root, else the shortest; raw
+    tie-break for determinism."""
     exact = [r for r in recs if r["norm"] == root]
     pool = exact or recs
     return sorted(pool, key=lambda r: (len(r["norm"]), r["raw"]))[0]["raw"]
@@ -640,9 +546,7 @@ def _fetch(use_cache: bool) -> dict:
         print(f"[refresh] using cache: {CACHE_PATH}", file=sys.stderr)
         return json.loads(CACHE_PATH.read_text())
     print(f"[refresh] fetching {SOURCE_URL}", file=sys.stderr)
-    # Send an identifiable User-Agent — models.dev's CDN rejects the default
-    # Python-urllib UA with a 403, and a generic UA is a good citizen anyway
-    # since it lets the data source see who's hitting the API.
+    # models.dev's CDN rejects the default Python-urllib User-Agent with a 403.
     req = urllib.request.Request(
         SOURCE_URL,
         headers={"User-Agent": "evalcard-registry-refresh/1.0 (+https://github.com/evaleval/evalcard-registry)"},
@@ -654,40 +558,27 @@ def _fetch(use_cache: bool) -> dict:
 
 
 def _slugify(value: str) -> str:
-    """Lowercase + collapse whitespace/underscores to single hyphens.
-    Preserves dots (for version readability), hyphens, slashes. Drops
-    parens, brackets, and other display-only punctuation that would
-    otherwise leak into canonical ids."""
+    """Lowercase, collapse whitespace/underscores to hyphens, drop display-only
+    punctuation; dots, hyphens and slashes are preserved."""
     s = value.strip().lower()
-    # Drop punctuation that's display-only (e.g. "Claude 4.5 (latest)")
     s = re.sub(r"[()\[\]{}]", "", s)
-    s = re.sub(r"[\s_]+", "-", s)   # spaces/underscores → hyphen
-    s = re.sub(r"-+", "-", s)        # collapse multiple hyphens
+    s = re.sub(r"[\s_]+", "-", s)
+    s = re.sub(r"-+", "-", s)
     return s.strip("-")
 
 
 def _family_for(model: dict) -> str:
-    """Group key for a model record (= the lineage canonical slug).
+    """Group key for a model record (the lineage canonical slug).
 
-    Prefer the `name` field over `id` because models.dev's `id` slugs
-    sometimes mangle separators (e.g. Alibaba's `qwen2-5-14b-instruct` for
-    what HF calls `Qwen2.5-14B-Instruct`). The `name` field carries the
-    lab's spelling with dots intact.
-
-    Strip date suffixes (snapshot collapse), `-latest`/`-preview` markers,
-    and training-stage suffixes (`-instruct`, `-chat`, `-it`, `-base`) so
-    base + instruct + chat variants share one canonical. This mirrors the
-    resolver's fuzzy stem; doing it here means the seed is consistent with
-    the resolution rule.
-
-    We do NOT use models.dev's `family` field — it's too coarse (groups all
-    Claude Opus major versions 4.0/4.5/4.7 under one slug). The pipeline's
-    `family_slug` works at "Opus 4.5" granularity.
+    Built from `name` rather than `id` because models.dev ids mangle separators
+    (`qwen2-5-14b-instruct` for `Qwen2.5-14B-Instruct`). Date/preview/latest
+    and training-stage suffixes are stripped, mirroring the resolver's fuzzy
+    stem. models.dev's own `family` field is too coarse (every Claude Opus
+    major under one slug).
     """
     raw = _slugify(model.get("name") or model.get("id", ""))
-    # Loop until no suffix matches — date / preview / latest / training-stage
-    # patterns can stack (e.g. "-preview-05-06-instruct"). Each strip is a
-    # monotonic shrink, so the fixpoint is reached and the loop terminates.
+    # Suffixes stack (`-preview-05-06-instruct`); each strip shrinks, so the
+    # fixpoint terminates.
     while True:
         before = raw
         for pat in _FAMILY_DATE_RES:
@@ -702,33 +593,20 @@ def _family_for(model: dict) -> str:
 
 
 # --- Suffix → (relationship, axis) classification --------------------------
-# Used to translate the diff between a snapshot's id and its family slug
-# into a typed `parents` edge. The classification table uses the same enum
-# values as curated core.yaml entries so models.dev refresh and curated
-# entries land in identical shapes.
-#
-# Axis semantics (closed enum):
-#   version  — dated snapshot / vN marker: same API identity, different release.
-#   training_stage — base / instruct / chat / it: a post-training stage of the
-#                    same pretrained model.
-#   tier     — branded sibling (haiku/sonnet/opus, mini/nano, flash/pro,
-#              small/medium/large): a DIFFERENT product in the same family that
-#              makes NO disclosed-scale claim. Never emit a `size` edge for these.
-#   size     — a genuinely-disclosed scale: an open-weight name size token
-#              (7b/70b/405b/8x7b) or a MoE active-param token (a16b). See
-#              `_is_size_token`. NEVER assert for a branded tier.
-#   mode     — runtime/decoding mode that is not a training stage (thinking,
-#              reasoning, guard, …).
-#   modality / domain — unchanged.
+# Suffix token -> typed `parents` edge, same enum as core.yaml. Axis semantics:
+#   version        dated snapshot / vN marker: same API identity, new release
+#   training_stage base / instruct / chat / it
+#   tier           branded sibling (haiku/sonnet, mini/nano, flash/pro): makes
+#                  no scale claim, so it is never a `size` edge
+#   size           a disclosed scale token (7b, 8x7b, a16b); see _is_size_token
+#   mode           runtime/decoding mode that is not a training stage
 _TOKEN_CLASSIFICATIONS: dict[str, tuple[str, str | None]] = {
-    # Training-stage post-training axis.
     "instruct": ("variant", "training_stage"),
     "it": ("variant", "training_stage"),
     "chat": ("variant", "training_stage"),
     "base": ("variant", "training_stage"),
     "pt": ("variant", "training_stage"),
     "sft": ("variant", "training_stage"),
-    # Branded tiers — sibling products, NO scale claim (axis=tier).
     "haiku": ("variant", "tier"),
     "sonnet": ("variant", "tier"),
     "opus": ("variant", "tier"),
@@ -741,20 +619,17 @@ _TOKEN_CLASSIFICATIONS: dict[str, tuple[str, str | None]] = {
     "medium": ("variant", "tier"),
     "large": ("variant", "tier"),
     "lite": ("variant", "tier"),
-    # Runtime / decoding modes (NOT training stages).
     "thinking": ("variant", "mode"),
     "reasoning": ("variant", "mode"),
     "nothink": ("variant", "mode"),
     "guard": ("variant", "mode"),
     "safeguard": ("variant", "mode"),
     "moderation": ("variant", "mode"),
-    # Modality / domain.
     "vision": ("variant", "modality"),
     "vl": ("variant", "modality"),
     "coder": ("variant", "domain"),
     "code": ("variant", "domain"),
     "math": ("variant", "domain"),
-    # Precision / serving quantization.
     "turbo": ("quantized", None),
     "fp8": ("quantized", None),
     "fp16": ("quantized", None),
@@ -765,8 +640,6 @@ _TOKEN_CLASSIFICATIONS: dict[str, tuple[str, str | None]] = {
     "gptq": ("quantized", None),
     "gguf": ("quantized", None),
 }
-# The set of branded-tier tokens — used to GUARD against ever emitting a size
-# edge for a tier (branded tiers never carry a scale claim).
 _TIER_TOKENS = frozenset(
     k for k, (_rel, axis) in _TOKEN_CLASSIFICATIONS.items() if axis == "tier"
 )
@@ -775,52 +648,37 @@ _DATE_8_RE = re.compile(r"^\d{8}$")
 _DATE_4_RE = re.compile(r"^\d{4}$")
 _DATE_3_RE = re.compile(r"^\d{3}$")
 _MOE_ACTIVE_RE = re.compile(r"^a\d+b$", re.IGNORECASE)
-# Disclosed open-weight scale tokens: 7b, 70b, 405b, 1.5b (dot already slugged
-# to dash so we also accept a leading number-dash-number — handled in the
-# size-aware classifier), and MoE expert tokens like 8x7b / 8x22b.
 _SIZE_TOKEN_RE = re.compile(r"^\d+(\.\d+)?b$", re.IGNORECASE)
 _MOE_EXPERT_RE = re.compile(r"^\d+x\d+(\.\d+)?b$", re.IGNORECASE)
 
 
 def _is_size_token(token: str) -> bool:
-    """True iff `token` is a GENUINELY-DISCLOSED scale token from an open-weight
-    family name: a bare param count (`7b`, `70b`, `405b`, `1.5b`), a MoE
-    expert spec (`8x7b`, `8x22b`), or a MoE active-param spec (`a16b`).
-
-    This is the ONLY route to a `size` edge from models.dev (which carries no
-    params field). A branded tier token is NEVER a size token (guarded by
-    classification order in `_classify_token`)."""
+    """True iff `token` is a disclosed scale token (`7b`, `1.5b`, `8x7b`,
+    `a16b`): the only route to a `size` edge, since models.dev has no params
+    field."""
     t = token.lower()
     return bool(_SIZE_TOKEN_RE.match(t) or _MOE_EXPERT_RE.match(t) or _MOE_ACTIVE_RE.match(t))
 
 
 def _classify_token(token: str) -> tuple[str, str | None] | None:
     t = token.lower()
-    # Branded tiers and named tokens take priority over the size regex so a
-    # tier is never mis-read as a scale claim.
+    # Named tokens first, so a tier is never read as a scale claim.
     if t in _TOKEN_CLASSIFICATIONS:
         return _TOKEN_CLASSIFICATIONS[t]
     if _VERSION_RE.match(t) or _DATE_8_RE.match(t) or _DATE_4_RE.match(t) or _DATE_3_RE.match(t):
         return ("variant", "version")
-    # Disclosed scale: open-weight size token / MoE spec. Tier tokens already
-    # returned above, so a `size` axis here always reflects a real scale.
     if _is_size_token(t):
         return ("variant", "size")
     return None
 
 
 def _classify_suffix_segments(suffix: str) -> list[tuple[str, str | None, str]]:
-    """Greedy left-to-right parse of a hyphen/dot-separated suffix.
-
-    Returns a list of (relationship, axis, token) segments. When a single
-    token can't be classified, falls back to a single (variant, version, suffix)
-    segment so we always emit at least one parent edge — consumer can refine
-    via curated core.yaml entries that override on collision.
+    """Greedy left-to-right parse of a hyphen/dot-separated suffix into
+    (relationship, axis, token) segments; an unclassifiable tail becomes one
+    (variant, version, tail) segment so at least one parent edge is emitted.
     """
     if not suffix:
         return []
-    # Normalize separators within the suffix for token splitting (mirrors
-    # what _slugify does to ids — but apply also to dot for v0.1 → v0-1).
     norm = re.sub(r"[._]+", "-", suffix.lower()).strip("-")
     if not norm:
         return []
@@ -844,8 +702,6 @@ def _classify_suffix_segments(suffix: str) -> list[tuple[str, str | None, str]]:
                 continue
         cls = _classify_token(tokens[i])
         if cls is None:
-            # Unknown token mid-suffix — bail out and emit the rest as a
-            # single version segment so at least the outer parent edge is set.
             tail = "-".join(tokens[i:])
             segments.append(("variant", "version", tail))
             return segments
@@ -862,27 +718,15 @@ def _build_family_entries(
     group_recs: list[dict] | None = None,
     alias_index: dict[str, str] | None = None,
 ) -> list[dict]:
-    """Emit canonical entries for a family.
-
-    `group_recs` (the full underlying group's provider records) enables the
-    G1 OpenRouter id adoption over the emitted entries; None (legacy callers)
-    skips adoption.
-
-    Returns a list:
-      [0]   family root canonical (parents=[])
-      [1..] one child per snapshot/variant whose slugified id != family_slug,
-            each with a typed `parents` edge. Compound suffixes (e.g.
-            `mistral-7b-instruct-v0-3`) materialize their intermediate
-            canonicals so models.dev output matches the post-promotion
-            shape of core.yaml — this matters because the seed loader's
-            parents-merge is union-by-id, so disagreement on the parent
-            id between source and core would produce a spurious second edge.
+    """Emit a family's entries: the root (parents=[]) then one child per
+    snapshot/variant with a typed `parents` edge; `group_recs` enables
+    OpenRouter id adoption. Compound suffixes materialize their intermediate
+    canonicals because the loader's parents-merge is union-by-id, so a parent
+    id disagreeing with core.yaml would add a spurious edge.
     """
     family_canonical_id = f"{org_id}/{family_slug}"
 
     # ---- Family root display_name + aggregated metadata ----
-    # Prefer the lab's preferred name (vendor casing like `GPT-4o`); fall
-    # back to our humanizer when models.dev didn't supply a name.
     display_name = ""
     for m in models:
         if _slugify(m.get("id", "")) == family_slug:
@@ -896,10 +740,7 @@ def _build_family_entries(
     release_date = release_dates[0] if release_dates else None
     snapshot_ids = sorted({_slugify(m["id"]) for m in models if m.get("id")})
 
-    # Aggregate modalities across all snapshots in the family (union).
-    # Per-snapshot modalities still flow through to leaf children below;
-    # the family root surfaces the superset so any snapshot's modality is
-    # represented at the parent identity.
+    # The root carries the union of snapshot modalities; leaves keep their own.
     family_input_modalities: set[str] = set()
     family_output_modalities: set[str] = set()
     for m in models:
@@ -921,9 +762,7 @@ def _build_family_entries(
             m["knowledge"] for m in models if m.get("knowledge")
         })
 
-    # Family-root aliases — surface forms of the family slug only. Snapshot
-    # ids no longer go on the root; they're emitted as separate canonicals.
-    root_aliases = [f"{org_id}/{family_slug}"] if f"{org_id}/{family_slug}" != family_canonical_id else []
+    root_aliases =[f"{org_id}/{family_slug}"] if f"{org_id}/{family_slug}" != family_canonical_id else []
 
     family_root_entry = {
         "id": family_canonical_id,
@@ -947,22 +786,17 @@ def _build_family_entries(
     out_entries: list[dict] = [family_root_entry]
     seen_ids: dict[str, dict] = {family_canonical_id: family_root_entry}
 
-    # `family_slug` may carry dots from the lab's display name
-    # (`qwen2.5-7b`); slugified ids use dashes (`qwen2-5-7b-instruct`).
-    # Compare on the dashed form, but build chain canonical ids from the
-    # dotted form so children inherit the lab's preferred spelling.
+    # `family_slug` may carry dots (`qwen2.5-7b`) while ids are dashed: compare
+    # dashed, but build chain ids from the dotted form (the lab's spelling).
     family_slug_dashed = re.sub(r"\.", "-", family_slug)
 
     for m in models:
         snap_dashed = _slugify(m.get("id", ""))
         if not snap_dashed:
             continue
-        # If the model's id already matches the family slug (in either form),
-        # it IS the family root — no child entry needed.
         if snap_dashed == family_slug_dashed or snap_dashed == family_slug:
             continue
-        # Snapshot ids that don't share the family-slug prefix are unusual
-        # (mirror entries, etc.) — skip rather than emit a malformed child.
+        # A non-prefix snapshot id (mirror entry) would emit a malformed child.
         if not snap_dashed.startswith(family_slug_dashed + "-"):
             continue
         suffix = snap_dashed[len(family_slug_dashed) + 1:]
@@ -980,15 +814,12 @@ def _build_family_entries(
                 parent_edge["axis"] = axis
 
             if new_id in seen_ids:
-                # Intermediate already emitted — walk through.
                 current_id = new_id
                 continue
 
-            # Build the entry. Leaf gets the source model's metadata + the
-            # original models.dev id as an alias (so dashed-form raw values
-            # like `qwen2-5-7b-instruct` resolve via exact match even when
-            # the canonical uses the dotted spelling). Intermediates are
-            # anchor-only — humanized name, no release_date, no aliases.
+            # Leaf: source metadata plus the dashed models.dev id as an alias
+            # (resolves even when the canonical is dotted). Intermediates are
+            # anchor-only.
             child_aliases: list[str] = []
             child_release: str | None = None
             child_open_weights = open_weights
@@ -999,7 +830,6 @@ def _build_family_entries(
                 if m.get("release_date"):
                     child_release = m["release_date"]
                 child_open_weights = bool(m.get("open_weights")) or open_weights
-                # Per-snapshot modalities — narrower than the family aggregate.
                 mods = m.get("modalities") or {}
                 _ci = sorted({v.strip() for v in (mods.get("input") or []) if isinstance(v, str) and v.strip()})
                 _co = sorted({v.strip() for v in (mods.get("output") or []) if isinstance(v, str) and v.strip()})
@@ -1027,10 +857,8 @@ def _build_family_entries(
             out_entries.append(entry)
             current_id = new_id
 
-    # G1: adopt eligible OpenRouter keys over invented family ids (per-entry
-    # identity match — a variant/dated key can only rename the entity it
-    # names, never the family root). Children of a renamed root keep their
-    # invented ids; their parent edges are repointed inside the adoption pass.
+    # A variant/dated OpenRouter key renames only the entity it names, never
+    # the root; children of a renamed root keep their invented ids.
     if group_recs:
         _adopt_openrouter_ids(
             out_entries, group_recs, org_id, alias_index or _dev_alias_index()
@@ -1041,40 +869,21 @@ def _build_family_entries(
 def _provider_alias_forms(
     raw: str, org_id: str | None, provider: str | None = None
 ) -> list[str]:
-    """Surface forms a provider's raw spelling should resolve through.
-
-    Emits clean, resolvable forms only:
-      - the raw spelling AS-IS when it carries no host/account scaffolding
-        (no leading `@cf/`, no `accounts/...`, no embedded slash) — a provider's
-        own bare spelling is worth an exact alias;
-      - for the OpenRouter provider, the raw `org/slug` catalog key VERBATIM
-        (G2: OpenRouter ids are resolvable everywhere, not only where they are
-        canonical) plus its tag-stripped cleaned form — router pseudo-endpoints
-        (`openrouter/*`) excluded;
-      - the models.dev-normalized form (host/region/account scaffolding stripped),
-        which is what the resolver sees post-host-capture;
-      - the org-prefixed form of the normalized slug (last path segment), so both
-        bare and `org/`-prefixed spellings resolve.
-
-    Gnarly multi-segment host-scaffolded raws (`@cf/qwen/qwen3-30b-a3b-fp8`,
-    `workers-ai/@cf/...`) are NOT emitted verbatim — only their normalized form
-    is, so the alias list stays clean and free of double-prefix ids."""
+    """Surface forms a provider's raw spelling should resolve through: the raw
+    spelling when it carries no host/account scaffolding; an OpenRouter
+    `org/slug` key verbatim plus its tag-stripped form (router pseudo-endpoints
+    excluded); the normalized form and its org-prefixed variant. Host-scaffolded
+    raws (`@cf/qwen/...`) are emitted only in normalized form."""
     forms: set[str] = set()
     if not raw:
         return []
-    # Keep the raw spelling only when it's a clean single-token id.
     if "/" not in raw and not raw.startswith("@") and not raw.startswith("~"):
         forms.add(raw)
         slug_raw = _slugify(raw)
         if slug_raw:
             forms.add(slug_raw)
-    # A `TEE/`-prefixed raw (nano-gpt's trusted-execution serving namespace) is
-    # a clean resolvable surface form: keep it verbatim on the stripped target.
     elif _TEE_PREFIX_RE.match(raw):
         forms.add(raw)
-    # OpenRouter's `org/slug` catalog keys are real external ids: emit the raw
-    # key verbatim (incl. a `~`/tagged spelling) AND the cleaned tag-stripped
-    # key, so both resolve wherever the entity lives (canonical or alias).
     if (
         provider == _OPENROUTER_PROVIDER
         and "/" in raw
@@ -1084,11 +893,8 @@ def _provider_alias_forms(
         cleaned = _clean_openrouter_key(raw)
         if cleaned:
             forms.add(cleaned)
-    # Always emit the normalized form + its org-prefixed variant. Use
-    # strip_variants=False: alias forms must PRESERVE a variant's identity
-    # (-turbo/-thinking/-reasoner/-fp8/...). Stripping them here would emit the
-    # BASE model's id as one of the variant's aliases (e.g. `gpt-4-turbo` -> alias
-    # `gpt-4`), which steals the base canonical's id and aborts the seed.
+    # strip_variants=False: stripping would emit the base's id as a variant's
+    # alias (`gpt-4-turbo` -> `gpt-4`) and abort the seed.
     norm = normalize_modelsdev_id(raw, strip_variants=False)
     slug = _slugify(norm)
     if slug:
@@ -1100,17 +906,15 @@ def _provider_alias_forms(
 
 
 def _variant_identity(s: str) -> str:
-    """Variant-PRESERVING identity of a spelling (serving tags stripped, but
-    size/mode/quant/training-stage/version variants KEPT), leaf only. Two
-    spellings with the same identity are the same canonical; a different identity
-    means a different model. Shared by _attach_provider_aliases AND the reconcile
-    merge so neither attaches an `-instruct`/`-fp8`/`-120b` form onto a base/sibling."""
+    """Variant-preserving leaf identity of a spelling (serving tags stripped,
+    size/mode/quant/stage/version tokens kept): same identity == same
+    canonical."""
     return _slugify(normalize_modelsdev_id(s, strip_variants=False)).rsplit("/", 1)[-1]
 
 
 _IDENTITY_VARIANT_TOKENS = frozenset(re.findall(r"\(-([a-z0-9]+)\$\)", _IDENTITY_VARIANT_RE.pattern)) | frozenset({
-    # Weight formats and quantizations an HF repo name carries that a served
-    # key never does: a hit adding one is a different upload, not the model.
+    # Weight formats an HF repo name carries that a served key never does: a
+    # hit adding one is a different upload, not the model.
     "gguf", "exl2", "mlx", "nf4", "4bit", "8bit", "bnb", "hqq", "ggml", "onnx",
     "q4", "q5", "q6", "q8", "fp4", "fp16", "fp32", "w4a16", "w8a8", "w8a16",
 })
@@ -1118,25 +922,20 @@ _IDENTITY_VARIANT_TOKENS = frozenset(re.findall(r"\(-([a-z0-9]+)\$\)", _IDENTITY
 
 def _variant_tokens(s: str) -> set[str]:
     """Identity-variant tokens anywhere in a spelling's leaf (the suffix regex
-    only sees a trailing one; `…-Reasoning-2512` carries one mid-name)."""
+    misses a mid-name one such as `…-Reasoning-2512`)."""
     leaf = s.rsplit("/", 1)[-1].lower()
     return set(re.split(r"[-_.:\s]+", leaf)) & _IDENTITY_VARIANT_TOKENS
 
 
 # ---------------------------------------------------------------------------
-# OpenRouter id adoption (specs/model-id-resolution/PLAN.md G1/G2).
-# The id ladder: a real HF id is adopted first, then an OpenRouter catalog key,
-# and only a model on neither gets an invented `{org}/{slug}` id. `org_id`
-# stays the curated developer for all three rungs.
+# OpenRouter id adoption. Id ladder: a real HF id (rung 1), then an OpenRouter
+# catalog key (rung 2), then an invented `{org}/{slug}` (rung 3); `org_id` is
+# the curated developer on every rung.
 # ---------------------------------------------------------------------------
 _OPENROUTER_PROVIDER = "openrouter"
 
-# Curated re-host repoint oracle: `junk` ids are spellings curation has ruled
-# must NEVER be canonical (the model's real identity is the `target`, e.g. a
-# real HF repo the frozen oracle predates — `prime-intellect/intellect-3` ->
-# `PrimeIntellect/INTELLECT-3`). Adoption must respect that ruling: an
-# OpenRouter key that equals a junk id is not adopted (the reconcile passes
-# still fold the mint onto the real target as before).
+# Curated `junk` ids are spellings that must never be canonical; an OpenRouter
+# key equal to one is not adopted (reconcile still folds it onto its target).
 _REHOST_REPOINT_JSON = REPO_ROOT / "curation" / "rehost_repoint.json"
 _REHOST_JUNK_IDS: frozenset[str] | None = None
 
@@ -1155,24 +954,17 @@ def _rehost_junk_ids() -> frozenset[str]:
 
 
 def _is_router_pseudo_endpoint(raw: str) -> bool:
-    """`openrouter/*` keys (`auto`, `free`, `bodybuilder`, `owl-alpha`,
-    `pareto-code`) are routing PRODUCTS, not models: never ADOPTED as a
-    canonical id (`_clean_openrouter_key` returns None) and never emitted as
-    an `openrouter/*` alias form (`_provider_alias_forms` skips them). The
-    BARE raws behind them stay minted, though: other providers (e.g. kilo)
-    list `auto`/`bodybuilder`/… directly, those are real EEE surface forms,
-    and the nothing-is-removed floor keeps them resolvable as bare org-less
-    mints. Gate 4 (tests/test_gate_invariants.py) pins the bare-id set so
-    growth in that class is visible."""
+    """`openrouter/*` keys (`auto`, `free`, ...) are routing products, not
+    models: never adopted as a canonical id and never emitted as an alias
+    form. The bare raws behind them stay minted (other providers list them
+    directly)."""
     return raw.lstrip("~").lower().startswith("openrouter/")
 
 
 def _clean_openrouter_key(raw: str) -> str | None:
-    """The adoptable form of an OpenRouter catalog key: the `~` latest marker
-    and `_TAG_SUFFIX_RE` serving tags stripped, `org/leaf` shape enforced — a
-    key is never adopted with a tag in it. Returns None when the key is not
-    adoptable at all: a router pseudo-endpoint, a tag-only leaf, or a moving
-    `…-latest` pointer (names no fixed release; stays an alias)."""
+    """Adoptable `org/leaf` form of an OpenRouter key (`~` marker and serving
+    tags stripped). None for a router pseudo-endpoint, a tag-only leaf, or a
+    moving `…-latest` pointer (names no fixed release)."""
     key = raw.lstrip("~")
     if "/" not in key or _is_router_pseudo_endpoint(raw):
         return None
@@ -1187,11 +979,9 @@ def _clean_openrouter_key(raw: str) -> str | None:
 
 
 def _identity_sig(s: str) -> str:
-    """Order-insensitive, variant-preserving identity signature: `safe_sig`
-    over `_variant_identity`. Two spellings with the same sig name the same
-    canonical even when token ORDER differs (`claude-haiku-3` vs OpenRouter's
-    `claude-3-haiku`); any added/removed token (`-instruct`, `-fp8`, `-think`,
-    a date) is a different identity, so a variant key can never match a base."""
+    """Order-insensitive, variant-preserving identity signature: `claude-haiku-3`
+    matches `claude-3-haiku`, but any added/removed token is a different
+    identity."""
     return safe_sig(_variant_identity(s))
 
 
@@ -1199,9 +989,9 @@ def _entity_identity_sigs(
     cid: str, org_id: str | None, alias_index: dict[str, str]
 ) -> set[str]:
     """Identity sigs an entry answers to: its own, plus the brand-stripped one
-    when the leaf's LEADING token is a curated alias of the entry's dev org
-    (`perplexity/perplexity-sonar-…` == OpenRouter's `perplexity/sonar-…`) —
-    the same brand-strip rule `_candidate_name_norms` applies for HF defer."""
+    when the leaf's leading token is a curated alias of its dev org
+    (`perplexity/perplexity-sonar-…` == `perplexity/sonar-…`), the same rule
+    `_candidate_name_norms` applies."""
     ident = _variant_identity(cid)
     sigs = {safe_sig(ident)}
     if org_id:
@@ -1215,11 +1005,8 @@ def _entity_identity_sigs(
 def _openrouter_org_agrees(
     key_org: str, org_id: str | None, alias_index: dict[str, str]
 ) -> bool:
-    """Adoption org guard: the OpenRouter key's org prefix must fold to the
-    SAME developer as the entry's org_id (curated fold, then case/separator
-    collapse for the unregistered community tail). A key under a different
-    developer's namespace (e.g. a `google/…` key on an `unsloth` re-upload
-    group) must never re-attribute the entry via adoption."""
+    """True iff the OpenRouter key's org folds to the entry's developer, so a
+    `google/…` key can never re-attribute an `unsloth` re-upload."""
     if not org_id:
         return False
     from eval_entity_resolver.fold import _norm_org_key
@@ -1235,16 +1022,10 @@ def _adopt_openrouter_ids(
     org_id: str | None,
     alias_index: dict[str, str],
 ) -> None:
-    """G1 adoption, shared by BOTH generator paths (`_mint_or_defer_rehost`
-    and `_build_family_entries`): an entry that would carry an INVENTED
-    `{org}/{slug}` id, whose group has an eligible OpenRouter key naming the
-    SAME variant-preserving identity, takes the cleaned OpenRouter key as its
-    canonical id VERBATIM (prefix included); the invented id becomes an alias.
-
-    Guards: HF-deferred entries never rename (rung 1 of the ladder); identity
-    match (a variant/dated/version-only key aliases the entity it names, never
-    the base); org agreement; tag/`~` cleanup; tie-break shortest tag-stripped
-    key then alphabetical; `openrouter/*` router endpoints excluded."""
+    """Rename an invented `{org}/{slug}` entry to the cleaned OpenRouter key
+    naming the same variant-preserving identity (the invented id becomes an
+    alias). HF-deferred entries never rename; org must agree; ties go to the
+    shortest key, then alphabetical."""
     cands = sorted(
         {
             k
@@ -1264,13 +1045,10 @@ def _adopt_openrouter_ids(
         if not cid or "/" not in cid:
             continue  # org-less mints keep their invented slug
         if cid in cands:
-            # Already carries an OpenRouter spelling verbatim: no rename here.
-            # The entry is still tagged metadata.openrouter_adopted — but by
-            # `_tag_openrouter_key_ids` AFTER the intra-output reconcile, not
-            # here: `_pick_winner` ranks the flag as "renamed to an external
-            # key" (rung 2 beats an invented twin), and tagging an
-            # equal-spelling coincidence at adoption time would flip a
-            # reviewed author-family entry into its re-host shell twin.
+            # Tagged by `_tag_openrouter_key_ids` after reconcile, not here:
+            # `_pick_winner` ranks the flag, and tagging an equal-spelling
+            # coincidence now would flip a reviewed author entry into its
+            # re-host twin.
             continue
         if _entry_meta(e).get("hf_deferred"):
             continue  # canonical is the real HF id — never demoted
@@ -1293,7 +1071,6 @@ def _adopt_openrouter_ids(
             e["metadata"] = json.dumps(meta, sort_keys=True)
             break
     if renames:
-        # Repoint intra-group parent edges (family children of a renamed root).
         for e in entries:
             for edge in e.get("parents") or []:
                 if isinstance(edge, dict) and edge.get("id") in renames:
@@ -1301,14 +1078,10 @@ def _adopt_openrouter_ids(
 
 
 def _tag_openrouter_key_ids(entries: list[dict], api_json: dict) -> list[dict]:
-    """Tag `metadata.openrouter_adopted` on every FULL entry whose canonical id
-    IS a cleaned OpenRouter catalog key. `_adopt_openrouter_ids` tags renames at
-    adoption time; a mint whose invented id already EQUALS the key carries the
-    same external-id fact, and the duplicate-identity gate's "adoption-touched"
-    scoping must not depend on that spelling coincidence. Runs AFTER
-    `_generate_models` (so `_pick_winner`, which ranks the flag as a rung-2
-    rename, is not perturbed) and before the write. HF-deferred entries stay
-    untagged: their id is rung 1 (HF). In-place; returns `entries`."""
+    """Tag `metadata.openrouter_adopted` on every full entry whose id is a
+    cleaned OpenRouter key (in place; returns `entries`). Must run after
+    `_generate_models` so `_pick_winner`'s ranking of the flag is not
+    perturbed; HF-deferred entries stay untagged."""
     or_keys = {
         k
         for m in ((api_json.get(_OPENROUTER_PROVIDER) or {}).get("models") or {})
@@ -1332,35 +1105,24 @@ def _attach_provider_aliases(
     group_recs: list[dict],
     org_id: str | None,
 ) -> None:
-    """Union every provider spelling in the underlying group onto the matching
-    emitted entry as a provider-tagged alias.
-
-    Each models.dev record is routed to the entry whose canonical/alias set
-    already contains its slugified family/leaf spelling; the spelling is added
-    with its `inference_platform` (from PROVIDER_TO_INFERENCE_PLATFORM). Tagged
-    aliases are accumulated under entry['alias_platforms'] (a {alias->platform}
-    map) which the writer flattens into the alias list while preserving the
-    platform provenance in metadata. Plain aliases (no platform) still go on
-    entry['aliases']."""
-    # Index entries by every id/alias surface form -> entry.
+    """Attach every provider spelling in the group to the entry whose id/alias
+    set contains it, tagged with its inference_platform under the working
+    `alias_platforms` map (flattened into aliases + metadata by
+    `_finalize_entries`)."""
     by_form: dict[str, dict] = {}
     for e in entries:
         by_form[e["id"]] = e
         for a in e.get("aliases", []):
             by_form.setdefault(a, e)
-    # Fallback target: the family-root entry (parents == []), else the first.
     root = next((e for e in entries if not e.get("parents")), entries[0] if entries else None)
 
-    _identity = _variant_identity  # module-level (shared with reconcile's merge)
+    _identity = _variant_identity
 
     def _target_sigs(target: dict) -> set[str]:
-        # An HF-deferred target's id carries tokens the models.dev spellings
-        # lack (`Ministral-3-14B-Instruct-2512` vs `ministral-14b-2512`); the
-        # authority already equated them, so its id-shaped aliases (mint id,
-        # canonical_model_id, attached raws) are identities a raw may match
-        # too. Display names are excluded (`_identity` drops a parenthetical,
-        # so "(Thinking)" would read as the base). The variant guard still
-        # holds: a `-fp8`/`-thinking` raw matches none of them.
+        # An HF-deferred id carries tokens the models.dev spellings lack; the
+        # authority equated them, so its id-shaped aliases count as identities
+        # too. Display names are excluded: `_identity` drops a parenthetical,
+        # so "(Thinking)" would read as the base.
         sigs = {safe_sig(_identity(target["id"]))}
         if _entry_meta(target).get("hf_deferred") is True:
             for a in [*(target.get("aliases") or []), *(target.get("alias_platforms") or {})]:
@@ -1371,9 +1133,8 @@ def _attach_provider_aliases(
     for r in group_recs:
         platform = PROVIDER_TO_INFERENCE_PLATFORM.get(r["provider"])
         raw = r["raw"]
-        # Route via the NORMALIZED leaf slug (host/account scaffolding stripped)
-        # so a host-prefixed mirror still lands on the right entry. Fall to the
-        # raw form, the org-prefixed slug, then the family-root entry.
+        # Route via the normalized leaf so a host-prefixed mirror still lands
+        # on the right entry.
         norm_slug = _slugify(normalize_modelsdev_id(raw)).rsplit("/", 1)[-1]
         target = (
             by_form.get(raw)
@@ -1383,54 +1144,39 @@ def _attach_provider_aliases(
         )
         if target is None:
             continue
-        # IDENTITY GUARD: only attach a provider spelling to a target whose
-        # variant-preserving identity MATCHES the raw's. A `-fp8`/`-120b`/`-instruct`
-        # /`-v0.3` record routed (via tag/variant collapse) onto a base or sibling
-        # target would otherwise contaminate it with the variant's id as an alias
-        # and abort the seed (a models.dev mint shadowing a distinct canonical's id).
-        # Serving tags are already stripped by _identity, so legit `:free`/`-maas`
-        # /`-tee` spellings still match their target and attach. Compared via the
-        # order-insensitive `safe_sig` (token multiset, numbers order-preserved):
-        # an OpenRouter-adopted target (`claude-3-haiku`) still matches the other
-        # providers' spellings of the same identity (`claude-haiku-3`), while any
-        # added/removed variant token keeps mismatching.
+        # Only attach to a target of the same variant-preserving identity: a
+        # `-fp8`/`-instruct` record landing on its base would alias the
+        # variant's id onto it and abort the seed. `safe_sig` is
+        # order-insensitive, so `claude-haiku-3` still matches an adopted
+        # `claude-3-haiku`.
         if safe_sig(_identity(raw)) not in _target_sigs(target):
             continue
         ap = target.setdefault("alias_platforms", {})
         for form in _provider_alias_forms(raw, org_id, r.get("provider")):
             if form == target["id"]:
                 continue
-            # Intra-group steal-guard: never attach a form that is already the
-            # id/alias of a DIFFERENT entry in this family group — that would make
-            # two canonicals claim the same alias and abort the seed (e.g. a
-            # `-turbo` record's form landing on the base). Merge such forms onto
-            # their rightful owner; never duplicate a claim.
+            # A form already owned by another entry in this group must not be
+            # claimed twice.
             owner = by_form.get(form)
             if owner is not None and owner is not target:
                 continue
-            # Record the platform provenance; a form seen from multiple
-            # providers keeps the first non-null platform.
+            # First non-null platform wins per form.
             if form not in ap or (ap.get(form) is None and platform):
                 ap[form] = platform
 
 
 # ---------------------------------------------------------------------------
-# Mint-decision rule. Before minting an off-HF {org}/{slug} canonical we
-# ask: is this underlying group already a real HF repo? The authority is the
-# frozen HF oracle (hf_model_id_resolution.json) plus the published
-# `hub_stats_index` (every HF repo with downloadable weights). We DEFER (no
-# mint; the canonical IS the real HF id) only on a normalized-identity match
-# CORROBORATED BY ORG AGREEMENT after the curated two-tier dev-org remap —
-# never a loose name-only match across different developers. Default to MINT
-# when unsure.
+# Mint decision. Before minting an off-HF `{org}/{slug}` canonical, defer to a
+# real HF repo (the canonical IS the HF id) only on a normalized-identity match
+# with org agreement after the curated dev-org remap, never on a name-only
+# match across developers. Default to mint. Authority: the frozen HF oracle
+# plus the published hub_stats index.
 # ---------------------------------------------------------------------------
 
-# The frozen HF oracle — in-repo at curation/ (CI), workspace-parent fallback (dev).
 HF_ORACLE_JSON = resolve_oracle_path()
 
-# The published HF id index (what scripts/build_hub_stats_index.py writes):
-# local fixture when present, else the dataset copy via hf_hub_download. The
-# only HF knowledge the generator has — no per-model HF API calls.
+# The published HF id index (local fixture, else the dataset copy) is the
+# generator's only HF knowledge: no per-model HF API calls.
 HUB_STATS_INDEX_PATH = REPO_ROOT / "fixtures" / "hub_stats_index.parquet"
 HF_DATASET_REPO = "evaleval/entity-registry-data"
 HUB_STATS_INDEX_TABLE = "hub_stats_index"
@@ -1438,9 +1184,8 @@ HUB_STATS_INDEX_TABLE = "hub_stats_index"
 _HF_AUTHORITY: dict[str, dict[str, str]] | None = None
 _INDEX_AUTHORITY: dict[str, dict[str, str]] | None = None
 
-# Curated umbrella ids (`deepseek/deepseek`): underspecified family roots that
-# stay resolvable canonicals and are never one specific HF repo, so they are
-# never deferred, whatever a rolling first-party key claims today.
+# Curated umbrella ids (`deepseek/deepseek`) are never one specific HF repo,
+# so they are never deferred, whatever a rolling first-party key claims.
 COLLISION_OVERRIDES_PATH = REPO_ROOT / "seed" / "models" / "collision_overrides.yaml"
 PARENTS_ENRICH_PATH = REPO_ROOT / "seed" / "models" / "enrichments" / "parents.yaml"
 _NON_LINEAGE_BASES: frozenset[str] | None = None
@@ -1461,10 +1206,9 @@ _PROTECTED_ROOTS: frozenset[str] | None = None
 
 
 def _multi_child_roots() -> frozenset[str]:
-    """Ids that two or more committed entries name as a `variant` parent: a
-    family root (`alibaba/qwen3-vl-235b-a22b` over Instruct and Thinking) is
-    not one repo, whatever a first-party key equates its bare name with. A
-    repo with many finetunes or quantizations is still one repo."""
+    """Ids two or more committed entries name as a `variant` parent: such a
+    family root is not one repo, whatever a first-party key equates its bare
+    name with (a repo with many finetunes or quants is still one repo)."""
     children: dict[str, set[str]] = defaultdict(set)
     for path in (CORE_PATH, PARENTS_ENRICH_PATH, HUB_STATS_PATH, TIER3_PATH, SEED_PATH):
         if not path.exists():
@@ -1502,10 +1246,8 @@ _HF_TO_DEV: dict[str, str] | None = None
 
 
 def _hf_to_dev() -> dict[str, str]:
-    """HF-org-lowercase -> curated developer slug. The SINGLE shared curated map
-    (eval_entity_resolver.fold.build_curated_org_map): `_ORG_ALIASES` UNION every
-    curated org's id + hf_org + `aliases`. Same map every generator + the resolver
-    use, so the org-aware fold here agrees with them."""
+    """HF-org-lowercase -> curated developer slug, via the resolver's shared
+    `build_curated_org_map` so the org-aware fold agrees with the resolver."""
     global _HF_TO_DEV
     if _HF_TO_DEV is None:
         from eval_entity_resolver.fold import build_curated_org_map
@@ -1519,7 +1261,7 @@ _ORACLE_FIXED_IDS_CACHE: frozenset[str] | None = None
 
 def _oracle_fixed_ids() -> frozenset[str]:
     """Real HF repo ids from the frozen oracle (fixed_exact/near_miss), so the
-    fold index recognises HF repos even before they're written to a source."""
+    fold index recognises HF repos not yet written to any source."""
     global _ORACLE_FIXED_IDS_CACHE
     if _ORACLE_FIXED_IDS_CACHE is None:
         ids: set[str] = set()
@@ -1538,15 +1280,10 @@ def _build_hf_authority(
     oracle_path: Path = HF_ORACLE_JSON,
     alias_index: dict[str, str] | None = None,
 ) -> dict[str, dict[str, str]]:
-    """Build the "is this on HF" authority from the frozen oracle.
-
-    Returns {dev_org: {normalized_name: real_hf_model_id}} over every oracle
-    entry with resolution_status in {fixed_exact, fixed_near_miss} carrying a
-    fixed_hf_model_id. The HF org of each repo is remapped through the SAME
-    curated two-tier dev-org map used everywhere else (`_build_org_alias_index`
-    / orgs.yaml hf_org + _ORG_ALIASES), so the bucket key is the developer org
-    (`Qwen`->`alibaba`, `meta-llama`->`meta`, ...). The name is normalized via
-    the resolver's `normalize` (case + all separators collapsed to a space)."""
+    """{dev_org: {normalized_name: real_hf_model_id}} over the frozen oracle's
+    fixed_exact / fixed_near_miss entries; the HF org is remapped through the
+    curated dev-org map so the bucket key is the developer (`Qwen`->`alibaba`),
+    the name via the resolver's `normalize`."""
     from eval_entity_resolver.normalization import normalize as _norm
 
     ai = alias_index if alias_index is not None else _dev_alias_index()
@@ -1567,9 +1304,9 @@ def _build_hf_authority(
 
 
 def _load_hub_stats_index(path: Path = HUB_STATS_INDEX_PATH):
-    """The published HF id index as a DataFrame (`id`, `downloads`). Local
-    fixture first, else the dataset copy; neither -> fail loudly, so the cron
-    never silently falls back to minting what is on HF."""
+    """The published HF id index as a DataFrame (`id`, `downloads`): local
+    fixture, else the dataset copy; neither fails loudly so the cron never
+    silently mints what is on HF."""
     import pandas as pd
 
     if path.exists():
@@ -1594,8 +1331,8 @@ def _build_index_authority(
     index, alias_index: dict[str, str] | None = None
 ) -> dict[str, dict[str, str]]:
     """{dev_org: {normalized_name: hf_id}} over the hub_stats index, bucketed
-    like `_build_hf_authority`. Two repos sharing a name-norm in one bucket:
-    the higher download count wins."""
+    like `_build_hf_authority`; on a shared name-norm the higher download
+    count wins."""
     from eval_entity_resolver.normalization import normalize as _norm
 
     ai = alias_index if alias_index is not None else _dev_alias_index()
@@ -1618,8 +1355,8 @@ def _index_authority() -> dict[str, dict[str, str]]:
     if _INDEX_AUTHORITY is None:
         index = _load_hub_stats_index()
         _INDEX_AUTHORITY = _build_index_authority(index)
-        # Verbatim repo ids (case-folded): a key that IS an HF repo id names
-        # its repo, whatever other namespace shares the name.
+        # A key that IS an HF repo id (case-folded) names its repo, whatever
+        # other namespace shares the name.
         _INDEX_IDS = {}
         for hf_id in index.sort_values(["downloads", "id"], ascending=[False, True])["id"].tolist():
             _INDEX_IDS.setdefault(hf_id.lower(), hf_id)
@@ -1664,14 +1401,9 @@ def _hf_authority() -> dict[str, dict[str, str]]:
 def _candidate_name_norms(
     spellings: list[str], dev_org: str | None, alias_index: dict[str, str]
 ) -> set[str]:
-    """Normalized NAME forms a models.dev group's spellings should match HF on.
-
-    For each spelling we take its leaf (post org/host strip), normalize it, AND
-    — because a models.dev key can carry the developer's brand as a prefix
-    (`qwen-qwq-32b` for `Qwen/QwQ-32B`) — also emit the form with a leading
-    brand token stripped when that token is a curated alias of THIS group's dev
-    org. This collapses `qwen-qwq-32b`->`qwq-32b` without a bespoke fuzzy
-    matcher: it reuses the same org alias index used for org resolution."""
+    """Normalized name forms a group's spellings should match HF on: each
+    leaf, plus the leaf with a leading brand token stripped when that token is
+    a curated alias of the dev org (`qwen-qwq-32b` -> `qwq-32b`)."""
     from eval_entity_resolver.normalization import normalize as _norm
 
     norms: set[str] = set()
@@ -1683,7 +1415,6 @@ def _candidate_name_norms(
         if not n:
             continue
         norms.add(n)
-        # Strip a leading brand token that is a curated alias of the dev org.
         toks = n.split(" ")
         if dev_org and len(toks) > 1:
             stripped = " ".join(toks[1:])
@@ -1700,33 +1431,24 @@ def _hf_defer_target(
     authority: dict[str, dict[str, str]] | None = None,
     accept: Callable[[str], bool] | None = None,
 ) -> str | None:
-    """Decide DEFER vs MINT for a models.dev underlying group.
-
-    Returns the real HF id to defer to when the group resolves to an HF repo
-    with org agreement (after dev-org remap); returns None to MINT otherwise.
-    `accept` vetoes individual hits (the search continues past a vetoed one).
-
-    Confident == normalized-identity match WITHIN THE SAME dev-org bucket. A
-    group with no org, or whose normalized names match only under a DIFFERENT
-    developer, always MINTS (no cross-developer false merges)."""
+    """The real HF id to defer to when the group's normalized names match one
+    within the SAME dev-org bucket, else None (mint). `accept` vetoes a hit and
+    the search continues. No org, or a match only under another developer,
+    always mints."""
     if org_id is None:
         return None
     auth = authority if authority is not None else _hf_authority()
-    # Uncurated orgs are bucketed by their lowercased HF slug; a group's org_id
-    # keeps the raw prefix spelling (`TheDrummer`) in that case.
+    # Uncurated orgs are bucketed by lowercased HF slug; the group's org_id
+    # keeps the raw prefix spelling.
     bucket = auth.get(org_id) or auth.get(org_id.lower())
     if not bucket:
         return None
     forms = list(spellings)
     if candidate_id:
         forms.append(candidate_id)
-    # _candidate_name_norms returns a SET, so iterate it in a deterministic
-    # total order — otherwise the chosen HF target depends on Python's
-    # string-hash randomization (PYTHONHASHSEED) and the cron churns the file.
-    # Prefer the SHORTEST norm (fewest tokens), alpha tiebreak: the shortest
-    # norm is the group's base identity, so a stray decorated spelling (e.g. a
-    # models.dev `name` of "Llama 3.2 1B Instruct" on a base `llama-3.2-1b`
-    # record) never pulls a base group onto a variant repo.
+    # Deterministic order (a set would churn with the hash seed), shortest norm
+    # first: that is the base identity, so a decorated spelling never pulls a
+    # base group onto a variant repo.
     for name_norm in sorted(
         _candidate_name_norms(forms, org_id, alias_index),
         key=lambda n: (n.count(" "), len(n), n),
@@ -1745,37 +1467,25 @@ def _group_hf_target(
     alias_index: dict[str, str],
     authority: dict[str, dict[str, str]] | None = None,
 ) -> str | None:
-    """`_hf_defer_target` over a models.dev group's keys, one tier at a time:
-    the would-be mint id itself, the records' `canonical_model_id`
-    (models.dev's own canonical key, most common first), the `org/name`-shaped
-    provider ids, then the remaining spellings and every record name. The
-    first tier that answers wins, so a dated canonical key is never outranked
-    by a shorter undated name, a verbatim HF id beats a provider's sloppy
-    display name, and a rolling first-party key (`deepseek-v4-pro` -> the 0813
-    snapshot) never pulls a group off its own repo.
-
-    A hit must keep the whole would-be mint name (alnum subsequence, after the
-    same brand strip `_candidate_name_norms` applies) and add no identity
-    variant (`_IDENTITY_VARIANT_RE` tokens) the mint lacks: `unslopnemo-12b-v4-1`
-    never promotes to the `…-v4` repo, `granite-4-0-h-micro` never to
-    `…-4.0-micro`, `kimi-latest` never to `Kimi-K3`, a bare `qwen3-vl-30b-a3b`
-    never to the `…-Thinking` repo its variant-stripped group also holds."""
+    """`_hf_defer_target` over a group's keys one tier at a time (mint id,
+    `canonical_model_id` keys, `org/name` provider ids, other spellings); the
+    first tier that answers wins, so a dated key is never outranked by a
+    shorter undated name. A hit must keep the whole mint name and add no
+    identity-variant token the mint lacks (a bare `qwen3-vl-30b-a3b` never
+    promotes to the `…-Thinking` repo)."""
     if org_id is None or mint_id in _non_lineage_bases():
         return None
     from eval_entity_resolver.normalization import normalize as _norm
 
-    # A committed multi-child family root stays a root unless an HF repo
-    # carries its own bare name (`z-ai/glm-4.5v` -> `zai-org/GLM-4.5V`); a
-    # first-party key equating the bare name with one child never folds it.
+    # A multi-child family root folds only onto a repo carrying its own bare
+    # name, never onto one child a first-party key equates it with.
     root_bound = mint_id in _protected_roots()
 
     def _own_name(hf_id: str) -> bool:
         return _norm(hf_id.rsplit("/", 1)[-1]) == _norm(mint_id.rsplit("/", 1)[-1])
 
-    # The frozen oracle first, exactly as the re-host path always consulted
-    # it (no tiers, no veto), so every committed deferral stays put; the
-    # guarded tiers below only add what the hub_stats index knows. A caller
-    # that injects `authority` is testing the tiers and gets no oracle.
+    # The oracle is consulted first without tiers or veto so committed
+    # deferrals stay put; an injected `authority` (tests) gets no oracle.
     oracle = _oracle_authority() if authority is None else {}
     if oracle:
         hit = _hf_defer_target(
@@ -1785,9 +1495,8 @@ def _group_hf_target(
         if hit is not None:
             return hit
     def _deglued(s: str) -> str | None:
-        # A serving key with the brand glued on by `.`/`:` (Bedrock's
-        # `openai.gpt-oss-safeguard-120b`): normalization would weld the
-        # brand into the name, so the bare name is tried as its own spelling.
+        # Normalization would weld a `.`/`:`-glued brand (Bedrock's
+        # `openai.gpt-oss-safeguard-120b`) into the name.
         m = re.match(r"^(?:[^/]+/)?([A-Za-z0-9_-]+)[.:](.+)$", s)
         if m and (m.group(1).lower() == org_id or alias_index.get(m.group(1).lower()) == org_id):
             return m.group(2)
@@ -1807,9 +1516,8 @@ def _group_hf_target(
     def _keeps_mint_name(hf_id: str) -> bool:
         if _variant_tokens(hf_id) - mint_variants:
             return False
-        # A size the mint states must be the repo's size (`model-7b` is a
-        # character subsequence of `Model-70B`); a sizeless key may land on
-        # a sized repo (OpenRouter's `qwen3-coder` is the 480B).
+        # A stated size must match (`model-7b` is a subsequence of
+        # `Model-70B`); a sizeless key may land on a sized repo.
         if mint_sizes and _bsizes(hf_id.rsplit("/", 1)[-1]) != mint_sizes:
             return False
         hf_key = re.sub(r"[^a-z0-9]", "", hf_id.rsplit("/", 1)[-1].lower())
@@ -1824,9 +1532,8 @@ def _group_hf_target(
         for c in ((r.get("record") or {}).get("canonical_model_id"),)
         if isinstance(c, str) and c
     )
-    # A key that IS an HF repo id, verbatim, names its repo: tried before any
-    # name match, so a same-named repo in a sibling namespace (`mistral/` vs
-    # `mistralai/`) cannot outrank it on downloads. Org agreement still holds.
+    # A verbatim HF repo id is tried before any name match, so a same-named
+    # repo in a sibling namespace cannot outrank it on downloads.
     if authority is None:
         verbatim = [c for c, _n in sorted(cmid_counts.items(), key=lambda kv: (-kv[1], kv[0]))]
         verbatim += [r["raw"] for r in group_recs if r.get("raw") and "/" in r["raw"]]
@@ -1868,14 +1575,12 @@ def _hf_deferred_entry(
     mint_id: str,
     display_name: str,
 ) -> dict:
-    """Build an HF-deferred record: canonical id IS the real HF repo id, with
-    models.dev metadata (providers / open_weights / release_date) merged on and
-    the models.dev spellings (mint id + display name) added as aliases. Mirrors
-    the hand-folds for Qwen/QwQ-32B and LiquidAI/LFM2-24B-A2B (no new mint)."""
+    """HF-deferred record: the canonical id is the real HF repo id, with
+    models.dev metadata merged on and the models.dev spellings as aliases."""
     from eval_entity_resolver.normalization import normalize as _norm
 
-    # models.dev canonical keys that name THIS repo (a group can carry a
-    # minority key naming another model; that one must not become an alias).
+    # A group can carry a minority canonical key naming another model; only
+    # keys naming THIS repo become aliases.
     hf_norm = _norm(hf_id.rsplit("/", 1)[-1])
     cmids = sorted({
         c for r in group_recs
@@ -1909,8 +1614,6 @@ def _hf_deferred_entry(
             },
             sort_keys=True,
         ),
-        # The canonical is the HF id; this record only enriches it, so it must
-        # never override the HF source's reviewed status — it's an enrichment.
         "review_status": "reviewed",
         "resolution_source": "models_dev",
     }
@@ -1922,18 +1625,13 @@ def _mint_rehost_entry(
     head: dict,
     group_recs: list[dict],
 ) -> list[dict]:
-    """Mint a single canonical for a re-host-only / closed-API group that has
-    no author-lab family tree. The canonical id is `{org}/{Model-Name}` when an
-    org is known, else a bare slug (org-less,
-    flagged for curation). Returns [entry] (provider aliases attached by the
-    caller via _attach_provider_aliases)."""
+    """Mint one canonical for a re-host-only / closed-API group with no
+    author-lab tree: `{org}/{slug}`, or a bare slug tagged org-unknown. Returns
+    [entry]; provider aliases are attached by the caller."""
     head_raw = head["head_spelling"] or root_key
-    # Mint slug from the head spelling, but FIRST run it through the models.dev
-    # normalizer so provider/host/account scaffolding (`@cf/`, `accounts/.../`,
-    # `org/`) is stripped — otherwise a mirror spelling leaks slashes into the
-    # canonical id. Fall back to the canon root key when normalization empties.
+    # Normalize first so host scaffolding (`@cf/`, `accounts/.../`) never
+    # leaks slashes into the id.
     slug = _slugify(normalize_modelsdev_id(head_raw)) or _slugify(root_key)
-    # Defensive: never let a multi-segment spelling produce a 2-slash id.
     slug = slug.rsplit("/", 1)[-1]
     canonical_id = f"{org_id}/{slug}" if org_id else slug
     display_name = head["display_name"] or humanize_model_slug(slug)
@@ -1960,7 +1658,6 @@ def _mint_rehost_entry(
             {"underlying_key": root_key, "providers": sorted({r["provider"] for r in group_recs})},
             sort_keys=True,
         ),
-        # Re-host-only / minted-from-models.dev groups are NOT author-confirmed.
         "review_status": "draft" if not head["has_author_lab_entry"] else "reviewed",
         "resolution_source": "models_dev",
     }
@@ -1974,20 +1671,14 @@ def _mint_or_defer_rehost(
     group_recs: list[dict],
     alias_index: dict[str, str],
 ) -> list[dict]:
-    """Mint-decision wrapper for the re-host path: if the underlying group
-    already resolves to a real HF repo (normalized-identity match with
-    dev-org agreement against the frozen oracle), DEFER — emit an HF-deferred
-    record keyed by the real HF id with the models.dev spellings as aliases.
-    Otherwise MINT the off-HF {org}/{slug} canonical (via _mint_rehost_entry)."""
-    # The prospective mint id + display, mirroring _mint_rehost_entry's slug.
+    """Re-host path mint decision: an HF-deferred record when the group
+    resolves to a real HF repo, else the minted `{org}/{slug}` canonical."""
+    # Must mirror _mint_rehost_entry's slug derivation.
     head_raw = head["head_spelling"] or root_key
     slug = (_slugify(normalize_modelsdev_id(head_raw)) or _slugify(root_key)).rsplit("/", 1)[-1]
     mint_id = f"{org_id}/{slug}" if org_id else slug
     display_name = head["display_name"] or humanize_model_slug(slug)
 
-    # Candidate spellings to check against HF: the mint id, the head spelling,
-    # every raw provider spelling, and the display name (org/host scaffolding is
-    # stripped to the leaf inside _candidate_name_norms).
     spellings = [mint_id, head_raw, display_name, slug]
     spellings += [r["raw"] for r in group_recs if r.get("raw")]
 
@@ -1996,8 +1687,6 @@ def _mint_or_defer_rehost(
         head = {**head, "root_key": root_key}
         return [_hf_deferred_entry(hf_id, org_id, head, group_recs, mint_id, display_name)]
     entries = _mint_rehost_entry(root_key, org_id, head, group_recs)
-    # Rung 2 of the id ladder: no HF defer -> adopt an eligible OpenRouter key
-    # over the invented `{org}/{slug}` id (G1).
     _adopt_openrouter_ids(entries, group_recs, org_id, alias_index)
     return entries
 
@@ -2009,10 +1698,9 @@ def _defer_author_records(
     group_recs: list[dict],
     alias_index: dict[str, str],
 ) -> tuple[list[dict], list[dict]]:
-    """Mint-decision for the author-lab family path, per record: a record that
-    names an HF repo (its own id, the group's `canonical_model_id` keys and
-    provider ids, its name) is emitted as an HF-deferred entry and left out of
-    the family build. Returns (deferred_entries, records_left_for_the_family)."""
+    """Author-lab path mint decision, per record: a record naming an HF repo
+    becomes an HF-deferred entry and leaves the family build. Returns
+    (deferred_entries, remaining_records)."""
     deferred: list[dict] = []
     remaining: list[dict] = []
     for r in author_recs:
@@ -2035,41 +1723,29 @@ def _defer_author_records(
 
 
 def _generate_models(api_json: dict, known_org_ids: set[str]) -> tuple[list[dict], list[str]]:
-    """Provider-preserving group -> mint -> alias over the FULL models.dev
-    catalog. Every provider that maps to an inference_platform is
-    processed (no author-only gate); each underlying group yields one canonical
-    family (author-lab tree when the author lab is present, else a minted
-    re-host canonical), and every provider spelling in the group is aliased in
-    carrying its inference_platform.
-
-    Returns (entries, skipped_no_org). A non-empty skipped_no_org is a hard
-    error (an author-lab provider mapped to an org missing from seed/orgs.yaml).
+    """Group -> mint -> alias over the full catalog: each underlying group
+    yields an author-lab family tree or a minted re-host canonical, with every
+    provider spelling aliased in. Returns (entries, skipped_no_org); a
+    non-empty skipped_no_org is a hard error (org missing from seed/orgs.yaml).
     """
     out: list[dict] = []
     skipped_providers: list[str] = []
     skipped_no_org: list[str] = []
     alias_index = _build_org_alias_index()
 
-    # 1. Dedup the whole catalog into underlying groups.
     groups = build_underlying_groups(api_json)
 
     for root_key, recs in sorted(groups.items()):
-        # Drop records whose provider isn't a known inference_platform (none
-        # today — all 137 map — but keep the guard for forward-compat).
         recs = [r for r in recs if r["provider"] in PROVIDER_TO_INFERENCE_PLATFORM]
         if not recs:
-            # No record survived the platform filter; nothing to mint or track.
             continue
 
         head = pick_underlying(root_key, recs)
         hf_org = head["author_org"]
         org_id = normalize_org_slug(hf_org, alias_index)
 
-        # If a provider in the curated PROVIDER_TO_ORG allowlist authored this
-        # group, prefer ITS curated org id (validated against seed/orgs.yaml) over
-        # the HF-style slug derived above (from AUTHOR_PROV_ORG / family name) —
-        # the two can diverge (e.g. AUTHOR_PROV_ORG says `inceptionai`,
-        # PROVIDER_TO_ORG says `inception`).
+        # A curated PROVIDER_TO_ORG author's org id wins over the HF-style slug;
+        # the two can diverge (`inceptionai` vs `inception`).
         curated_author_recs = [
             r for r in recs
             if r["provider"] in PROVIDER_TO_ORG
@@ -2085,8 +1761,6 @@ def _generate_models(api_json: dict, known_org_ids: set[str]) -> tuple[list[dict
         if curated_author_recs:
             org_id = PROVIDER_TO_ORG[curated_author_recs[0]["provider"]]
 
-        # Records belonging to the author lab (their provider's org matches the
-        # group org) drive the family tree; the rest are re-host aliases.
         author_recs = curated_author_recs
 
         if head["has_author_lab_entry"] and author_recs and org_id:
@@ -2095,9 +1769,6 @@ def _generate_models(api_json: dict, known_org_ids: set[str]) -> tuple[list[dict
                     f"{author_recs[0]['provider']} -> {org_id} (group {root_key})"
                 )
                 continue
-            # Records that name a real HF repo defer to it; the rest build the
-            # author-lab family tree, grouped by family slug (a group may span
-            # a couple of stage/size siblings).
             deferred, author_recs = _defer_author_records(
                 root_key, org_id, author_recs, recs, alias_index
             )
@@ -2112,17 +1783,14 @@ def _generate_models(api_json: dict, known_org_ids: set[str]) -> tuple[list[dict
                     org_id, family_slug, models,
                     group_recs=recs, alias_index=alias_index,
                 ))
-            # Family entries first: the deferred entries must not become the
+            # Family entries first: a deferred entry must not become the
             # provider-alias fallback root while a family root exists.
             group_entries.extend(deferred)
             if not group_entries:
                 group_entries = _mint_or_defer_rehost(root_key, org_id, head, recs, alias_index)
         else:
-            # Re-host-only / closed-API group with no usable author tree: mint
-            # UNLESS this group is already a real HF repo (defer instead).
             group_entries = _mint_or_defer_rehost(root_key, org_id, head, recs, alias_index)
 
-        # 2. Alias every provider spelling in the group into the entries.
         _attach_provider_aliases(group_entries, recs, org_id)
         out.extend(group_entries)
 
@@ -2132,9 +1800,8 @@ def _generate_models(api_json: dict, known_org_ids: set[str]) -> tuple[list[dict
             f"PROVIDER_TO_INFERENCE_PLATFORM",
             file=sys.stderr,
         )
-    # An org-less mint (`schnell`) cannot be bucketed against the HF
-    # authority; when its models.dev name is the name of an HF-deferred entry
-    # of this same run, it is that model served elsewhere and folds onto it.
+    # An org-less mint cannot be bucketed against the HF authority; when its
+    # name is that of an HF-deferred entry of this run, it folds onto it.
     from eval_entity_resolver.normalization import normalize as _norm
 
     hf_by_name: dict[str, list[dict]] = defaultdict(list)
@@ -2143,8 +1810,7 @@ def _generate_models(api_json: dict, known_org_ids: set[str]) -> tuple[list[dict
             hf_by_name[_norm(e["display_name"])].append(e)
     kept: list[dict] = []
     for e in out:
-        # Only an open-weight, org-less mint whose name belongs to exactly one
-        # HF-deferred entry: an ambiguous name is no identity evidence.
+        # An ambiguous name (2+ HF-deferred entries) is no identity evidence.
         cands = (
             hf_by_name.get(_norm(e["display_name"]), [])
             if "/" not in e["id"] and e.get("display_name") and e.get("open_weights") is True
@@ -2163,21 +1829,14 @@ def _generate_models(api_json: dict, known_org_ids: set[str]) -> tuple[list[dict
             tgt.setdefault("alias_platforms", {}).update(e["alias_platforms"])
     out = kept
 
-    # Dedup entries by id (a model that appears in two dedup groups, e.g. via
-    # different snapshots, would otherwise emit twice). Merge aliases on collide.
-    # Then reconcile within this output: merge same-model dups (org-aware) and
-    # strip alias-steals so no emitted alias claims another canonical's id.
+    # A model reached from two dedup groups would otherwise emit twice.
     return _reconcile_intra_output(_dedup_entries(out)), skipped_no_org
 
 
 def _pick_winner(group: list[dict]) -> dict:
-    """Pick the authoritative entry among same-model dups: prefer an HF-deferred
-    real repo, then an OpenRouter-adopted external id (rung 2 of the id ladder —
-    an adopted key must never lose to an invented twin), then an org-qualified
-    id, then an HF-true-cased id (has uppercase — e.g. `Qwen/...`), then a
-    reviewed entry, then the shortest id (drops doubled-brand mints like
-    `cohere/cohere-command-a` in favour of `cohere/command-a`), then alphabetical
-    for determinism."""
+    """Authoritative entry among same-model dups, by id-ladder rung: HF-deferred,
+    OpenRouter-adopted, org-qualified, HF-true-cased, reviewed, shortest id
+    (drops doubled-brand mints like `cohere/cohere-command-a`), alphabetical."""
     def _meta_flag(e: dict, flag: str) -> bool:
         try:
             return json.loads(e.get("metadata") or "{}").get(flag) is True
@@ -2200,24 +1859,11 @@ def _pick_winner(group: list[dict]) -> dict:
 
 
 def _reconcile_intra_output(entries: list[dict]) -> list[dict]:
-    """Reconcile dups/alias-steals WITHIN one generation's output (after id-dedup):
-
-    1. MERGE same-model dups — two entries are the same model iff they share an
-       org_id AND their org/brand-aware name norms intersect (reusing
-       `_candidate_name_norms`, the same brand-strip the HF-defer uses). This
-       collapses a dev-org-slug mint into the HF-deferred real repo
-       (`alibaba/qwen3-32b` -> `Qwen/Qwen3-32B`), a doubled-brand mint into its
-       clean sibling (`cohere/cohere-command-a` -> `cohere/command-a`), and a
-       dot/case spelling twin (`moonshotai/kimi-k2.6` <-> `…/Kimi-K2.6`). The
-       authoritative entry (`_pick_winner`) keeps id+casing; losers' aliases are
-       merged on, their ids added as aliases, and parent edges repointed.
-    2. STRIP alias-steals — a variant that wrongly carries a DIFFERENT model's id
-       as an alias (`…-thinking` aliasing its base; a deferred base aliasing its
-       `-it` variant) has that alias removed (the canonical id always wins). This
-       is NOT a merge — the two are genuinely different models.
-
-    The result: no emitted alias equals (exact or resolver-normalized) another
-    canonical's id, so the seed never aborts on a double-claim."""
+    """Reconcile one generation's output so no emitted alias equals (exact or
+    normalized) another canonical's id: merge same-model dups (same org_id and
+    intersecting brand-aware name norms; `_pick_winner` keeps id+casing,
+    losers become aliases, parent edges repointed), then strip alias-steals (a
+    variant carrying a different model's id as an alias; not a merge)."""
     from eval_entity_resolver.normalization import normalize as _norm
 
     alias_index = _dev_alias_index()
@@ -2228,10 +1874,8 @@ def _reconcile_intra_output(entries: list[dict]) -> list[dict]:
     for e in entries:
         uf.find(e["id"])
 
-    # (a) Two canonicals with the SAME normalized id collide at seed time no
-    # matter what, so they MUST merge (regardless of org) — catches a bare
-    # org-less mint vs its org-qualified twin (`xiaomi-mimo-v2-5` vs
-    # `xiaomi/mimo-v2-5`) and dot/case spelling variants.
+    # (a) Same normalized id collides at seed time regardless of org, so they
+    # must merge (bare org-less mint vs its org-qualified twin, dot/case twins).
     norm_id_bucket: dict[str, list[str]] = defaultdict(list)
     for e in entries:
         norm_id_bucket[_norm(e["id"])].append(e["id"])
@@ -2239,14 +1883,12 @@ def _reconcile_intra_output(entries: list[dict]) -> list[dict]:
         for other in ids[1:]:
             uf.union(other, ids[0])
 
-    # (b) Org-aware same-model union: same org_id AND intersecting org/brand-aware
-    # name norms (reusing the HF-defer brand-strip). Merges a dev-org-slug mint
-    # into the HF-deferred real repo and a doubled-brand mint into its sibling.
+    # (b) Same org_id and intersecting brand-aware name norms.
     bucket: dict[tuple, list[str]] = defaultdict(list)
     for e in entries:
         org = e.get("org_id")
         if not org:
-            continue  # org-less tail only auto-merges via the normalized-id rule above
+            continue  # org-less entries merge only via (a)
         for nm in _candidate_name_norms([e["id"]], org, alias_index):
             bucket[(org, nm)].append(e["id"])
     for ids in bucket.values():
@@ -2266,10 +1908,7 @@ def _reconcile_intra_output(entries: list[dict]) -> list[dict]:
         winner = _pick_winner(grp)
         walias = set(winner.get("aliases") or [])
         wap = winner.setdefault("alias_platforms", {})
-        # Scalar fields to fill from a loser when the winner's value is empty
-        # (the winner is often an hf_deferred entry with family/params/modalities
-        # None and parents []). Mirrors _dedup_entries / loader _merge_into so a
-        # merge is identity-correct WITHOUT discarding the richer loser's metadata.
+        # An hf_deferred winner often has these empty; fill from losers.
         _PREFER_NONEMPTY = (
             "params_billions", "family", "architecture",
             "input_modalities", "output_modalities",
@@ -2288,15 +1927,12 @@ def _reconcile_intra_output(entries: list[dict]) -> list[dict]:
             winner["open_weights"] = bool(winner.get("open_weights")) or bool(e.get("open_weights"))
             if e.get("review_status") == "reviewed":
                 winner["review_status"] = "reviewed"
-            # Prefer-non-empty scalar fill from the loser.
             for f in _PREFER_NONEMPTY:
                 if not winner.get(f) and e.get(f):
                     winner[f] = e[f]
-            # Earliest release_date wins (matches _dedup_entries).
             rds = [d for d in (winner.get("release_date"), e.get("release_date")) if d]
             if rds:
                 winner["release_date"] = min(rds)
-            # Union parent edges by id (don't drop the loser's lineage).
             for edge in (e.get("parents") or []):
                 if isinstance(edge, dict) and edge.get("id") not in wparents:
                     wparents[edge["id"]] = edge
@@ -2305,16 +1941,13 @@ def _reconcile_intra_output(entries: list[dict]) -> list[dict]:
         winner["aliases"] = sorted(walias)
         merged.append(winner)
 
-    # Repoint parent edges that referenced a merged-away loser.
     for e in merged:
         for edge in (e.get("parents") or []):
             if isinstance(edge, dict) and edge.get("id") in loser_to_winner:
                 edge["id"] = loser_to_winner[edge["id"]]
 
-    # ---- pass 2: strip alias-steals (alias == a DIFFERENT canonical's id) ----
-    # Clean BOTH `aliases` and the working `alias_platforms` map (the latter is
-    # flattened back into aliases by _finalize_entries, so a stolen form left
-    # there would reappear).
+    # ---- pass 2: strip alias-steals (alias == a different canonical's id) ----
+    # `alias_platforms` too: _finalize_entries flattens it back into aliases.
     ids = {e["id"] for e in merged}
     id_norm: dict[str, str] = {}
     for cid in ids:
@@ -2323,10 +1956,10 @@ def _reconcile_intra_output(entries: list[dict]) -> list[dict]:
     def _steals_id(form: str, cid: str) -> bool:
         if not form or form == cid:
             return False
-        if form in ids:  # exact: another canonical's id
+        if form in ids:
             return True
         owner = id_norm.get(_norm(form))
-        return owner is not None and owner != cid  # normalized: another canonical's id
+        return owner is not None and owner != cid
 
     for e in merged:
         cid = e["id"]
@@ -2335,12 +1968,9 @@ def _reconcile_intra_output(entries: list[dict]) -> list[dict]:
         if isinstance(ap, dict):
             e["alias_platforms"] = {k: v for k, v in ap.items() if not _steals_id(k, cid)}
 
-    # ---- pass 3: ambiguous claims (alias OR display_name claimed by 2+ DISTINCT
-    # surviving canonicals) abort the seed (the loader promotes display_name to a
-    # global alias). Keep each contested form on ONE canonical — the "natural"
-    # owner whose id-name normalizes to it, else the first by id — and drop it
-    # from the others (cross-org bare names like `gemma-3-1b-it`, shared display
-    # names like `Claude Opus 4.5`).
+    # ---- pass 3: a form claimed by 2+ canonicals aborts the seed (the loader
+    # promotes display_name to a global alias, so it counts too). Keep it on the
+    # natural owner (id-name normalizes to it), else the first by id.
     claimers: dict[str, set[str]] = defaultdict(set)
     for e in merged:
         cid = e["id"]
@@ -2370,35 +2000,30 @@ def _reconcile_intra_output(entries: list[dict]) -> list[dict]:
                 e["alias_platforms"] = {k: v for k, v in ap.items() if k not in keeper or keeper[k] == cid}
             dn = e.get("display_name")
             if isinstance(dn, str) and dn in keeper and keeper[dn] != cid:
-                # Re-derive a non-colliding display_name from the id tail.
                 e["display_name"] = cid.split("/", 1)[-1]
 
     return sorted(merged, key=lambda e: e["id"])
 
 
 def _dedup_entries(entries: list[dict]) -> list[dict]:
-    """Collapse entries that share a canonical id (can happen when two
-    underlying groups mint the same family root). Union aliases / tags /
-    alias_platforms; prefer reviewed over draft; keep first non-null scalars."""
+    """Collapse entries sharing a canonical id: union aliases / tags /
+    alias_platforms, reviewed beats draft, earliest release_date wins."""
     by_id: dict[str, dict] = {}
     for e in entries:
         cur = by_id.get(e["id"])
         if cur is None:
             by_id[e["id"]] = e
             continue
-        # Union list/dict fields.
         cur["aliases"] = sorted(set(cur.get("aliases", [])) | set(e.get("aliases", [])))
         cur["tags"] = sorted(set(cur.get("tags", [])) | set(e.get("tags", [])))
         ap = cur.setdefault("alias_platforms", {})
         for k, v in (e.get("alias_platforms") or {}).items():
             if k not in ap or (ap.get(k) is None and v):
                 ap[k] = v
-        # open_weights any(True); reviewed wins.
         cur["open_weights"] = bool(cur.get("open_weights")) or bool(e.get("open_weights"))
         if e.get("review_status") == "reviewed":
             cur["review_status"] = "reviewed"
-        # Keep earliest release_date.
-        rd = [d for d in (cur.get("release_date"), e.get("release_date")) if d]
+        rd =[d for d in (cur.get("release_date"), e.get("release_date")) if d]
         cur["release_date"] = min(rd) if rd else None
     return sorted(by_id.values(), key=lambda e: e["id"])
 
@@ -2439,22 +2064,18 @@ _HEADER = """# Generated from models.dev (https://models.dev) — DO NOT EDIT BY
 
 
 def _finalize_entries(entries: list[dict]) -> list[dict]:
-    """Flatten the in-progress `alias_platforms` map into the persisted shape:
-    union its keys into `aliases`, and fold the {alias -> inference_platform}
-    provenance into metadata['alias_platforms'] so the loader can wire the
-    platform FK per alias. Drops the working `alias_platforms` key. Returns a
-    new list; does not mutate inputs in place beyond the working key."""
+    """Flatten the working `alias_platforms` map into the persisted shape: keys
+    unioned into `aliases`, non-null platforms kept as
+    metadata['alias_platforms'] so the loader can wire the platform FK."""
     finalized: list[dict] = []
     for e in entries:
         ap = e.pop("alias_platforms", None) or {}
         aliases = set(e.get("aliases", []))
         aliases.update(ap.keys())
-        # Remove self-id from aliases.
         aliases.discard(e["id"])
         e["aliases"] = sorted(aliases)
         if ap:
             meta = json.loads(e.get("metadata") or "{}")
-            # Only non-null platform tags carry FK provenance.
             meta["alias_platforms"] = {k: v for k, v in sorted(ap.items()) if v}
             e["metadata"] = json.dumps(meta, sort_keys=True)
         finalized.append(e)
@@ -2467,11 +2088,9 @@ def _write_yaml(entries: list[dict], path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Full-catalog split/dedup + org de-orphan. The daily cron regenerates
-# models_dev_catalog.generated.yaml directly so it never goes stale, and HF
-# source-of-truth wins every collision: an HF-present model becomes an
-# ALIAS-ONLY enrichment onto the existing HF-cased canonical (no lowercase twin
-# minted); only genuinely models.dev-only (not-on-HF) models are minted fresh.
+# Full-catalog split + org de-orphan. HF source-of-truth wins every collision:
+# an HF-present model becomes an alias-only enrichment onto the HF-cased
+# canonical; only models.dev-only models are minted.
 # ---------------------------------------------------------------------------
 
 CATALOG_OUT_PATH = REPO_ROOT / "seed" / "models" / "sources" / "models_dev_catalog.generated.yaml"
@@ -2482,9 +2101,8 @@ CORE_PATH = REPO_ROOT / "seed" / "models" / "core.yaml"
 ENRICH_ALIASES_PATH = REPO_ROOT / "seed" / "models" / "enrichments" / "aliases.yaml"
 ORGS_GENERATED_PATH = REPO_ROOT / "seed" / "orgs.generated.yaml"
 
-# All EXISTING model sources whose id+alias surface forms the catalog must not
-# clash with. HF/curated WIN id+casing. models_dev.generated.yaml (the
-# re-cased pure source) is included so the catalog stays purely additive.
+# Existing sources the catalog's id+alias forms must not clash with; SEED_PATH
+# is included so the catalog stays purely additive.
 _CATALOG_EXISTING_SOURCES = (
     HF_ORACLE_PATH,
     SEED_PATH,
@@ -2494,12 +2112,9 @@ _CATALOG_EXISTING_SOURCES = (
     ENRICH_ALIASES_PATH,
 )
 
-# Existing-sources set the NON-catalog (full re-cased) write path reconciles
-# against. SAME set as the catalog path EXCEPT SEED_PATH itself is dropped —
-# the non-catalog write REWRITES SEED_PATH, so it must not dedup against its own
-# (stale) prior output. CORE_PATH IS included, which is the whole point: a fresh
-# re-cased mint whose normalized form collides with a curated core canonical
-# under a DIFFERENT id is suppressed/repointed instead of clobbering core.
+# Same set minus SEED_PATH, which this path rewrites and so must not dedup
+# against; CORE_PATH stays so a mint colliding with a curated id is suppressed
+# instead of clobbering core.
 _NONCATALOG_EXISTING_SOURCES = (
     HF_ORACLE_PATH,
     HUB_STATS_PATH,
@@ -2510,9 +2125,8 @@ _NONCATALOG_EXISTING_SOURCES = (
 
 
 def _load_core_skip_ids() -> set[str]:
-    """Ids core.yaml suppresses (`skip_ids` + `skip_source_ids`). A committed
-    entry with one of these ids is NOT carried forward — curation explicitly
-    removed it from the source universe."""
+    """Ids core.yaml suppresses (`skip_ids` + `skip_source_ids`); a committed
+    entry with one of these is not carried forward."""
     if not CORE_PATH.exists():
         return set()
     doc = safe_load_yaml(CORE_PATH.read_text())
@@ -2522,8 +2136,8 @@ def _load_core_skip_ids() -> set[str]:
 
 
 def _entry_meta(e: dict) -> dict:
-    """Parse an entry's metadata JSON into a dict. Malformed COMMITTED
-    metadata degrades to {} (with a warning) instead of crashing the cron."""
+    """An entry's metadata JSON as a dict; malformed metadata degrades to {}
+    with a warning rather than crashing the cron."""
     try:
         meta = json.loads(e.get("metadata") or "{}")
     except (ValueError, TypeError):
@@ -2540,13 +2154,9 @@ def _entry_alias_platforms(e: dict) -> dict:
 
 
 def _donor_scalars(e: dict) -> dict:
-    """Non-empty weak-scalar fields a suppressed/folded/skipped mint donates
-    onto its owner's enrich record (under `weak:`; the seed loader applies them
-    only to fields every full entry left empty and core.yaml does not
-    explicitly carry). Reads a full entry's top-level fields or an enrich
-    record's existing `weak:` map. `parents` edges (dangling-edge risk) and
-    mint-specific metadata (`providers`, `underlying_key`) are deliberately
-    NOT donated."""
+    """Non-empty weak-scalar fields a suppressed mint donates onto its owner's
+    enrich record (from top-level fields or an existing `weak:` map).
+    `parents` edges are never donated: they could dangle."""
     weak = e.get("weak")
     weak = weak if isinstance(weak, dict) else {}
     out: dict = {}
@@ -2560,8 +2170,8 @@ def _donor_scalars(e: dict) -> dict:
 
 
 def _merge_weak(rec: dict, scalars: dict) -> None:
-    """Merge donated scalars into rec['weak'] (existing keys win), keeping the
-    canonical WEAK_SCALAR_FIELDS key order so output stays byte-deterministic."""
+    """Merge donated scalars into rec['weak'] (existing keys win), in
+    WEAK_SCALAR_FIELDS order so output stays byte-deterministic."""
     if not scalars:
         return
     weak = rec.get("weak")
@@ -2572,8 +2182,7 @@ def _merge_weak(rec: dict, scalars: dict) -> None:
 
 
 def _make_form_owner_lookup(sources: tuple[Path, ...]) -> Callable[[str], str | None]:
-    """form -> owning canonical id over `sources` (exact, then resolver-
-    normalized) — the same claims/alias index the reconcile passes use."""
+    """form -> owning canonical id over `sources` (exact, then normalized)."""
     from eval_entity_resolver.normalization import normalize as _norm
 
     exact, normed = _build_existing_index(sources)
@@ -2586,8 +2195,7 @@ def _make_form_owner_lookup(sources: tuple[Path, ...]) -> Callable[[str], str | 
 
 def _union_alias_platforms(entry: dict, donor_ap: dict) -> None:
     """Union `donor_ap` into entry's metadata.alias_platforms for forms the
-    entry carries as aliases, so a committed alias that the carry-forward
-    re-added keeps its platform-FK provenance. Existing keys win."""
+    entry carries as aliases (existing keys win)."""
     aliases = set(entry.get("aliases") or [])
     add = {k: v for k, v in donor_ap.items() if v and k in aliases}
     if not add:
@@ -2599,12 +2207,9 @@ def _union_alias_platforms(entry: dict, donor_ap: dict) -> None:
 
 
 def _twin_key(cid: str) -> str:
-    """Org-aware seed-collision key for a model id: the org prefix folded
-    through the curated dev-org map, the name part keyed exactly like the
-    seed loader's collision fold (`collision_key`). A committed id and a
-    fresh respelling of it (`google/veo-3-1` vs `google/veo3-1`) share a key,
-    so the carry-forward can absorb the reappearance instead of emitting
-    normalized twins for the seed's collision_fold / gate to trip on."""
+    """Org-aware collision key: org folded through the curated dev-org map,
+    name keyed like the seed loader's `collision_key`, so a committed id and
+    its respelling (`veo-3-1` vs `veo3-1`) share a key."""
     if "/" in cid:
         org, name = cid.split("/", 1)
         dev = _hf_to_dev().get(org.lower())
@@ -2614,25 +2219,18 @@ def _twin_key(cid: str) -> str:
 
 
 def _version_marker_sig(name: str) -> str:
-    """Sorted `vN`-marker tokens of a RAW leaf (split on separators BEFORE any
-    tag/Bedrock strip). `nova-premier-v1:0` carries `v1`; the bare
-    `nova-premier` carries none — the two must never twin (a `-v1`/Bedrock
-    version key keeps separate identity per the adoption plan)."""
+    """Sorted `vN` tokens of a raw leaf, split before any tag/Bedrock strip:
+    `nova-premier-v1:0` carries `v1`, bare `nova-premier` none, so the two
+    never twin."""
     toks = re.split(r"[-_.:/\s]+", name.lower())
     return "+".join(sorted(t for t in toks if re.fullmatch(r"v\d+", t)))
 
 
 def _extended_twin_keys(cid: str) -> set[str]:
-    """Order/brand-insensitive FALLBACK twin keys for the respellings
-    `_twin_key`'s ordered `collision_key` cannot match — the OpenRouter
-    adoption class (`anthropic/claude-haiku-3` vs adopted
-    `anthropic/claude-3-haiku`, `sao10K/l3-8b-lunaris` vs
-    `sao10k/l3-lunaris-8b`, `perplexity/perplexity-sonar-…` vs
-    `perplexity/sonar-…`). Keys are `dev-org/identity-sig#vN-markers`
-    (identity sig = variant-preserving token multiset; the vN-marker sig keeps
-    a Bedrock `-v1:0` spelling from twinning its base), so a
-    variant/size/version difference still never twins. Used only after a
-    `_twin_key` miss, with the same `_bsizes` guard at the call sites."""
+    """Order/brand-insensitive fallback twin keys (`dev-org/identity-sig#vN`)
+    for respellings the ordered `_twin_key` misses (`claude-haiku-3` vs
+    adopted `claude-3-haiku`); a variant/size/version difference still never
+    twins. Used only after a `_twin_key` miss."""
     if "/" not in cid:
         return {f"{_identity_sig(cid)}#{_version_marker_sig(cid)}"}
     org, name = cid.split("/", 1)
@@ -2646,19 +2244,10 @@ def _extended_twin_keys(cid: str) -> set[str]:
 
 
 def _pick_twin_candidate(cid: str, candidates: list[dict]) -> dict | None:
-    """Pick a stable carry-forward twin without conflating dotted releases.
-
-    ``_twin_key`` deliberately collapses separators so a harmless respelling
-    such as ``veo-3-1`` -> ``veo3-1`` retains its canonical id.  That broad key
-    can also contain distinct model spellings: ``qwen3.8`` and ``qwen-3-8``
-    both fold to ``qwen38`` but are not the same identity under the registry's
-    variant-preserving identity rules.  Prefer an exact identity match whenever
-    there is one.  Preserve the historical separator-only fallback only when
-    the collision bucket has exactly one size-compatible candidate.
-
-    This mirrors the gate's identity rule while retaining the stability rule
-    for unambiguous letter/digit respellings that ``_identity_sig`` intentionally
-    keeps conservative.
+    """Carry-forward twin for `cid`: an exact identity match among
+    size-compatible candidates, else the separator-only match only when it is
+    unambiguous (`qwen3.8` and `qwen-3-8` share a `_twin_key` but are not the
+    same identity).
     """
     from eval_entity_registry.lib.collision_fold import _bsizes
 
@@ -2683,39 +2272,13 @@ def _pick_twin_candidate(cid: str, candidates: list[dict]) -> dict | None:
 def _carry_forward_committed(
     fresh: list[dict], committed: list[dict], adopt_migration: bool = False
 ) -> tuple[list[dict], dict[str, str]]:
-    """Merge the COMMITTED generated file into a fresh wholesale rewrite so an
-    upstream (provider,model) removal never deletes a resolvable surface form:
-
-      * surviving id (still emitted today): union the committed aliases back
-        in — an alias-level upstream removal must not regress resolution —
-        keeping platform provenance for re-added forms. The committed
-        display_name counts too (the loader promotes it to a global alias):
-        when upstream re-spells it, the old one is unioned back as an alias;
-      * respelled reappearance / twin (STABILITY RULE): a removed id whose
-        org-aware twin key matches a FRESH mint (upstream re-emitted the model
-        under a new spelling, `google/veo-3-1` -> `google/veo3-1`, or an
-        OpenRouter listing change renamed the adopted key) is unified with
-        that mint. The COMMITTED id wins: the fresh entry is renamed to the
-        committed id and today's spelling becomes an alias — so the daily cron
-        can never thrash canonical ids on upstream respells/relistings.
-        EXCEPT with `adopt_migration=True` (the one-shot
-        `--adopt-openrouter-ids-migration` run): the FRESH (externally-
-        adopted) id wins and the committed id + display_name + aliases become
-        aliases on it — never retained as a normalized twin that the seed's
-        collision_fold / gate would trip on;
-      * removed id: retain the committed entry verbatim (full entries tagged
-        `metadata.upstream_status: removed`) UNLESS core.yaml skips it.
-        Retained entries then run through the same core-aware reconciliation
-        as fresh mints, so an entry that has since been curated/folded is
-        suppressed rather than resurrected;
-      * core-skipped id whose surface form an existing canonical claims (e.g.
-        core aliasing the skipped mint): its scalars still flow as a weak
-        enrich record onto that owner — only the aliases stay suppressed
-        (that is what skip_source_ids curates away). Unclaimed: pure skip;
-      * returns (batch, committed_claims): every committed id/alias mapped to
-        its surviving owner. reconcile_generated_against_existing pre-seeds
-        its form-hygiene `claimed` map with these, so a NEW mint can never
-        steal a carried-forward entry's alias claims.
+    """Merge the committed generated file into a fresh rewrite so an upstream
+    removal never deletes a resolvable form: a surviving id gets its committed
+    aliases back; a respelled twin keeps the committed id among equal id-ladder
+    rungs (stability rule; `adopt_migration=True` inverts it for the one-shot
+    OpenRouter run); a removed id is retained tagged `upstream_status: removed`
+    unless core.yaml skips it. Returns (batch, committed_claims), the latter
+    mapping every committed id/alias to its surviving owner.
     """
     by_id = {e["id"]: e for e in fresh if e.get("id")}
     by_twin: dict[str, list[dict]] = defaultdict(list)
@@ -2744,16 +2307,11 @@ def _carry_forward_committed(
             continue
         cur = by_id.get(cid)
         dn = c.get("display_name")
-        # Respelled-reappearance twin: FULL committed entries only (an enrich
-        # record's id is ANOTHER canonical — never donatable as an alias), and
-        # only when the b-size signature agrees (same guard as fold_collisions:
-        # opt-1.3b vs opt-13b key-collide but are different models). The
-        # order/brand-insensitive `_extended_twin_keys` fallback catches the
-        # OpenRouter-adoption respellings the ordered collision key cannot.
+        # Twins: full committed entries only (an enrich record's id is another
+        # canonical, never donatable as an alias); a curated umbrella is never
+        # one repo, so nothing is its twin.
         twin = None
         twin_via_form = False
-        # A curated umbrella (`deepseek/deepseek`) is retained as is: it is
-        # never one repo, so no fresh entry, HF-deferred or not, is its twin.
         if (
             cur is None and cid not in skip and "display_name" in c
             and cid not in _non_lineage_bases()
@@ -2769,13 +2327,11 @@ def _carry_forward_committed(
                     ],
                 )
             if t is None:
-                # Form-level twins, absorbed onto the fresh entry that carries
-                # the committed id as an alias: a committed mint under a
-                # serving-host prefix (the pre-strip `TEE/...` uploader-org
-                # bug — a malformed id never wins the stability rule), or a
-                # committed invented id the HF authority has since promoted
-                # (the fresh hf_deferred entry aliases the would-be mint id;
-                # token sets differ, so the twin keys above cannot link them).
+                # Form-level twin: the fresh entry carries the committed id as
+                # an alias. Only a serving-host-prefixed committed id (malformed,
+                # never wins the stability rule) or an invented id the HF
+                # authority has since promoted (token sets differ, so the twin
+                # keys cannot link them) absorbs this way.
                 t = by_form.get(cid)
                 if t is not None and not (
                     ("/" in cid and cid.split("/", 1)[0].lower() in _SERVING_HOSTS)
@@ -2793,23 +2349,12 @@ def _carry_forward_committed(
                     t = None
                 twin_via_form = t is not None
             twin = t
-        # STABILITY RULE, RUNG-MONOTONE: on a twin match the COMMITTED id wins
-        # among EQUAL rungs of the id ladder (the fresh entry is renamed
-        # below), so the cron never thrashes ids on an upstream
-        # respell/relisting. A fresh twin from a STRICTLY HIGHER rung
-        # overrides it: an hf_deferred twin (a REAL HF repo id, rung 1) is
-        # never renamed back to a committed non-HF id — that would demote the
-        # HF id to an alias, violating the adoption path's own "canonical is
-        # the real HF id — never demoted" rule. The committed id + forms
-        # become aliases on the HF id instead (the absorb branch below), with
-        # parent-edge repointing like the rename path's. Rung 2 over 3
-        # (a fresh OpenRouter-key twin over a committed invented id) stays
-        # gated behind the one-shot migration flag per PLAN G3; the deferred
-        # debt is counted and logged so the daily cron shows it. The one-shot
-        # migration flag inverts the rule wholesale (the fresh
-        # externally-adopted id wins). A twin that already took an earlier
-        # committed id this run is never renamed twice — later committed
-        # twins absorb onto it instead.
+        # Stability rule, rung-monotone: the committed id wins among equal
+        # rungs; a fresh hf_deferred twin (rung 1) is never renamed back to a
+        # non-HF id (that would demote the HF id to an alias) and absorbs the
+        # committed id instead; rung 2 over 3 stays gated behind the one-shot
+        # migration flag, with the deferred debt counted. A twin that already
+        # took a committed id this run is never renamed twice.
         promote_twin = (
             twin is not None
             and not twin_via_form
@@ -2833,9 +2378,6 @@ def _carry_forward_committed(
             and _entry_meta(c).get("openrouter_adopted") is not True
             and _entry_meta(c).get("hf_deferred") is not True
         ):
-            # Counted for EVERY deferred-debt shape — the plain rename_twin
-            # case, a twin already stabilized onto an earlier committed id,
-            # and a form-level absorb — each one defers a rung-2 promotion.
             pending_rung2 += 1
         owner = (
             cur["id"] if cur is not None
@@ -2872,11 +2414,6 @@ def _carry_forward_committed(
                 by_id[cid] = twin
                 back = (set(c.get("aliases") or []) | {fresh_spelling}) - {cid}
             else:
-                # The committed id lost the twin match (migration run, a
-                # higher-rung fresh id, or an already-stabilized twin): it
-                # becomes an alias below, so any parent edge naming it must
-                # be repointed onto the surviving fresh id (mirror of the
-                # `stabilized` repoint for the opposite direction).
                 promoted[cid] = twin["id"]
                 back = (set(c.get("aliases") or []) | {cid}) - {twin["id"]}
             if isinstance(dn, str) and dn and dn not in (twin["id"], twin.get("display_name")):
@@ -2893,15 +2430,10 @@ def _carry_forward_committed(
             retained += 1  # enrich records are carried too but not counted here
         out.append(rc)
     if stabilized or promoted:
-        # Repoint parent edges that referenced a fresh spelling the stability
-        # rule renamed back to its committed id — and, symmetrically, edges
-        # that referenced a committed id absorbed onto a surviving fresh id.
         renamed = {old: new for new, old in stabilized.items()}
         renamed.update(promoted)
-        # Path-compress the union: a promote-then-rename chain (committed
-        # invented id -> fresh twin -> committed HF id) must compose to the
-        # FINAL survivor — a one-hop repoint would land edges and claims on
-        # a renamed-away id (a dangling canonical reference).
+        # A promote-then-rename chain must compose to the final survivor, or
+        # edges and claims land on a renamed-away id.
         for old in list(renamed):
             seen = {old}
             target = renamed[old]
@@ -2913,17 +2445,13 @@ def _carry_forward_committed(
             for edge in e.get("parents") or []:
                 if isinstance(edge, dict) and edge.get("id") in renamed:
                     edge["id"] = renamed[edge["id"]]
-        # Claims values must name SURVIVING ids — a renamed-away value would
-        # poison the committed_claims escape downstream in reconcile.
+        # Claim values must name surviving ids (reconcile keys on them).
         for k, v in list(claims.items()):
             if v in renamed:
                 claims[k] = renamed[v]
         if promoted:
-            # Diagnosability: a rung-1 promotion on a plain cron run demotes
-            # a committed id. If a non-regenerated source (hub_stats/tier3/
-            # curated parents) still references the demoted id, the dedup
-            # gate fails closed and the day's commit aborts — this line
-            # names the ids so the wedge is diagnosable from the cron log.
+            # A non-regenerated source still referencing a demoted id fails
+            # the dedup gate; this names the ids for the cron log.
             print(
                 "[refresh] carry-forward: promoted higher-rung fresh id(s): "
                 + ", ".join(
@@ -2938,11 +2466,6 @@ def _carry_forward_committed(
             file=sys.stderr,
         )
     if not adopt_migration:
-        # Owner-visible debt line (always printed on a plain cron run): how
-        # many rung-2 promotions — a fresh OpenRouter-key twin outranking a
-        # committed invented id — the stability rule deferred. Promoting them
-        # is a DELIBERATE `--adopt-openrouter-ids-migration` run, never
-        # automatic (PLAN G3).
         print(
             f"[refresh] stability rule: {pending_rung2} pending rung-2 id "
             f"promotion(s) (OpenRouter key over invented id) awaiting the next "
@@ -2967,14 +2490,9 @@ def _carry_forward_committed(
 def _iter_unskipped_source_entries(
     sources: tuple[Path, ...],
 ) -> Iterable[tuple[Path, dict]]:
-    """Yield active source records, excluding generated ids suppressed by core.
-
-    ``skip_source_ids`` removes a generated definition from the merged seed
-    universe. Treating that stale record as an owner during reconciliation can
-    create an enrichment keyed by an entity that the loader will immediately
-    discard, making the refresh path-dependent. Curated definitions in
-    ``core.yaml`` itself remain authoritative even when they override a source
-    id with the same spelling.
+    """Yield active source records, excluding generated ids core.yaml skips:
+    a skipped record treated as an owner would key an enrichment by an entity
+    the loader discards. core.yaml's own definitions always count.
     """
     skipped = _load_core_skip_ids()
     for path in sources:
@@ -2988,14 +2506,10 @@ def _iter_unskipped_source_entries(
 def _build_existing_index(
     sources: tuple[Path, ...],
 ) -> tuple[dict[str, str], dict[str, str]]:
-    """Build (existing_exact, existing_norm) maps {form -> owning canonical id}
-    over every id / display_name / alias surface form in `sources`.
-
-    `existing_exact` keys on the raw form; `existing_norm` keys on the resolver's
-    `normalize` (case + all separators collapsed) — the same form-matching the
-    catalog path and the seed validator's normalized_match steal-guard use.
-    First writer wins on a duplicate form (setdefault), mirroring the catalog
-    path's accumulation order."""
+    """(existing_exact, existing_norm) maps {form -> owning canonical id} over
+    every id / display_name / alias in `sources`; the normalized map uses the
+    resolver's `normalize`, like the seed validator's steal-guard. First
+    writer wins on a duplicate form."""
     from eval_entity_resolver.normalization import normalize as _norm
 
     existing_exact: dict[str, str] = {}
@@ -3022,9 +2536,8 @@ def _build_existing_index(
 def _make_steal_guard(
     existing_exact: dict[str, str], existing_norm: dict[str, str]
 ) -> Callable[[str, str], bool]:
-    """Return a `_steals(form, cid)` predicate: True iff `form` (exact OR
-    normalized) is already owned by a DIFFERENT canonical id. Identical
-    semantics to regenerate_catalog's inner `_steals`."""
+    """`_steals(form, cid)`: True iff `form` (exact or normalized) is owned by
+    a different canonical id. Must match regenerate_catalog's inner `_steals`."""
     from eval_entity_resolver.normalization import normalize as _norm
 
     def _steals(form: str, cid: str) -> bool:
@@ -3042,26 +2555,12 @@ def reconcile_generated_against_existing(
     sources: tuple[Path, ...] = _NONCATALOG_EXISTING_SOURCES,
     committed_claims: dict[str, str] | None = None,
 ) -> list[dict]:
-    """Core-aware reconciliation for the NON-catalog write path — a true MERGE,
-    not a drop: on an alias collision, move aliases onto the owner, drop the
-    source row, and rewrite parent edges to point at the owner.
-
-    For every minted entry whose id (exact OR normalized) collides with an
-    EXISTING canonical (from `sources`, incl. CORE_PATH) under a DIFFERENT id:
-      1. drop the colliding mint (the existing curated/HF id wins id+casing);
-      2. MERGE: emit an enrich record {id: <existing owner>, aliases: [the mint
-         id + its non-stealing aliases]} so those surface forms resolve to the
-         owner (the seed loader unions aliases by id across sources) — mirrors
-         the catalog path's `_enrich_target`. Aliases are NOT silently dropped;
-      3. rewrite every SURVIVING entry's `parents[].id` that pointed at a dropped
-         mint to the owner instead, so no surviving lineage edge dangles.
-
-    Reuses the steal-guard machinery (`_build_existing_index`/`_make_steal_guard`).
-    `sources` is injectable for unit testing. `committed_claims` (from
-    `_carry_forward_committed`) maps every previously-committed id/alias to its
-    committed owner; the form-hygiene pass below treats those claims as already
-    taken, so a NEW mint can never steal a carried-forward entry's alias.
-    Returns a new id-sorted list of survivors + enrich records.
+    """Core-aware reconciliation for the non-catalog write path: a mint
+    colliding (exact or normalized) with an existing canonical under another
+    id is dropped, its forms move onto the owner as an enrich record, and
+    parent edges are repointed. `committed_claims` pre-seeds form hygiene so
+    a new mint never steals a carried-forward alias. Returns survivors +
+    enrich records, id-sorted.
     """
     from eval_entity_resolver.fold import build_hf_index, decide_fold
     from eval_entity_resolver.normalization import normalize as _norm
@@ -3069,19 +2568,15 @@ def reconcile_generated_against_existing(
     existing_exact, existing_norm = _build_existing_index(sources)
     _steals = _make_steal_guard(existing_exact, existing_norm)
 
-    # Ids DEFINED (not merely enriched) by an existing source: only a record
-    # with a display_name defines a canonical. An alias-only enrich record
-    # (e.g. an enrichments/aliases.yaml bridge keyed by the id) must not make
-    # the re-emit branch below suppress the batch's own DEFINITION of that id
-    # — that would leave the canonical defined nowhere (a bare row).
+    # Only a display_name-bearing record defines a canonical; an alias-only
+    # enrich record must not suppress the batch's own definition of that id,
+    # which would leave it defined nowhere.
     defining_ids: set[str] = set()
     for _path, e in _iter_unskipped_source_entries(sources):
         if e.get("id") and "display_name" in e:
             defining_ids.add(e["id"])
-    # Valid suppression OWNERS additionally include ids defined by the derived
-    # broad sources and by this batch itself — but NEVER an id that exists
-    # only as an enrich-record key (suppressing a definition onto a
-    # non-defining id would materialize a bare canonical).
+    # Suppression owners must be defined somewhere (derived sources and this
+    # batch included); suppressing onto an enrich-only id makes a bare row.
     owner_defining: set[str] = set(defining_ids)
     for _path, e in _iter_unskipped_source_entries(
         (CATALOG_OUT_PATH, TIER3_PATH)
@@ -3093,26 +2588,19 @@ def reconcile_generated_against_existing(
             owner_defining.add(e["id"])
 
     def _owner_of(form: str) -> str | None:
-        """The existing canonical id that owns `form` (exact then normalized)."""
         return existing_exact.get(form) or existing_norm.get(_norm(form))
 
-    # Broader owner index for the MERGE-donation + survivor HYGIENE (NOT the
-    # partition steal-guard, which stays narrow): a form may be owned by an
-    # established canonical in the models_dev_catalog / tier3 sources too. Those
-    # are excluded from `sources` so the partition does not dedup against
-    # derived/own output, but they ARE authoritative for "this form already
-    # belongs to X" — so a base spelling like `meta/llama-3-1-70b` (owned by the
-    # base in the catalog) is not donated onto / kept on the `…-70B-Instruct`
-    # canonical.
+    # Broader index for donation + hygiene only: the derived catalog / tier3
+    # sources are excluded from the partition steal-guard (it must not dedup
+    # against derived output) but still say which forms already belong to
+    # whom.
     _hy_exact, _hy_norm = _build_existing_index(sources + (CATALOG_OUT_PATH, TIER3_PATH))
 
     def _owner_broad(form: str) -> str | None:
         return _hy_exact.get(form) or _hy_norm.get(_norm(form))
 
-    # Defined-owner lookup: like _owner_broad, but only claims made by records
-    # whose id is itself DEFINED anywhere count. Used to repoint an enrich
-    # record keyed by a renamed-away id onto the entity that now carries that
-    # id as an alias (a dead record's self-claim must not keep it alive).
+    # Claims by defined ids only: a dead enrich record's self-claim must not
+    # keep it alive.
     _def_exact: dict[str, str] = {}
     _def_norm: dict[str, str] = {}
     for _path, e2 in _iter_unskipped_source_entries(
@@ -3137,12 +2625,9 @@ def reconcile_generated_against_existing(
     def _defined_owner_of(form: str) -> str | None:
         return _def_exact.get(form) or _def_norm.get(_norm(form))
 
-    # ORG-AWARE fold index over the existing sources (+ frozen oracle HF ids): a
-    # mint that refers to the SAME model as a real HF repo under a DIFFERENT id
-    # (the org-decoupled dev-org-slug case the plain-normalize steal-guard misses,
-    # e.g. `alibaba/qwen-2-5-14b-instruct` -> `Qwen/Qwen2.5-14B-Instruct`) must
-    # DEFER to the HF id. Uses eval_entity_resolver.fold.decide_fold so this path
-    # and the resolver agree on what counts as the same model (no drift).
+    # Org-aware fold (the resolver's decide_fold, so both agree on sameness):
+    # a mint naming a real HF repo under a different, org-decoupled id
+    # (`alibaba/qwen-2-5-14b-instruct` -> `Qwen/Qwen2.5-14B-Instruct`) defers.
     existing_entries = [
         entry for _path, entry in _iter_unskipped_source_entries(sources)
     ]
@@ -3152,7 +2637,6 @@ def reconcile_generated_against_existing(
     )
 
     def _fold_target(e: dict) -> str | None:
-        # A curated umbrella stays a canonical however its head is named today.
         if e.get("id") in _non_lineage_bases():
             return None
         f = decide_fold(e, _hf_ids, _alias_to_hf, _by_org_name, hf_to_dev)
@@ -3161,9 +2645,8 @@ def reconcile_generated_against_existing(
         tgt = f["hf_target"]
         return tgt if tgt and tgt != e.get("id") else None
 
-    # First pass: partition into survivors vs suppressed. A mint is suppressed
-    # when its id steals an existing canonical (plain-normalized, different id) OR
-    # it org-aware-folds to a real HF repo. Record each suppressed id -> owner.
+    # Partition: suppressed when the id steals an existing canonical or
+    # org-aware-folds to a real HF repo.
     survivors: list[dict] = []
     suppressed: list[dict] = []
     suppressed_owner: dict[str, str] = {}
@@ -3174,32 +2657,23 @@ def reconcile_generated_against_existing(
             o = _owner_of(cid)
             if o and o != cid and o in owner_defining:
                 owner = o
-        # A mint whose id EXACTLY equals an existing canonical id IS that canonical
-        # (a re-emit, e.g. an HF-present model models.dev also serves). MERGE its
-        # forms onto that existing canonical via an enrich record — do NOT keep it
-        # as a models_dev-source SURVIVOR (that would be a redundant duplicate of
-        # the HF canonical, and any contaminating variant spelling it carries would
-        # then read as a models_dev mint shadowing a real HF id). And NEVER run
-        # decide_fold on it: decide_fold's fuzzy tier strips variant markers
-        # (-instruct/-it/…) and would drag a distinct variant that is itself a real
-        # canonical onto the base (e.g. Llama-3.2-1B-Instruct -> the base ...-3.2-1B).
+        # An exact re-emit of an existing canonical enriches it rather than
+        # surviving as a duplicate, and never goes through decide_fold, whose
+        # fuzzy tier strips variant markers and would drag a distinct
+        # `-Instruct` canonical onto its base.
         if owner is None and cid and cid in defining_ids:
             suppressed.append(e)
-            suppressed_owner[cid] = cid   # owner == self: enrich onto the existing id
+            suppressed_owner[cid] = cid
             continue
         if owner is None and cid:
-            owner = _fold_target(e)  # org-aware same-model fold
+            owner = _fold_target(e)
         if owner and owner != cid:
             suppressed.append(e)
             suppressed_owner[cid] = owner
             continue
-        # A carried-forward enrich record (no display_name) keyed by an id no
-        # source DEFINES would otherwise survive as a bare canonical (no
-        # display_name/org) forever. Repoint it onto the DEFINED entity that
-        # carries the id as an alias (the post-adoption owner) when one
-        # exists; enriching nothing at all is meaningless — drop LOUDLY, so a
-        # real resolution loss fails the oracle gates instead of hiding
-        # behind a silent bare canonical.
+        # An enrich record keyed by an id no source defines would survive as a
+        # bare canonical: repoint it onto the defined entity carrying the id as
+        # an alias, else drop loudly so the oracle gates catch a real loss.
         if cid and "display_name" not in e and cid not in owner_defining:
             ob = _defined_owner_of(cid)
             if ob is not None and ob != cid:
@@ -3215,16 +2689,10 @@ def reconcile_generated_against_existing(
             continue
         survivors.append(e)
 
-    # NOTE: do NOT early-return when `suppressed` is empty — the surviving-mint
-    # cross-source hygiene below must run regardless (a survivor can carry a
-    # foreign alias/display_name even when no mint id collides).
+    # No early return on empty `suppressed`: the survivor hygiene below must
+    # run regardless.
 
-    # MERGE: accumulate enrich records keyed by owner. The dropped mint id plus
-    # its non-stealing aliases (forms not owned by yet another canonical) are
-    # carried onto the owner so resolvable spellings survive; its non-empty
-    # scalars are carried as WEAK values (under `weak:`) so the suppressed
-    # mint's metadata isn't dropped on the floor either. Donors iterate in id
-    # order so the first donor wins per scalar field, deterministically.
+    # Donors iterate in id order so the first donor wins per scalar field.
     sibling_ids = {e["id"] for e in survivors}
     _committed = committed_claims or {}
     enrich_aliases: dict[str, set[str]] = defaultdict(set)
@@ -3232,29 +2700,14 @@ def reconcile_generated_against_existing(
     for e in sorted(suppressed, key=lambda x: x["id"]):
         cid = e["id"]
         owner = suppressed_owner[cid]
-        # cid is ITSELF a real canonical owned by a DIFFERENT id: a distinct
-        # model an org-aware fold wrongly dragged here (e.g. the base repo
-        # `google/gemma-2-9b` folded onto the variant `…-9b-it` via a mangled
-        # models.dev key alias) — donating its id OR its scalars would attach
-        # one model's identity/metadata to another.
-        #
-        # Ownership evidence is TIERED. The INDEPENDENT sources (`_owner_of`:
-        # hf_oracle / hub_stats / core / enrichments) are authoritative — a
-        # claim there vetoes the donation, with the one standing exception of
-        # a stale claim by a non-defined id the carry-forward absorbed onto
-        # `owner` (recorded in committed_claims). The DERIVED files (catalog /
-        # tier3 — the extra layers in `_owner_broad`) are NOT authoritative
-        # about the suppressed mint itself: a derived record keyed by cid, or
-        # by an id committed_claims assigns to this owner, is the PREVIOUS
-        # cron's echo of the very mint being suppressed/absorbed (the catalog
-        # is rewritten right after this step). Treating that echo as a
-        # foreign owner blocks the donation, and the subsequent catalog
-        # rewrite then drops its own orphaned record — deleting the surface
-        # forms from every source (the `deepseek-chat-v3-1` regression
-        # class). A derived claim by any OTHER id still vetoes: if tier3
-        # genuinely defines the mint id as its own canonical, the donation
-        # goes ahead and the seed's collision fold / gate suite fails LOUDLY
-        # on a wrong merge rather than silently dropping forms.
+        # A cid owned by a different canonical is a distinct model wrongly
+        # folded here; donating its id or scalars would merge two models.
+        # Ownership evidence is tiered: an independent-source claim
+        # (`_owner_of`) vetoes, except a stale claim by a non-defined id the
+        # carry-forward absorbed onto `owner`. A derived-layer claim
+        # (`_owner_broad`) by cid itself, or by an id committed_claims assigns
+        # to this owner, is the catalog's echo of the mint being suppressed
+        # and must not block the donation; any other derived claim still does.
         ind_cid = _owner_of(cid)
         cid_owner = _owner_broad(cid)
         foreign_cid = (
@@ -3267,38 +2720,20 @@ def reconcile_generated_against_existing(
             and _committed.get(cid_owner) != owner
         )
         if not _steals(cid, owner) or cid != owner:
-            # The dropped mint id resolves to the owner: keep it as an alias —
-            # UNLESS it normalized-equals the owner's own id form, OR it is a
-            # foreign canonical (above). Donating it would double-claim the
-            # form and merge two distinct canonicals. The real owner already
-            # supplies it, so drop it. Same foreign-owner guard the loser's
-            # OTHER aliases get (via `_owner_broad`) — applied symmetrically
-            # to the loser id.
+            # A mint id that normalizes to the owner's is already supplied by
+            # the owner; donating it would double-claim the form.
             if _norm(cid) != _norm(owner) and not foreign_cid:
                 enrich_aliases[owner].add(cid)
         if not foreign_cid:
             for k, v in _donor_scalars(e).items():
                 enrich_scalars[owner].setdefault(k, v)
-        # Carry the dropped mint's display_name too (it was a resolvable form: a
-        # raw value can NORMALIZED-match a canonical via its display_name, e.g.
-        # `command-r+` -> the folded `cohere/command-r+` whose display was
-        # `Command R+`). Without donating it, that bare-form resolvability is lost
-        # when the mint folds onto the real HF id. Same foreign-owner guard.
+        # display_name is a resolvable form (a raw value can normalized-match
+        # it), so it is donated too. Same tiered evidence as `foreign_cid`; a
+        # sibling survivor's id or a form committed to a third entity also
+        # vetoes.
         for a in [e.get("display_name"), *(e.get("aliases") or [])]:
             if not a or a == owner:
                 continue
-            # Drop an alias only if it is owned by a DIFFERENT canonical than the
-            # owner we are merging onto (would double-claim); else carry it over.
-            # A surviving batch mint's id counts as such an owner too — donating
-            # it would alias-claim a sibling canonical's id. Likewise a form the
-            # COMMITTED file assigns to a third entity (carry-forward keeps it
-            # there; donating it here would double-claim). Same TIERED evidence
-            # as `foreign_cid` above: an INDEPENDENT-source claim is
-            # authoritative (with the absorbed-non-defined-id escape); a claim
-            # that exists only in the DERIVED catalog/tier3 layer, made by the
-            # suppressed mint itself (cid) or by an id committed_claims
-            # assigns to this owner, is the previous cron's echo — its forms
-            # transfer with the merge.
             other_ind = _owner_of(a)
             if other_ind is not None and other_ind != owner and (
                 other_ind in owner_defining or _committed.get(other_ind) != owner
@@ -3316,8 +2751,6 @@ def reconcile_generated_against_existing(
                 continue
             enrich_aliases[owner].add(a)
 
-    # Rewrite surviving parent edges that pointed at a dropped mint -> the owner,
-    # so no surviving lineage edge dangles.
     for e in survivors:
         parents = e.get("parents")
         if not isinstance(parents, list):
@@ -3326,60 +2759,39 @@ def reconcile_generated_against_existing(
             if isinstance(edge, dict) and edge.get("id") in suppressed_owner:
                 edge["id"] = suppressed_owner[edge["id"]]
 
-    # SURVIVING-mint cross-source + INTRA-BATCH form hygiene: a survivor (its id
-    # does NOT steal) can still carry an ALIAS / DISPLAY_NAME owned by a DIFFERENT
-    # canonical — a double-claim the seed rejects as nondeterministic. The owner
-    # can be either:
-    #   * an EXISTING source canonical (cross-source) — e.g. models_dev
-    #     `mistralai/mixtral-8x7b` keeping the bare alias `mixtral-8x7b` owned by
-    #     hf_oracle's `mistralai/Mixtral-8x7B-Instruct-v0.1`; cross-org
-    #     `unsloth/...` vs `google/...` sharing a bare name; OR
-    #   * a SIBLING SURVIVOR in this same rewrite batch (intra-batch) — the
-    #     non-catalog path REWRITES models_dev.generated.yaml wholesale, so a base
-    #     mint (`meta-llama/Llama-3.1-70B`) aliasing a variant that is ALSO its own
-    #     batch entry (`…-70B-Instruct`) double-claims it. The cross-source check
-    #     alone misses this (neither is in the EXISTING sources).
-    # Resolution (deterministic): an entry's own id always wins; a sibling's id
-    # beats any alias (distinct canonicals — drop the alias, not a merge); a
-    # non-id form shared by >1 survivor goes to the lexicographically-first
-    # claimant. Mirrors the catalog path's fresh_form_owner ownership.
-    # Non-id form -> owning claimant. Pre-seeded with the committed file's
-    # claims (carry-forward), so a contested form stays with its committed
-    # owner regardless of sort order — a NEW mint cannot steal it.
+    # Survivor form hygiene: a survivor may still carry an alias/display_name
+    # owned by an existing canonical or by a sibling survivor (this path
+    # rewrites the file wholesale, so a base aliasing its own-batch `-Instruct`
+    # sibling double-claims it, which the seed rejects). An entry's own id
+    # wins; a sibling's id beats any alias; a shared non-id form goes to the
+    # first claimant by id, pre-seeded with the committed claims so a new mint
+    # cannot steal a carried-forward form.
     claimed: dict[str, str] = dict(committed_claims or {})
     for e in sorted(survivors, key=lambda x: x["id"]):
         cid = e["id"]
 
         def _foreign(form: str) -> bool:
-            # INDEPENDENT-source claim (hf_oracle / hub_stats / core /
-            # enrichments): authoritative — a veto, unless the claiming id is
-            # NOT itself a defined canonical and was just absorbed onto cid by
-            # the carry-forward (a stale record in a not-yet-regenerated
-            # source file). A DEFINED owner always keeps its forms.
+            # Independent-source claim: a veto, unless by a non-defined id the
+            # carry-forward absorbed onto cid.
             o_ind = _owner_of(form)
             if o_ind is not None and o_ind != cid and (
                 o_ind in owner_defining or claimed.get(o_ind) != cid
             ):
                 return True
-            # Claim exists only in the DERIVED layer (catalog / tier3). When
-            # the carry-forward assigned this form — or the claiming id
-            # itself — to THIS survivor (committed_claims: a twin-absorbed
-            # respelling like committed `google/veo3-1` absorbed onto fresh
-            # `google/veo-3-1`, in either stability direction), the derived
-            # claim is the PREVIOUS cron's echo of the absorbed id: the
-            # catalog is rewritten right after this step, so stripping on its
-            # strength deletes the absorbed forms from every source
-            # (normalize does not equate letter-digit-boundary twins, so
-            # `veo3-1`-class forms exist ONLY as explicit aliases).
+            # Derived-layer claim: when the carry-forward assigned the form or
+            # the claiming id to this survivor, it is the previous cron's echo
+            # of the absorbed id; stripping on it would delete the forms from
+            # every source (`veo3-1`-class forms exist only as explicit
+            # aliases, since normalize does not equate letter-digit twins).
             o = _owner_broad(form)
             if o is not None and o != cid and (
                 claimed.get(o) != cid and claimed.get(form) != cid
             ):
-                return True                       # owned by an established canonical
+                return True
             if form in sibling_ids and form != cid:
-                return True                       # is a different sibling's id
+                return True
             c = claimed.get(form)
-            return c is not None and c != cid     # already claimed by an earlier sibling
+            return c is not None and c != cid
 
         kept: list[str] = []
         for a in (e.get("aliases") or []):
@@ -3391,13 +2803,9 @@ def reconcile_generated_against_existing(
         ap = e.get("alias_platforms")
         if isinstance(ap, dict):
             e["alias_platforms"] = {k: v for k, v in ap.items() if k != cid and not _foreign(k)}
-        # Post-finalize entries carry alias_platforms in METADATA (the working
-        # key is gone). Keep that map in lockstep with the alias drop above —
-        # a key whose alias form was just stripped as foreign must not survive
-        # in metadata, or the NEXT run's carry-forward (which unions provenance
-        # only for forms still in `aliases`) silently drops it: the persisted
-        # output would violate its own `ap keys ⊆ aliases` invariant and the
-        # pipeline would not be idempotent over its own output.
+        # Persisted `metadata.alias_platforms` keys must stay a subset of
+        # `aliases`, or the next run's carry-forward drops them and the output
+        # is not idempotent.
         meta_ap = _entry_alias_platforms(e)
         if meta_ap:
             alias_set = set(e["aliases"])
@@ -3413,8 +2821,8 @@ def reconcile_generated_against_existing(
         if isinstance(dn, str) and _foreign(dn):
             cand = cid.split("/", 1)[-1]
             e["display_name"] = cid if _foreign(cand) else cand
-            # The next pass unions the committed display back as an alias;
-            # declare it now so one pass already reaches the fixpoint.
+            # Declared now so one pass reaches the fixpoint the carry-forward
+            # would otherwise take two runs to reach.
             if e["display_name"] != cid and e["display_name"] not in (e.get("aliases") or []):
                 e["aliases"] = sorted({*(e.get("aliases") or []), e["display_name"]})
 
@@ -3428,11 +2836,8 @@ def reconcile_generated_against_existing(
             enrich_records.append(rec)
     out = survivors + enrich_records
 
-    # Consolidate records sharing an id: carried-forward enrich records can
-    # duplicate each other (or a fresh enrich record for the same owner) —
-    # without this merge each regen would carry ONE MORE copy forever. A
-    # display_name-bearing record wins the base slot; aliases set-union; weak
-    # scalars first-wins per field (the loader's tie-break order).
+    # Consolidate records sharing an id, or each regen carries one more
+    # duplicate enrich record forever.
     by_id: dict[str, dict] = {}
     consolidated: list[dict] = []
     for e in out:
@@ -3446,7 +2851,6 @@ def reconcile_generated_against_existing(
             consolidated.append(e)
             continue
         if "display_name" in e and "display_name" not in cur:
-            # keep the DEFINING record as the base; fold `cur` into it
             e, cur = cur, e
             idx = consolidated.index(e)
             consolidated[idx] = cur
@@ -3454,8 +2858,7 @@ def reconcile_generated_against_existing(
         if e.get("aliases"):
             cur["aliases"] = sorted(set(cur.get("aliases") or []) | set(e["aliases"]))
         if "display_name" not in cur:
-            # weak scalars only flow between enrich records; a full entry
-            # keeps its own strong fields and never absorbs weak ones.
+            # A full entry never absorbs weak scalars.
             _merge_weak(cur, e.get("weak") or {})
     return sorted(consolidated, key=lambda e: e.get("id") or "")
 
@@ -3485,13 +2888,10 @@ def _catalog_load_list(path: Path) -> list[dict]:
 
 
 def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
-    """Split the finalized full models.dev catalog (`full`) against the existing
-    canonical universe and write models_dev_catalog.generated.yaml + reconcile
-    HF-derived community orgs into orgs.generated.yaml. `full` is the output of
-    `_finalize_entries(_generate_models(...))`. Dedup/steal-guard semantics:
-    HF wins; mint only models.dev-only."""
-    # Use the resolver's normalize (collapses case + all separators + digit-dots)
-    # to mirror the seed validator's normalized_match steal-guard.
+    """Split the finalized full catalog (`full`) against the existing canonical
+    universe, write models_dev_catalog.generated.yaml, and reconcile HF-derived
+    community orgs into orgs.generated.yaml. HF wins; only models.dev-only
+    models are minted."""
     from eval_entity_resolver.normalization import normalize as _norm
 
     existing_form_to_cid: dict[str, str] = {}
@@ -3507,10 +2907,8 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
             existing_exact.setdefault(form, cid)
             existing_norm.setdefault(_norm(form), cid)
 
-    # Only DEFINED canonicals (a display_name-bearing record somewhere) may own
-    # forms: an enrich record keyed by a renamed-away id must never become a
-    # fold/donation target — a catalog record keyed by it would materialize a
-    # bare canonical that splits the entity from its adopted definition.
+    # Only defined canonicals may own forms: a catalog record keyed by a
+    # renamed-away enrich id would materialize a bare canonical.
     defined_anywhere: set[str] = set()
     active_existing = list(
         _iter_unskipped_source_entries(_CATALOG_EXISTING_SOURCES)
@@ -3539,11 +2937,9 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
         nowner = existing_norm.get(_norm(form))
         return nowner is not None and nowner != cid
 
-    # ORG-AWARE fold index (the same eval_entity_resolver.fold.decide_fold
-    # reconcile_generated_against_existing uses, so both paths agree): a
-    # catalog mint that refers to the SAME model as a real HF repo under a
-    # different id (org-decoupled, e.g. `zai/GLM-5` -> `zai-org/GLM-5`) must
-    # enrich onto the HF id, NOT mint a fresh shadow that aborts the seed.
+    # Same org-aware fold as reconcile_generated_against_existing, so both
+    # paths agree: a mint naming an HF repo under an org-decoupled id
+    # (`zai/GLM-5` -> `zai-org/GLM-5`) enriches it instead of shadowing it.
     from eval_entity_resolver.fold import build_hf_index as _bhi, decide_fold as _df
 
     _existing_entries = [e for _path, e in active_existing]
@@ -3556,30 +2952,24 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
 
     fresh: list[dict] = []
     enrich: list[dict] = []
-    # The single enrich record per owner id (first emission wins the slot).
-    # EVERY donor for an owner consolidates onto this record — aliases
-    # set-union, alias_platforms per-key union (first writer wins), weak
-    # per-field first-wins (the loader's tie-break order) — so one owner never
-    # carries duplicate records in the written catalog.
+    # One enrich record per owner; every donor consolidates onto it so the
+    # written catalog never carries duplicates.
     enrich_by_id: dict[str, dict] = {}
     fresh_seen_lc: dict[str, dict] = {}
     fresh_seen_twin: dict[str, dict] = {}
     fresh_form_owner: dict[str, str] = {}
 
-    # Carry-forward inputs: the COMMITTED catalog's claims (incl. its
-    # display_names — loader-promoted global aliases) pre-seed
-    # fresh_form_owner, so today's split can never steal (or duplicate-claim) a
-    # committed record's surface form; after the split the committed records
-    # are unioned back / re-emitted below.
+    # The committed catalog's claims (display_names included: the loader
+    # promotes them to global aliases) pre-seed fresh_form_owner so a fresh
+    # split cannot steal a committed form.
     committed = _catalog_load_list(CATALOG_OUT_PATH)
     core_skip = _load_core_skip_ids()
     for c in committed:
         ccid = c.get("id")
         if not ccid or ccid in core_skip:
             continue
-        # A committed ENRICH record keyed by an id no source defines is dead
-        # (a renamed-away key) — its claims must not block the forms' real
-        # owners. Committed FULL mints define themselves and always pre-claim.
+        # A committed enrich record keyed by an id no source defines is dead;
+        # its claims must not block the forms' real owners.
         if "display_name" not in c and ccid not in defined_anywhere:
             continue
         fresh_form_owner.setdefault(ccid, ccid)
@@ -3597,10 +2987,8 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
         donor_id: str | None = None,
         scalars: dict | None = None,
     ) -> None:
-        # `donor_id`: a committed record being DONATED onto `cid` (its id has
-        # since been absorbed/folded) — forms it pre-claimed are donatable.
-        # `scalars`: the donor's non-empty weak scalars (_donor_scalars),
-        # carried under `weak:` for the seed loader's empty-fields-only fill.
+        # Forms pre-claimed by `donor_id` (a committed record being donated
+        # onto `cid`) are donatable.
         ok = (None, cid) if donor_id is None else (None, cid, donor_id)
         keep = sorted({
             a for a in aliases
@@ -3702,8 +3090,7 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
         if dn and _claimed(dn):
             cand = cid.split("/", 1)[-1]
             e["display_name"] = cand if not _claimed(cand) else cid
-            # The next pass unions the committed display back as an alias;
-            # declare it now so one pass already reaches the fixpoint.
+            # Declared now so one pass reaches the carry-forward's fixpoint.
             if e["display_name"] != cid and e["display_name"] not in e["aliases"]:
                 e["aliases"] = sorted({*e["aliases"], e["display_name"]})
         for form in _forms_of(e):
@@ -3723,16 +3110,13 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
             e["metadata"] = json.dumps(meta, sort_keys=True)
         fresh.append(e)
 
-    # Carry the committed catalog forward: an upstream removal must not delete
-    # a resolvable surface form. A surviving record gets its committed aliases
-    # unioned back; a record whose id vanished from today's split is re-emitted
-    # against its still-existing canonical, donated onto the canonical that has
-    # since absorbed it, or (for a full mint with no surviving target) retained
-    # verbatim tagged `metadata.upstream_status: removed`.
+    # Carry the committed catalog forward so an upstream removal never deletes
+    # a resolvable form: aliases unioned back, vanished ids re-emitted against
+    # their canonical or donated onto the one that absorbed them, else
+    # retained tagged `metadata.upstream_status: removed`.
     def _committed_forms(c: dict) -> list[str]:
-        """A committed record's donatable surface forms: aliases plus its
-        display_name (a loader-promoted global alias — dropping it on a fold
-        deletes a resolvable form, e.g. the Veo `Veo-3.1-Fast` regression)."""
+        """Donatable forms: aliases plus display_name (a loader-promoted global
+        alias, so dropping it on a fold deletes a resolvable form)."""
         forms = list(c.get("aliases") or [])
         cdn = c.get("display_name")
         if isinstance(cdn, str) and cdn and cdn not in forms:
@@ -3740,8 +3124,8 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
         return forms
 
     def _union_back(rec: dict, c: dict, donor_id: str | None = None) -> None:
-        # `donor_id`: c's committed id when it differs from rec's (a respelled
-        # reappearance) — it and the forms it pre-claimed become aliases.
+        # `donor_id`: c's committed id when it differs from rec's; it and the
+        # forms it pre-claimed become aliases.
         rcid = rec["id"]
         ok = (None, rcid) if donor_id is None else (None, rcid, donor_id)
         cur = set(rec.get("aliases") or [])
@@ -3753,15 +3137,12 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
                 continue
             cur.add(a)
             fresh_form_owner[a] = rcid
-        # Don't materialize `aliases: []` on a weak-only enrich record — the
-        # fresh emission omits the key, and the carry-forward must round-trip
-        # byte-identically.
+        # No `aliases: []` on a weak-only record: the fresh emission omits the
+        # key and the carry-forward must round-trip byte-identically.
         if cur or "aliases" in rec:
             rec["aliases"] = sorted(cur)
         _union_alias_platforms(rec, _entry_alias_platforms(c))
-        # Weak scalars on a committed enrich record persist through the
-        # carry-forward (today's values win per field); a FULL mint keeps its
-        # own strong fields and never absorbs weak ones.
+        # A full mint never absorbs weak scalars.
         if "display_name" not in rec:
             _merge_weak(rec, _donor_scalars(c))
 
@@ -3774,10 +3155,8 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
         if not ccid:
             continue
         if ccid in core_skip:
-            # Same skip rule as _carry_forward_committed: a core-skipped
-            # committed record whose surface form an existing canonical claims
-            # still donates its scalars weakly onto that owner; its aliases
-            # stay suppressed (skip_source_ids curates them away).
+            # Same rule as _carry_forward_committed: scalars still donate
+            # weakly onto a claiming owner; aliases stay suppressed.
             scalars = _donor_scalars(c)
             if scalars:
                 sk_owner = existing_exact.get(ccid) or existing_norm.get(_norm(ccid))
@@ -3786,9 +3165,7 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
             continue
         prior = fresh_seen_lc.get(ccid.lower())
         if prior is None and "display_name" in c:
-            # Respelled reappearance (org-aware collision key + the
-            # fold_collisions size guard, with the order/brand-insensitive
-            # extended-twin fallback) — full committed mints only.
+            # Respelled twin, full committed mints only.
             t = fresh_seen_twin.get(_twin_key(ccid)) or next(
                 (fresh_seen_twin[k] for k in sorted(_extended_twin_keys(ccid))
                  if k in fresh_seen_twin),
@@ -3797,17 +3174,8 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
             if t is not None and _bsizes(ccid) == _bsizes(t["id"]):
                 prior = t
         if prior is not None:
-            # STABILITY RULE, RUNG-MONOTONE (same as _carry_forward_committed):
-            # a committed id beats a respelled fresh twin among EQUAL rungs —
-            # including a CASE-ONLY respell (committed casing wins, matching
-            # the non-catalog path) — except during the one-shot adoption
-            # migration. A fresh hf_deferred twin (a REAL HF repo id, rung 1)
-            # is never renamed back to a committed non-HF id: the committed id
-            # is absorbed as an alias instead (`_union_back` with donor) and
-            # its parent-edge references are repointed below. Rung 2 over 3
-            # (OpenRouter key over invented) stays migration-gated; the
-            # deferred debt is counted and logged. Renamed spellings are
-            # repointed below.
+            # Stability rule, rung-monotone, as in _carry_forward_committed
+            # (a case-only respell counts: committed casing wins).
             promote = (
                 prior["id"] != ccid
                 and _entry_meta(prior).get("hf_deferred") is True
@@ -3821,16 +3189,13 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
                 and _entry_meta(c).get("openrouter_adopted") is not True
                 and _entry_meta(c).get("hf_deferred") is not True
             ):
-                # Counted for every deferred-debt shape, incl. a twin that
-                # already stabilized onto an earlier committed id (mirrors
-                # the non-catalog counter).
                 pending_rung2_cat += 1
             if (
                 prior["id"] != ccid
                 and not adopt_migration
                 and not promote
                 and "display_name" in prior
-                and prior["id"] not in stabilized_cat  # already took a committed id
+                and prior["id"] not in stabilized_cat
             ):
                 old = prior["id"]
                 prior["id"] = ccid
@@ -3849,10 +3214,6 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
                 _union_back(prior, c, donor_id=old)
                 continue
             if prior["id"] != ccid:
-                # The committed id lost the twin match (migration run, a
-                # higher-rung fresh id, or an already-stabilized twin): it
-                # becomes an alias via `_union_back`, so parent edges naming
-                # it are repointed below (mirror of the stabilized repoint).
                 promoted_cat[ccid] = prior["id"]
             _union_back(prior, c, donor_id=ccid if prior["id"] != ccid else None)
             continue
@@ -3867,7 +3228,7 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
         if owner is not None:
             _enrich_target(owner, [ccid, *_committed_forms(c)], _entry_alias_platforms(c), donor_id=ccid, scalars=_donor_scalars(c))
             continue
-        if "display_name" in c:  # full mint with no surviving target anywhere
+        if "display_name" in c:
             rc = dict(c)
             meta = _entry_meta(rc)
             meta["upstream_status"] = "removed"
@@ -3883,8 +3244,7 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
     if stabilized_cat or promoted_cat:
         renamed = {old: new for new, old in stabilized_cat.items()}
         renamed.update(promoted_cat)
-        # Path-compress (mirror of _carry_forward_committed): a
-        # promote-then-rename chain must compose to the final survivor.
+        # A promote-then-rename chain must compose to the final survivor.
         for old in list(renamed):
             seen = {old}
             target = renamed[old]
@@ -3912,9 +3272,6 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
             file=sys.stderr,
         )
     if not adopt_migration:
-        # Owner-visible debt line (always printed on a plain cron run): rung-2
-        # promotions (OpenRouter key over invented id) the stability rule
-        # deferred to the next deliberate migration run (PLAN G3).
         print(
             f"[refresh] catalog stability rule: {pending_rung2_cat} pending "
             f"rung-2 id promotion(s) (OpenRouter key over invented id) awaiting "
@@ -3928,24 +3285,16 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
             file=sys.stderr,
         )
 
-    # Org-FK canonicalization (merge NEW upstream models against the EXISTING org
-    # universe): snap each fresh mint's org_id to the canonical developer /
-    # HF-true community casing BEFORE writing the catalog
-    # and computing `missing`. Without this, a new models.dev model whose org
-    # already exists as a community org under HF-true casing (e.g. `Sao10K`) but
-    # arrives lowercased (`sao10k`) mints a case-variant TWIN org (split
-    # identity) via the case-sensitive set-difference below. Source-local: only
-    # the catalog's own fresh entries + orgs.generated.yaml are written here; the
-    # whole-universe rewrite stays the separate one-shot. Same authority closure
-    # as canonicalize_model_org_ids -> the two never diverge.
+    # Snap each fresh mint's org_id to the canonical casing before `missing`
+    # is computed, or a lowercased arrival (`sao10k`) mints a twin of the
+    # existing `Sao10K` org via the case-sensitive set-difference below.
     _canon_org = _build_org_canonicalizer()
     for e in fresh:
         for field in ("org_id", "lineage_origin_model_org_id"):
             if e.get(field):
                 e[field] = _canon_org(e[field])
 
-    # Stable record key order regardless of which donor reached the owner
-    # first (a later donor may add `aliases` to a weak-only record).
+    # Stable key order regardless of which donor reached the owner first.
     out_entries = fresh + [
         {k: r[k] for k in ("id", "aliases", "metadata", "weak") if k in r}
         for r in enrich
@@ -3984,11 +3333,11 @@ def regenerate_catalog(full: list[dict], adopt_migration: bool = False) -> None:
     )
 
 
-# All model source files whose org_ids must have a canonical_orgs row.
+# Model sources whose org_ids must have a canonical_orgs row.
 _ALL_MODEL_SOURCES = (
     HF_ORACLE_PATH, SEED_PATH, HUB_STATS_PATH, CATALOG_OUT_PATH, TIER3_PATH, CORE_PATH,
 )
-# The real-HF casing authority: org_ids minted from real HF repos (HF-true casing).
+# Sources whose org_ids carry HF-true casing.
 _HF_TRUE_CASING_SOURCES = (HF_ORACLE_PATH, HUB_STATS_PATH)
 ORGS_DISTINCT_ALLOWLIST_PATH = REPO_ROOT / "seed" / "orgs_distinct_allowlist.yaml"
 
@@ -4018,15 +3367,11 @@ def _write_source_entries(path: Path, entries: list[dict]) -> None:
 
 
 def _build_org_canonicalizer() -> Callable[[str | None], str | None]:
-    """The single org-canonicalization closure shared by the whole-universe
-    one-shot (`canonicalize_model_org_ids`) and the source-local --catalog cron
-    (`regenerate_catalog`), so the two NEVER diverge on casing (which would
-    oscillate across runs). Folds an HF org spelling to: curated developer id ->
-    authoritative HF-true community casing -> verbatim, honoring the distinct-org
-    allowlist. Authority: PRIMARY from real-HF sources (HF-true), FALLBACK across
-    all model sources + the existing canonical_orgs rows (so a new upstream model
-    snaps to an EXISTING org row even when no model yet references that casing).
-    Returns a `_canon(org_spelling) -> canonical_org_id` callable."""
+    """`_canon(org_spelling) -> canonical_org_id`: curated developer id, else
+    HF-true community casing, else verbatim, honoring the distinct-org
+    allowlist. Shared by `canonicalize_model_org_ids` and `regenerate_catalog`
+    so casing never oscillates between runs; real-HF sources are the primary
+    casing authority, all sources plus existing org rows the fallback."""
     from eval_entity_resolver.fold import build_curated_org_map, build_community_casing, canonicalize_org
 
     curated_map = build_curated_org_map(_catalog_load_list(ORGS_SEED_PATH))
@@ -4042,7 +3387,7 @@ def _build_org_canonicalizer() -> Callable[[str | None], str | None]:
         + [e["id"] for p in (ORGS_SEED_PATH, ORGS_GENERATED_PATH)
            for e in _catalog_load_list(p) if isinstance(e.get("id"), str)]
     )
-    community = {**fallback, **primary}  # primary (real-HF) wins
+    community = {**fallback, **primary}
 
     def _canon(org):
         if not isinstance(org, str) or not org:
@@ -4053,22 +3398,10 @@ def _build_org_canonicalizer() -> Callable[[str | None], str | None]:
 
 
 def canonicalize_model_org_ids(write_core: bool = False) -> int:
-    """Canonicalize EVERY model's org_id + lineage_origin_model_org_id across all
-    sources to ONE spelling per developer, via the single shared
-    eval_entity_resolver.fold.canonicalize_org: curated developer id when the org
-    folds to one, else the authoritative HF-true community casing (from the
-    hf_oracle/hub_stats real-HF org_ids), honoring the distinct-org allowlist.
-
-    This is the single org-canonicalization pass — replaces relying on each
-    generator to emit a consistent casing (they see different raw spellings). A
-    refresh re-runs it deterministically. Returns the number of fields rewritten.
-
-    `write_core` gates rewriting the hand-curated core.yaml: the cron path
-    NEVER writes it (`_write_source_entries`'s YAML re-dump hoists core's
-    inline comments and reformats the whole file) — core stays in the READ
-    set for the canonicalization authority, and any core org_id spelling
-    that would need rewriting is reported loudly for a manual fix instead.
-    The one-shot regenerate_sources.sh opts in via --reconcile-orgs-write-core."""
+    """Canonicalize every model's org_id + lineage_origin_model_org_id across
+    all sources to one spelling per developer; returns the fields rewritten.
+    `write_core=False` never rewrites core.yaml (the YAML re-dump would hoist
+    its inline comments), reporting a needed change for manual fix instead."""
     _canon = _build_org_canonicalizer()
 
     rewritten = 0
@@ -4103,25 +3436,14 @@ def canonicalize_model_org_ids(write_core: bool = False) -> int:
 
 
 def reconcile_all_orgs(write_core: bool = False) -> None:
-    """Ensure EVERY org_id referenced by ANY model (across all sources + core)
-    has a canonical_orgs row — mint a community org for those that don't.
-
-    The per-generator org reconciliation only covers each generator's OWN mints
-    (hf_oracle its targets; the --catalog split its fresh mints), so org_ids that
-    appear ONLY in the non-catalog models_dev or tier3 mints dangle. This runs as
-    the LAST regen step (after tier3) over the UNION of all sources, so it is the
-    single authoritative org reconciler. Additive-only: never deletes/renames a
-    row, preserves exact HF org spelling (no separator/case collapse, so it can't
-    collapse genuinely-distinct orgs), excludes org_id=None and any org already
-    CLAIMED by a curated org (id / hf_org / alias) so a community row never shadows
-    a curated lab."""
-    # FIRST canonicalize every model's org_id to one spelling per developer
-    # (curated id / HF-true community casing), so the rows minted below are over
-    # canonical org_ids and no case/separator twins are created.
+    """Mint a community canonical_orgs row for every org_id referenced by any
+    model source (per-generator reconciliation covers only each generator's
+    own mints) that lacks one. Runs last in the regen. Never deletes or
+    renames a curated row; an org a curated lab already claims (id / hf_org /
+    alias) is never minted as a community twin."""
+    # Canonicalize first so the rows minted below are over canonical org_ids.
     canonicalize_model_org_ids(write_core=write_core)
 
-    # Curated CLAIMS (not just ids) so a referenced org that a curated lab already
-    # owns as an hf_org/alias is remapped, not minted as a community twin.
     curated_claims: set[str] = set()
     for e in _catalog_load_list(ORGS_SEED_PATH):
         for form in (e.get("id"), e.get("hf_org"), *(e.get("aliases") or [])):
@@ -4137,14 +3459,9 @@ def reconcile_all_orgs(write_core: bool = False) -> None:
             if isinstance(oid, str) and oid:
                 referenced.add(oid)
 
-    # PRUNE stale case/separator TWINS: a generated org row that NO model
-    # references AND whose case/separator-insensitive key matches a DIFFERENT,
-    # referenced org is a leftover from a prior community casing (e.g. an old
-    # lowercase `madeagents` after canonicalize flipped every model to the
-    # HF-true `MadeAgents`). It would trip test_no_case_split_orgs. Dropping it
-    # is safe — it's unreferenced and a genuine twin (NOT a distinct uploader,
-    # which would still be referenced by its own models). Curated orgs are never
-    # touched (only seed/orgs.generated.yaml rows). Honors the distinct allowlist.
+    # Prune generated org rows no model references whose case/separator key
+    # matches a different, referenced org: leftovers of a prior casing (a
+    # distinct uploader would still be referenced by its own models).
     from eval_entity_resolver.fold import _norm_org_key
     distinct = _load_distinct_org_allowlist()
     ref_keys = {_norm_org_key(o): o for o in referenced}
@@ -4237,7 +3554,6 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    # --reconcile-orgs: standalone, no network / no model-source rewrite.
     if args.reconcile_orgs or args.reconcile_orgs_write_core:
         reconcile_all_orgs(write_core=args.reconcile_orgs_write_core)
         return 0
@@ -4248,8 +3564,6 @@ def main() -> int:
         print(f"[refresh] ERROR: {ORGS_SEED_PATH} not found or empty. Seed orgs first.", file=sys.stderr)
         return 1
 
-    # --catalog: skip the models_dev source rewrite entirely; only split the
-    # full author-lab catalog against the EXISTING on-disk sources.
     if args.catalog:
         if args.preview_out is not None:
             p.error(
@@ -4281,30 +3595,14 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    # Finalize BEFORE reconciliation (same order as the --catalog path, which
-    # dedups `_finalize_entries(generated)`). _finalize_entries flattens the
-    # working `alias_platforms` map into `aliases`; without it the reconcile's
-    # steal/fold/donate logic reads only `aliases` and is BLIND to the provider
-    # spellings still buried in alias_platforms (e.g. a `-Instruct` mint's
-    # `meta/llama-3-1-8b-instruct` provider forms), so those forms leak past the
-    # dedup and only surface — on the wrong canonical — once _write_yaml flattens
-    # them, aborting the seed with a base/variant alias collision. Idempotent, so
-    # _write_yaml's re-finalize below is a no-op.
+    # Finalize before reconciliation: reconcile reads only `aliases`, so
+    # provider spellings still buried in `alias_platforms` would leak past it
+    # and surface on the wrong canonical when _write_yaml flattens them.
     generated = _tag_openrouter_key_ids(_finalize_entries(generated), api)
-    # Carry the committed file forward through the wholesale rewrite: an
-    # upstream (provider,model) removal retains the committed entry, an
-    # alias-level removal unions the committed aliases back, and the returned
-    # claims map stops a fresh mint from stealing a carried entry's forms.
     generated, committed_claims = _carry_forward_committed(
         generated, _catalog_load_list(SEED_PATH),
         adopt_migration=args.adopt_openrouter_ids_migration,
     )
-    # Core-aware reconciliation: suppress/repoint any mint whose normalized id
-    # collides with an existing canonical (incl. core.yaml) under a DIFFERENT id,
-    # so the full re-cased rewrite is ADDITIVE rather than clobbering curated
-    # fixes. Same steal-guard the --catalog path uses; excludes SEED_PATH (we are
-    # rewriting it). Carried-forward entries run through the same pass, so one
-    # that has since been curated/folded is suppressed, not resurrected.
     before = len(generated)
     generated = reconcile_generated_against_existing(
         generated, committed_claims=committed_claims
@@ -4315,12 +3613,8 @@ def main() -> int:
             f"mint(s) colliding (normalized) with an existing canonical",
             file=sys.stderr,
         )
-    # Org-FK canonicalization (same closure + authority as the --catalog path and
-    # the one-shot): snap each surviving mint's org_id to the existing developer /
-    # HF-true community casing so the full re-cased rewrite never mints a
-    # case-variant TWIN org for a developer that already exists under HF-true
-    # casing. Without it, a model whose org arrives lowercased (`sao10k`) would
-    # split-identity against the existing `Sao10K` row.
+    # Without this a lowercased arrival (`sao10k`) would split identity
+    # against the existing `Sao10K` org row.
     _canon_org = _build_org_canonicalizer()
     for e in generated:
         for field in ("org_id", "lineage_origin_model_org_id"):
@@ -4363,7 +3657,6 @@ def main() -> int:
         e["id"] for e in generated
         if "display_name" in e and _entry_meta(e).get("hf_deferred") is True
     }
-    # An hf_deferred id the frozen oracle does not name came from hub_stats_index.
     index_promoted = deferred_ids - _oracle_fixed_ids()
     print(
         f"[refresh] wrote {len(generated)} model entries to {SEED_PATH} "

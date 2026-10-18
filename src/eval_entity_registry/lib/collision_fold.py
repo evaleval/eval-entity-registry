@@ -1,29 +1,19 @@
-"""Seed-time normalize-collision fold.
-
-Different sources mint the SAME model under different separator spellings
-(`google/gemini-1.5-pro` vs `google/gemini-1-5-pro`, `openai/gpt-5.2` vs the
-venice relabel `openai/gpt-52`, `anthropic/claude-opus-4.5` vs `claude-opus4-5`).
-Each becomes its own canonical → its own page. This pass folds the losers of a
-collision group into one winner so there is ONE canonical (one page) per model:
-the loser id + display_name + aliases move onto the winner, and parent edges
-that pointed at a loser are repointed to the winner.
-
-Guards against FALSE merges — a separator difference that changes a parameter
-SIZE's value (`opt-1.3b` is 1.3B params, `opt-13b` is 13B — different models). A
-curated `never_fold` list covers any structural look-alikes the size guard can't
-catch; a `prefer` map can pin the winner spelling for a collision key.
-"""
+"""Seed-time normalize-collision fold: sources mint the same model under
+different separator spellings (`gemini-1.5-pro` vs `gemini-1-5-pro`), so each
+collision group folds into one winner (ids, display_name and aliases move
+onto it; parent edges are repointed). A separator difference can change a
+parameter size (`opt-1.3b` vs `opt-13b`), so size-conflicting groups never
+fold; `never_fold` covers other look-alikes, `prefer` pins a winner."""
 import json as _json
 import re
 from collections import defaultdict
 
 _SEP_RE = re.compile(r"[-_./]+")
 _BSIZE_RE = re.compile(r"(\d+(?:\.\d+)?)b\b")
-# Curated → curated/HF beat generators; dotted version spelling beats joined.
+# Curated / HF entries beat generated ones.
 _SRC_RANK = {None: 3, "NA": 3, "hf": 3, "models_dev": 2, "inferred": 1}
-# Placeholder org prefixes — a draft id whose org couldn't be resolved. Stripped
-# for collision keying so `unknown/perplexity-sonar-reasoning` buckets with the
-# real `perplexity/sonar-reasoning`, and never wins the fold over a real org.
+# Unresolved-org draft prefixes: stripped for collision keying so
+# `unknown/perplexity-sonar-reasoning` buckets with `perplexity/sonar-reasoning`.
 _PLACEHOLDER_ORGS = frozenset({"unknown", "none", "na", ""})
 
 
@@ -73,16 +63,12 @@ def _edges(v):
 
 def fold_collisions(entries: list[dict], never_fold=(), prefer=None, force_merge=None,
                     non_lineage_bases=None):
-    """Fold normalize-colliding canonical model entries into one winner each.
+    """Fold normalize-colliding model entries into one winner each.
 
-    `force_merge` is an explicit {loser_id -> winner_id} map for duplicates that
-    do NOT share a collision key (cross-spelling repos the resolver missed, e.g.
-    `deepseek-v2-lite-chat` -> `deepseek-ai/DeepSeek-V2-Lite-Chat`); these fold
-    through the same alias/parent-transfer path.
-
-    Returns (surviving_entries, remap) where remap maps every folded loser id to
-    its winner id. Pure function over the entry dicts (mutates winners in place).
-    """
+    `force_merge` is an explicit {loser_id -> winner_id} map for duplicates
+    that do not share a collision key; they fold through the same path.
+    Returns (surviving_entries, remap: loser id -> winner id). Mutates
+    winners in place."""
     prefer = prefer or {}
     non_lineage_bases = set(non_lineage_bases or ())
     never = [frozenset(p) for p in never_fold]
@@ -92,7 +78,6 @@ def fold_collisions(entries: list[dict], never_fold=(), prefer=None, force_merge
     for e in entries:
         groups[collision_key(e["id"])].append(e["id"])
 
-    # Seed with the explicit cross-spelling merges (only those whose winner exists).
     remap: dict[str, str] = {
         l: w for l, w in (force_merge or {}).items() if l in by_id and w in by_id and l != w
     }
@@ -100,8 +85,7 @@ def fold_collisions(entries: list[dict], never_fold=(), prefer=None, force_merge
         if len(gids) < 2:
             continue
         if sum(1 for i in gids if by_id[i].get("resolution_source") == "hf") > 1:
-            # Two+ real HF repos that merely normalize-collide are DISTINCT
-            # uploads (e.g. naps-...-v-0.1.0 vs ...-v0.1.0) — keep them separate.
+            # Two real HF repos that normalize-collide are distinct uploads.
             continue
         if len({_bsizes(i) for i in gids}) > 1:          # size-conflict guard
             continue
@@ -117,11 +101,8 @@ def fold_collisions(entries: list[dict], never_fold=(), prefer=None, force_merge
     if not remap:
         return entries, {}
 
-    # Path-compress loser->loser chains: a group-fold winner may itself be a
-    # curated force_merge loser (e.g. `…-31-24b-instruct` folds to
-    # `…-3-1-24b-instruct`, which force-merges to `…-Instruct-2503`). Resolve each
-    # loser to its FINAL surviving winner so the transfer pass below never looks
-    # up a folded-away id.
+    # A group-fold winner may itself be a force_merge loser; resolve chains to
+    # the final survivor so the transfer pass never looks up a folded-away id.
     for lid in list(remap):
         w, seen = remap[lid], {lid}
         while w in remap and w not in seen:
@@ -132,10 +113,8 @@ def fold_collisions(entries: list[dict], never_fold=(), prefer=None, force_merge
     surviving = [e for e in entries if e["id"] not in remap]
     surv_by_id = {e["id"]: e for e in surviving}
 
-    # Move each loser's id + display_name + aliases onto its winner; backfill
-    # missing scalars. The display_name counts: the seed promotes it to a
-    # global alias, so dropping it on fold deletes a resolvable surface form
-    # (e.g. `Veo-3.1-Fast` when `google/veo-3-1` folds into `google/veo3-1`).
+    # The loser's display_name moves too: the seed promotes display_name to a
+    # global alias, so dropping it would delete a resolvable surface form.
     for lid, wid in remap.items():
         le, we = by_id[lid], surv_by_id[wid]
         aliases = list(we.get("aliases") or [])
@@ -147,27 +126,18 @@ def fold_collisions(entries: list[dict], never_fold=(), prefer=None, force_merge
             if a and a != wid and a not in aliases:
                 aliases.append(a)
         we["aliases"] = aliases
-        # Union the loser's parent edges into the winner — they are the same
-        # model, so the winner inherits the loser's lineage (the repoint pass
-        # below repoints folded parent ids, drops self-edges, and dedupes by id).
-        # PRECEDENCE: a curated (`reviewed`) winner that DECLARES its own parents is
-        # authoritative for lineage — it does NOT absorb a `draft`/inferred loser's
-        # inferred edges (the same core-beats-generated rule the loader applies to
-        # scalars). Prevents a tier3 name-inference guess (e.g. the stub edge
-        # `deepseek/deepseek-v2.5 -> deepseek/deepseek`) from polluting a curated
-        # lineage. Scoped to winners with NON-EMPTY curated parents so a reviewed
-        # root still inherits a loser's (possibly correct) inferred base — dropping
-        # that too is too blunt and regresses real lineage (e.g. Nemotron<-Llama).
+        # A reviewed winner that declares its own parents is authoritative and
+        # does not absorb an inferred loser's edges. Scoped to NON-EMPTY curated
+        # parents: a reviewed root still inherits a loser's inferred base, which
+        # is often the only lineage it has.
         winner_curated_lineage = (
             we.get("review_status") == "reviewed" and _edges(we.get("parents"))
         )
         loser_inferred = (
             le.get("review_status") == "draft" or le.get("resolution_source") == "inferred"
         )
-        # Never inherit an edge to an underspecified umbrella (`deepseek/deepseek`):
-        # a tier3 finetune fallback must not become a curated winner's lineage when
-        # its inferred dup folds in. (Only filters FOLD-inherited edges, so the
-        # pre-existing umbrella children the oracle froze are left untouched.)
+        # Never inherit an edge to an umbrella base (`deepseek/deepseek`); only
+        # fold-inherited edges are filtered, pre-existing ones stay.
         le_edges = [e for e in _edges(le.get("parents"))
                     if not (isinstance(e, dict) and e.get("id") in non_lineage_bases)]
         if le_edges and not (winner_curated_lineage and loser_inferred):
@@ -178,7 +148,6 @@ def fold_collisions(entries: list[dict], never_fold=(), prefer=None, force_merge
             if we.get(f) in (None, "") and le.get(f) not in (None, ""):
                 we[f] = le[f]
 
-    # Repoint parent edges loser→winner, dropping self-edges and duplicates.
     for e in surviving:
         raw = e.get("parents")
         edges = _edges(raw)
@@ -194,7 +163,7 @@ def fold_collisions(entries: list[dict], never_fold=(), prefer=None, force_merge
                 pid = remap[pid]
                 ed = {**ed, "id": pid}
                 changed = True
-            if pid == e["id"] or pid in seen:   # self-edge / duplicate after repoint
+            if pid == e["id"] or pid in seen:
                 changed = True
                 continue
             seen.add(pid)

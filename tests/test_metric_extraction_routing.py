@@ -1,19 +1,9 @@
-"""Every metric surface form survives the producer's metric-resolution path.
-
-The producer (eval_cards_backend_pipeline stage C) resolves a record's
-metric, when the structured metric_id misses, by letting the record's own
-metric_name decide when it resolves to a non-catch-all metric (catch-alls
-are `metadata.catch_all` in the seed) and the description adds nothing
-more specific (`metric_name_wins`), else by running `extract_metric` over
-the description-like text. A display name or alias that lands on a
-DIFFERENT canonical under that order is a silent mis-merge even though
-`Resolver.resolve(raw)` is right. This models the description-absent case
-a bare surface form is: no structured metric_id, no description, no
-source_config; for that case the producer rule reduces to "direct
-non-catch-all hit, else extraction". The extraction-only leg is gated by an
-inventory of the forms it is known to mis-route, kept exact in both
-directions, so a new compound name the keyword table does not know fails
-instead of joining the tail silently, and a fix has to shrink the list.
+"""Every metric surface form (display name or alias) lands on its own
+canonical under the producer's order: direct non-catch-all hit, else
+`extract_metric` over the text. A form landing elsewhere is a silent
+mis-merge even when `Resolver.resolve(raw)` is right. The extraction-only
+leg is gated by an exact inventory of known mis-routes, so a new compound
+name fails and a fix must shrink the list.
 """
 import json
 from pathlib import Path
@@ -26,12 +16,9 @@ from eval_entity_resolver.eee import extract_metric
 _ROOT = Path(__file__).resolve().parent.parent
 _FIXTURES = _ROOT / "fixtures"
 
-# Every metric surface form the keyword extractor alone still routes to a
-# different canonical or to nothing, on the day this inventory was taken. The
-# producer never relies on extraction alone for these (the direct alias leg
-# takes them), but a NEW entry joining this set is a new hazard: the test
-# below fails on any mis-route that is not listed here, and shrinking the
-# list is the way to record a fix.
+# Surface forms the keyword extractor alone routes elsewhere or nowhere. The
+# direct alias leg takes them in production; a new entry is a new hazard, and
+# shrinking the list is how a fix is recorded.
 KNOWN_EXTRACTION_MISROUTES = frozenset({
     ("acc-at-0-25", "Acc@0.25"),
     ("action-space-generalization-mse", "Action Space Generalization MSE"),
@@ -44,8 +31,7 @@ KNOWN_EXTRACTION_MISROUTES = frozenset({
     ("bootstrap-score", "Bootstrap Score"),
     ("bootstrap-score", "Bootstrap score"),
     ("codegolf.score", "codegolf.score"),
-    # benchmark-scoped aliases for the toxicity classifier rate: the extractor
-    # reads the generic `score` tail; the direct alias tier owns the route.
+    # Benchmark-scoped aliases; the extractor reads only the `score` tail.
     ("unsafe-continuation-rate", "polyglotoxicityprompts.score"),
     ("unsafe-continuation-rate", "realtoxicityprompts.score"),
     ("compilation-success-rate-csr", "Compilation Success Rate (CSR)"),
@@ -178,10 +164,8 @@ def test_producer_order_lands_on_its_own_canonical(resolver, catch_all, canonica
 
 
 def test_extraction_alone_introduces_no_new_misroute(resolver):
-    """A surface form the extractor mis-routes must be in the reviewed
-    inventory; a fresh one means a new compound name the keyword table does
-    not know (add a compound pattern before the generic one, as for
-    length-controlled win rate), not a new exemption."""
+    """A fresh mis-route means a compound name the keyword table lacks: add
+    a compound pattern before the generic one, not a new exemption."""
     fresh = sorted(
         (canonical, raw) for canonical, raw in _surface_forms()
         if (canonical, raw) not in KNOWN_EXTRACTION_MISROUTES

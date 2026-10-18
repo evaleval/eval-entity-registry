@@ -1,28 +1,23 @@
 #!/usr/bin/env python3
 """
-Deterministic CROSS-SOURCE alias reconciliation — the finalize step run after
-the model seed sources are (re)generated, before seeding.
+Cross-source alias reconciliation: the finalize step after the model seed
+sources are (re)generated, before seeding.
 
-The seed loader fails fast when two canonicals declare the same alias (the owner
-would be nondeterministic). Per-source generators each clean their own output,
-but a contested surface form can still be claimed across DIFFERENT sources (e.g.
-hf_oracle's base `meta-llama/Llama-3.2-1B` carrying the instruct variant's id, or
-two community re-hosts sharing a bare name `gemma-3-1b-it`). This pass resolves
-every such collision ONCE, deterministically, applying the project rule
-("the more-specific / id-owning entity owns the name") so a clean regen always
-produces a seedable, collision-free source set.
+The seed loader fails fast when two canonicals declare the same alias. Each
+generator cleans its own output, but a surface form can still be claimed
+across different sources; this pass resolves every such collision
+deterministically so a clean regen always produces a seedable source set.
 
 Ownership priority for a contested form (highest first):
-  1. the canonical whose ID == the form (an id always beats an alias);
-  2. curated core over a generated source (core is authoritative);
-  3. the canonical whose normalized NAME == the form (the natural owner);
-  4. lexicographically-first id (deterministic tie-break).
+  1. the canonical whose id == the form;
+  2. curated core over a generated source;
+  3. the canonical whose normalized name == the form;
+  4. lexicographically-first id.
 The owner keeps the form; it is stripped from every other canonical's aliases /
-alias_platforms, and a losing display_name is re-derived from the id tail. core
-is NEVER stripped (a core-vs-core collision is surfaced, not auto-resolved).
+alias_platforms, and a losing display_name is re-derived from the id tail. Core
+is never stripped: a core-vs-core collision is reported, not auto-resolved.
 
-Reproducible + idempotent: re-running on a deduped tree is a no-op. Run as the
-last step of scripts/regenerate_sources.sh (and the cron) before seeding.
+Idempotent: re-running on a deduped tree is a no-op.
 
 Usage:
     LOCAL_MODE=true uv run python scripts/dedup_cross_source_aliases.py
@@ -66,13 +61,11 @@ def _name_part(cid: str) -> str:
 
 
 def build_owner_map(core_entries, source_entries):
-    """Return {surface_form -> owner_id} over every id/display_name/alias across
-    core + sources, using the ownership priority above. `source_entries` is a
-    flat list of (entry, is_core=False); core entries are is_core=True."""
+    """Return ({surface_form -> owner_id}, all ids) over every id/display_name/alias
+    across core + sources, using the module docstring's ownership priority."""
     all_entries = [(e, True) for e in core_entries] + [(e, False) for e in source_entries]
     ids = {e["id"] for e, _ in all_entries if isinstance(e.get("id"), str)}
 
-    # form -> list of candidate owners with their priority key
     cands: dict[str, list[tuple]] = defaultdict(list)
 
     def consider(form: str, e: dict, is_core: bool):
@@ -81,7 +74,7 @@ def build_owner_map(core_entries, source_entries):
         cid = e["id"]
         is_id_owner = form == cid
         is_natural = _nz(form) == _nz(_name_part(cid))
-        # priority key: lower is better
+        # Lower sorts first; tuple order is the docstring's priority order.
         key = (
             0 if is_id_owner else 1,
             0 if is_core else 1,
@@ -104,7 +97,7 @@ def build_owner_map(core_entries, source_entries):
 
     owner: dict[str, str] = {}
     for form, lst in cands.items():
-        owner[form] = min(lst)[1]   # min by priority key; [1] is the owner id
+        owner[form] = min(lst)[1]
     return owner, ids
 
 
@@ -115,7 +108,6 @@ def reconcile(dry_run: bool = False) -> int:
 
     owner, _ids = build_owner_map(core_entries, source_entries)
 
-    # Surface core-vs-core contention (we never strip core) for visibility.
     core_ids = {e["id"] for e in core_entries}
     strips: list[str] = []
 
@@ -145,7 +137,6 @@ def reconcile(dry_run: bool = False) -> int:
             mutated = True
         return mutated
 
-    # Strip SOURCES only (core is authoritative).
     changed_paths = []
     for path, doc, ents in loaded:
         any_changed = False
@@ -163,7 +154,6 @@ def reconcile(dry_run: bool = False) -> int:
             path.write_text(header + yaml.safe_dump(out, sort_keys=False, allow_unicode=True, width=200))
             changed_paths.append(path.name)
 
-    # Report.
     for s in strips:
         print(f"[dedup] {s}", file=sys.stderr)
     print(
@@ -171,7 +161,6 @@ def reconcile(dry_run: bool = False) -> int:
         f"form(s) across {len(changed_paths)} source file(s): {changed_paths}",
         file=sys.stderr,
     )
-    # Sanity: a core entry losing a form it declares is a CURATION conflict.
     core_conflicts = []
     for e in core_entries:
         cid = e["id"]

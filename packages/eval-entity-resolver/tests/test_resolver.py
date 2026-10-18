@@ -1,3 +1,7 @@
+"""Resolver strategy chain, structured metric/benchmark id resolution, and
+the harness-version fallback: which tier answers, what must stay no_match,
+and how a structured match reports subset/qualifier/observation_role."""
+
 import pandas as pd
 import pytest
 
@@ -166,7 +170,7 @@ class TestFuzzyStrategy:
         assert result.strategy == "no_match"
 
     def test_thinking_budget_suffix_stripped(self):
-        """claude-opus-4-5-thinking-16k should match claude-opus-4-5 (card_backend pattern)."""
+        """`-thinking-16k` strips to the bare canonical when no thinking-mode canonical is aliased."""
         store = _store_with_aliases(
             ("anthropic/claude-opus-4-5", "model", "anthropic/claude-opus-4-5", None, "confirmed")
         )
@@ -176,12 +180,9 @@ class TestFuzzyStrategy:
         assert result.strategy == "fuzzy"
 
     def test_thinking_budget_prefers_thinking_canonical_when_aliased(self):
-        """When a thinking-mode canonical IS aliased, `-thinking-Nk` should
-        peel only the `-Nk` budget and resolve to the thinking variant —
-        NOT collapse to the bare base (which would lose the thinking-mode
-        signal in eval results). Drop-thinking behavior remains the
-        fallback when no thinking-mode canonical exists (covered by the
-        prior test)."""
+        """When a thinking-mode canonical is aliased, `-thinking-Nk` peels only the
+        budget and lands on the thinking variant, never the bare base (that would
+        lose the mode signal in eval results)."""
         store = _store_with_aliases(
             ("anthropic/claude-haiku-4-5-20251001",
              "model", "anthropic/claude-haiku-4-5-20251001", None, "confirmed"),
@@ -208,11 +209,9 @@ class TestFuzzyStrategy:
         assert result.strategy == "fuzzy"
 
     def test_date_version_suffix_no_longer_strips_to_family(self):
-        """Trailing 8-digit YYYYMMDD must NOT silently collapse to the
-        family pointer — that loses per-snapshot release_date. The
-        resolver returns no_match so the caller's auto-create + hub-stats
-        path produces a properly-linked snapshot canonical with a
-        version-axis parent edge."""
+        """A trailing YYYYMMDD must not collapse to the family pointer (that loses
+        per-snapshot release_date); no_match lets auto-create produce a linked
+        snapshot canonical."""
         store = _store_with_aliases(
             ("anthropic/claude-opus-4-5", "model", "anthropic/claude-opus-4-5", None, "confirmed")
         )
@@ -222,11 +221,8 @@ class TestFuzzyStrategy:
         assert result.strategy == "no_match"
 
     def test_date_version_resolves_when_snapshot_canonical_exists(self):
-        """When the snapshot canonical IS aliased in the registry,
-        normalized/exact match wins before fuzzy ever tries to strip —
-        the resolver returns the snapshot directly. This is the desired
-        behavior: snapshot canonicals carry their own release_date and
-        the family-version edge is on the canonical itself."""
+        """An aliased snapshot canonical wins by exact/normalized match before
+        fuzzy strips anything."""
         store = _store_with_aliases(
             ("anthropic/claude-opus-4-5", "model", "anthropic/claude-opus-4-5", None, "confirmed"),
             ("anthropic/claude-opus-4-5-20251101", "model",
@@ -237,11 +233,8 @@ class TestFuzzyStrategy:
         assert result.canonical_id == "anthropic/claude-opus-4-5-20251101"
 
     def test_date_plus_thinking_no_longer_strips_to_family(self):
-        """Compound date+mode (`-20251101-thinking-16k`) used to double-
-        strip down to the family. Now: thinking-budget peel runs first
-        (`...-thinking`); when no aliased mode-promoted snapshot
-        canonical exists, the strip ladder runs out without producing
-        the bare-family candidate. Auto-create owns the rest."""
+        """A compound `-YYYYMMDD-thinking-Nk` tail must not strip through to the
+        family; without an aliased mode-promoted snapshot canonical, no_match."""
         store = _store_with_aliases(
             ("anthropic/claude-opus-4-5", "model", "anthropic/claude-opus-4-5", None, "confirmed")
         )
@@ -261,7 +254,7 @@ class TestFuzzyStrategy:
         assert result.strategy == "normalized"
 
     def test_meta_llama_org_alias(self):
-        """meta-llama/ → meta/ via expanded org alias map."""
+        """meta-llama/ → meta/ via the org alias map."""
         store = _store_with_aliases(("meta/llama-3-70b", "model", "meta/llama-3-70b", None, "confirmed"))
         resolver = Resolver(store)
         result = resolver.resolve("meta-llama/llama-3-70b", "model")
@@ -269,11 +262,8 @@ class TestFuzzyStrategy:
         assert result.strategy == "fuzzy"
 
     def test_qwen_org_alias_to_alibaba(self):
-        """`Qwen/<model>` (HF-namespace upload form) → `alibaba/<model>`
-        via the qwen → alibaba org alias. The reverse direction
-        (alibaba → qwen) was rejected because of the non-Qwen
-        `alibaba/mineru2-pipeline` entry; this direction has no analogous
-        collision."""
+        """`Qwen/<model>` (HF upload namespace) → `alibaba/<model>` via the org
+        alias map."""
         store = _store_with_aliases(
             ("alibaba/qwen2-vl-7b-instruct", "model", "alibaba/qwen2-vl-7b-instruct", None, "confirmed")
         )
@@ -282,9 +272,8 @@ class TestFuzzyStrategy:
         assert result.canonical_id == "alibaba/qwen2-vl-7b-instruct"
 
     def test_year_only_no_longer_strips_to_family(self):
-        """`openai/gpt-5-2024` used to peel the trailing year to
-        `openai/gpt-5`. Now: year-only is exclusively a bare-family
-        peel and the auto-create path owns it. Returns no_match."""
+        """A trailing bare year must not peel to the family; no_match (auto-create
+        owns it)."""
         store = _store_with_aliases(("openai/gpt-5", "model", "openai/gpt-5", None, "confirmed"))
         resolver = Resolver(store)
         result = resolver.resolve("openai/gpt-5-2024", "model")
@@ -292,9 +281,8 @@ class TestFuzzyStrategy:
         assert result.strategy == "no_match"
 
     def test_iso_date_strip_does_not_apply_to_non_openai(self):
-        """The OpenAI date-peel is org-scoped: `meta/llama-3-2024` must NOT
-        strip to `meta/llama-3` because Meta's release cadence doesn't use
-        the OpenAI YYYY-MM-DD truncated-month convention."""
+        """The OpenAI YYYY-MM-DD date peel is org-scoped: `meta/llama-3-2024` must
+        not strip to `meta/llama-3`."""
         store = _store_with_aliases(("meta/llama-3", "model", "meta/llama-3", None, "confirmed"))
         resolver = Resolver(store)
         result = resolver.resolve("meta/llama-3-2024", "model")
@@ -302,9 +290,8 @@ class TestFuzzyStrategy:
         assert result.strategy == "no_match"
 
     def test_iso_date_strip_rejects_non_year_4digit_tail(self):
-        """The year-range guard (2015–2035) prevents arbitrary 4-digit
-        tails like `-1024` (a number, not a year) from triggering the
-        peel even on OpenAI-shaped raws."""
+        """The year-range guard keeps a non-year 4-digit tail like `-1024` from
+        triggering the OpenAI date peel."""
         store = _store_with_aliases(("openai/gpt-5", "model", "openai/gpt-5", None, "confirmed"))
         resolver = Resolver(store)
         result = resolver.resolve("openai/gpt-5-1024", "model")
@@ -312,18 +299,8 @@ class TestFuzzyStrategy:
         assert result.strategy == "no_match"
 
     def test_diverse_date_shapes_all_no_match_when_only_family_aliased(self):
-        """Regression coverage for the three real-world snapshot shapes
-        called out during planning. Each should fall through fuzzy
-        without collapsing to its family — the auto-create path then
-        owns producing a snapshot canonical with proper parents.
-
-          - google/gemini-exp-1114        — trailing MMDD (4-digit)
-          - stepfun/step-2-16k-202411     — trailing YYYYMM (6-digit)
-          - tencent/hunyuan-turbos-20250313 — trailing YYYYMMDD (8-digit)
-
-        The 4-digit and 6-digit cases never had a fuzzy strip in the
-        first place; they're tested here together with the 8-digit
-        case so the behavior is documented in one place."""
+        """Trailing MMDD, YYYYMM and YYYYMMDD tails all fall through fuzzy without
+        collapsing to the family when only the family is aliased."""
         store = _store_with_aliases(
             ("google/gemini-exp", "model", "google/gemini-exp", None, "confirmed"),
             ("stepfun/step-2-16k", "model", "stepfun/step-2-16k", None, "confirmed"),
@@ -340,12 +317,9 @@ class TestFuzzyStrategy:
             assert result.strategy == "no_match"
 
     def test_iso_full_date_no_longer_collapses_to_family(self):
-        """`openai/gpt-5-2025-08-07` used to peel through `-2025-08`
-        and `-2025` and finally land on `openai/gpt-5` (family). Now:
-        the strip ladder still tries `-2025-08` and `-2025` as
-        intermediate snapshot candidates, but stops short of the bare
-        family. When NO intermediate snapshot canonical is aliased,
-        no_match is returned; auto-create produces the snapshot."""
+        """The OpenAI ISO-date peel tries the truncated-month and year forms as
+        snapshot candidates but never the bare family; with only the family
+        aliased, no_match."""
         store = _store_with_aliases(("openai/gpt-5", "model", "openai/gpt-5", None, "confirmed"))
         resolver = Resolver(store)
         result = resolver.resolve("openai/gpt-5-2025-08-07", "model")
@@ -353,9 +327,8 @@ class TestFuzzyStrategy:
         assert result.strategy == "no_match"
 
     def test_iso_date_strip_prefers_truncated_month_canonical(self):
-        """When the registry has both the truncated-month canonical and
-        the family root, the peel stops at the first hit (truncated
-        month) — preserves snapshot identity instead of over-collapsing."""
+        """The peel stops at the first aliased hit (truncated month) rather than
+        over-collapsing to the family."""
         store = _store_with_aliases(
             ("openai/gpt-5", "model", "openai/gpt-5", None, "confirmed"),
             ("openai/gpt-5-2025-08", "model", "openai/gpt-5-2025-08", None, "confirmed"),
@@ -366,10 +339,8 @@ class TestFuzzyStrategy:
         assert result.strategy == "fuzzy"
 
     def test_iso_date_with_unknown_host_prefix_no_longer_collapses(self):
-        """`unknown/gpt-5-2025-08-07` — host strip drops `unknown/` and
-        the OpenAI ISO-date peel runs. With the bare-family candidate
-        no longer emitted by the peel, no candidate hits when only the
-        family is aliased. Auto-create owns the snapshot."""
+        """Host-prefix strip plus the OpenAI date peel still never yields the bare
+        family; with only the family aliased, no_match."""
         store = _store_with_aliases(
             ("openai/gpt-5", "model", "openai/gpt-5", None, "confirmed"),
             ("gpt-5",        "model", "openai/gpt-5", None, "confirmed"),
@@ -391,19 +362,14 @@ class TestNoMatch:
 
 
 class TestPromotedVariantResolution:
-    """After the alias-promotion pass, instruct/chat/quantized/snapshot
-    variants are first-class canonicals with their own aliases. Resolving
-    a raw value matching one of those variants must NOT collapse to the
-    base — eval scores on `Llama-3-8B-Instruct` aren't comparable to
-    scores on the base `Llama-3-8B`. Regression coverage: there is no
-    `_FAMILY_STAGE_SUFFIXES` strip in fuzzy.py — the resolver relies on
-    explicit alias entries for instruct/chat/etc., and stays out of the
-    way for unknown post-training suffixes."""
+    """Instruct/chat/quantized/snapshot variants are first-class canonicals;
+    resolving one must not collapse to the base (scores on `Llama-3-8B-Instruct`
+    are not comparable to the base). There is no resolver-side instruct/chat
+    strip: unknown post-training suffixes are no_match."""
 
     def _registry_like_store(self):
-        """Mini fixture mimicking the post-promotion registry: base + promoted
-        instruct + promoted instruct-quant, each with their own surface-form
-        aliases."""
+        """Base + promoted instruct + promoted instruct-quant + promoted snapshot,
+        each with its own aliases."""
         return _store_with_aliases(
             # Base
             ("Llama-3-8B", "model", "meta/llama-3-8b", None, "confirmed"),
@@ -434,8 +400,8 @@ class TestPromotedVariantResolution:
         assert result.strategy == "exact"
 
     def test_doubled_org_prefix_instruct_resolves_to_instruct(self):
-        """HF-style `meta-llama/Meta-Llama-3-8B-Instruct` (org form duplicated
-        inside the bare model id) should land on the instruct canonical."""
+        """An org form duplicated inside the bare model id still lands on the
+        instruct canonical."""
         resolver = Resolver(self._registry_like_store())
         result = resolver.resolve("meta-llama/Meta-Llama-3-8B-Instruct", "model")
         assert result.canonical_id == "meta/llama-3-8b-instruct"
@@ -449,34 +415,27 @@ class TestPromotedVariantResolution:
         resolver = Resolver(self._registry_like_store())
         result = resolver.resolve("gpt-4-0613", "model")
         assert result.canonical_id == "openai/gpt-4-0613"
-        # Sanity check that the snapshot is NOT collapsed onto the base
         assert result.canonical_id != "openai/gpt-4"
 
     def test_quant_falls_through_to_nearest_parent(self):
-        """When a specific quantization isn't a canonical, the fuzzy stem
-        strip drops the `-fp8` suffix and lands on the next-up canonical
-        (the unquantized instruct, in this case). This is the
-        precision-loss policy we explicitly opted into."""
+        """A quantization with no canonical of its own strips to the nearest
+        unquantized canonical (the accepted precision-loss fallback)."""
         resolver = Resolver(self._registry_like_store())
         result = resolver.resolve("meta/llama-3-8b-instruct-fp8", "model")
-        # -fp8 is in _STRIP_SUFFIXES, so fuzzy strips and lands on instruct
         assert result.canonical_id == "meta/llama-3-8b-instruct"
         assert result.strategy == "fuzzy"
 
     def test_unknown_finetune_suffix_does_not_collapse_to_base(self):
-        """If a raw value has an unrecognized suffix (a community finetune
-        we haven't catalogued), the resolver must NOT silently strip it
-        and land on the base — that would misattribute scores. Returns
-        no_match so the caller can auto-draft a separate canonical."""
+        """An unrecognised suffix must not be stripped to the base (that
+        misattributes scores); no_match lets the caller auto-draft."""
         resolver = Resolver(self._registry_like_store())
         result = resolver.resolve("Llama-3-8B-Instruct-CommunityFinetune", "model")
         assert result.canonical_id is None
         assert result.strategy == "no_match"
 
     def test_unknown_instruct_does_not_collapse_to_base(self):
-        """Specifically: there is no resolver-side `-instruct` strip. An
-        instruct variant we haven't promoted yet does NOT silently fall
-        through to the base."""
+        """No resolver-side `-instruct` strip: an un-promoted instruct variant is
+        no_match, not the base."""
         store = _store_with_aliases(
             ("Llama-3-8B", "model", "meta/llama-3-8b", None, "confirmed"),
             ("meta/llama-3-8b", "model", "meta/llama-3-8b", None, "confirmed"),
@@ -537,7 +496,7 @@ class TestResolveStructuredMetricId:
         )
 
     def test_metric_in_middle_segment(self):
-        # lmarena.elo.overall — the metric is NOT last; position must not matter.
+        # Position must not matter: the metric is not the last segment.
         assert (
             self._resolver().resolve_structured_metric_id(
                 "lmarena.elo.overall", catch_all_ids=self.CATCH_ALL
@@ -554,8 +513,8 @@ class TestResolveStructuredMetricId:
         )
 
     def test_catch_all_hit_defers(self):
-        # llm_stats.gdpval-aa.score — "score" is a raw field name, not a
-        # disclosure; the catch-all flag makes this defer to the prose path.
+        # "score" is a raw field name, not a disclosure; flagged catch-all defers
+        # to the prose path.
         assert (
             self._resolver().resolve_structured_metric_id(
                 "llm_stats.gdpval-aa.score", catch_all_ids=self.CATCH_ALL
@@ -571,7 +530,6 @@ class TestResolveStructuredMetricId:
         )
 
     def test_no_segment_resolves(self):
-        # artificial_analysis.mmlu_pro — no segment is a metric; falls through.
         assert (
             self._resolver().resolve_structured_metric_id(
                 "artificial_analysis.mmlu_pro", catch_all_ids=self.CATCH_ALL
@@ -621,9 +579,8 @@ class TestResolveStructuredMetricId:
         assert r.resolve_structured_metric_id(None) is None
         assert r.resolve_structured_metric_id("  ") is None
 
-    # --- change B: the whole namespaced id may itself be a registered alias.
-    # A separate store from `_resolver()` so the existing cases above keep
-    # asserting the segment-only behaviour they were written for.
+    # The whole namespaced id may itself be a registered alias. Separate store
+    # so the cases above stay segment-only.
 
     def _whole_id_resolver(self):
         return Resolver(
@@ -671,8 +628,8 @@ class TestResolveStructuredMetricId:
 
     def test_whole_id_alias_outranks_segment_hit(self):
         r = self._whole_id_resolver()
-        # `Avg/Accuracy` is a real registry alias; the segment reading says
-        # `accuracy`, the alias's own declared canonical says `avg-accuracy`.
+        # The segment reading says `accuracy`; the whole-id alias's declared
+        # canonical wins.
         assert (
             r.resolve_structured_metric_id("Avg/Accuracy", catch_all_ids=self.CATCH_ALL)
             == "avg-accuracy"
@@ -683,8 +640,7 @@ class TestResolveStructuredMetricId:
         )
 
     def test_single_segment_id_never_routes_through(self):
-        # `STFT-Dist.` splits to ONE segment, so the precheck rejects it before
-        # the whole-id lookup can see it — the precheck contract is unchanged.
+        # A single-segment id fails the precheck before the whole-id lookup runs.
         assert (
             self._whole_id_resolver().resolve_structured_metric_id(
                 "STFT-Dist.", catch_all_ids=self.CATCH_ALL
@@ -765,8 +721,7 @@ class TestResolveStructuredMetricQualifier:
         )
 
     def test_aggregate_marker_tail_is_not_a_qualifier(self):
-        # The corpus case the gate protects: chatbot_arena's
-        # `lmarena.elo.overall` must not split into an `elo::overall` key.
+        # An aggregate-marker tail must not become an `elo::overall` key.
         m = self._resolver().resolve_structured_metric(
             "lmarena.elo.overall", catch_all_ids=self.CATCH_ALL
         )
@@ -779,10 +734,9 @@ class TestResolveStructuredMetricQualifier:
         assert m.qualifier is None
 
     def test_numeric_tail_is_a_qualifier(self):
-        # A number after the metric is a scoring variant, not a level:
-        # `bench.accuracy.1` and `bench.accuracy.5` are k-shot readings the
-        # source reports separately, and pooling them on the bare metric id
-        # medians unrelated numbers. Only aggregate markers are excluded.
+        # A numeric tail is a scoring variant (k-shot readings reported
+        # separately); pooling them on the bare metric id would median unrelated
+        # numbers. Only aggregate markers are excluded.
         m = self._resolver().resolve_structured_metric(
             "bench.accuracy.5", catch_all_ids=self.CATCH_ALL
         )
@@ -945,17 +899,14 @@ class TestResolveStructuredBenchmark:
 
 
 class TestStructuredBenchmarkFolderFallback:
-    """The additive retry: when the source_config-named leading segment was
-    dropped and NOTHING else in the name resolved, the folder segment is kept
-    and probed (alias tiers only), so a datastore folder that is itself a
-    registered benchmark is the fallback identity for the names under it."""
+    """When the source_config-named leading segment was dropped and nothing else
+    resolved, the folder segment is probed (alias tiers only), so a folder that
+    is itself a registered benchmark is the fallback identity for names under
+    it."""
 
     def _resolver(self, *extra_rows):
-        # `extra_rows` lets one test add an alias the others must NOT see:
-        # registering `open_question` makes lexam hit in the FIRST pass, which
-        # is exactly the case `test_first_pass_wins_when_the_child_resolves`
-        # needs and the case `test_folder_fallback_prefers_known_joined_form`
-        # must not have (it pins the retry's joined-form reading).
+        # `extra_rows` lets one test register an alias the others must not see
+        # (a registered `open_question` makes lexam resolve in the first pass).
         return Resolver(
             _store_with_aliases(
                 ("polistemics", "benchmark", "polistemics", None, "confirmed"),
@@ -970,14 +921,9 @@ class TestStructuredBenchmarkFolderFallback:
         )
 
     def test_first_pass_wins_when_the_child_resolves(self):
-        # The A precondition, pinned so that dropping `match is None` from
-        # `if match is None and dropped_source:` fails here. With
-        # `open_question` registered (seed 1.3.1) the dropped-folder pass
-        # resolves it, so the answer is the child alone: raw `open question`,
-        # no subset. An unconditional retry would probe the kept folder too,
-        # find `lexam` at index 0, and the joined form `lexam open question`
-        # would win — reporting raw `lexam open question` / subset
-        # `open question` for the same canonical.
+        # Pins the `match is None` guard on the retry: with `open_question`
+        # registered the first pass resolves the child alone; an unconditional
+        # retry would let the joined `lexam open question` form win instead.
         match = self._resolver(
             ("open_question", "benchmark", "lexam-open-question", None, "confirmed")
         ).resolve_structured_benchmark("lexam.open_question", source_config="lexam")
@@ -1008,9 +954,8 @@ class TestStructuredBenchmarkFolderFallback:
         )
 
     def test_folder_fallback_prefers_known_joined_form(self):
-        # The joined surface form is the registered alias, so it outranks the
-        # folder segment hit. `subset` is informational here (the trailing
-        # segments are part of the identity), so it is not asserted.
+        # The joined surface form is a registered alias, so it outranks the
+        # folder hit. `subset` is informational here and not asserted.
         match = self._resolver().resolve_structured_benchmark(
             "lexam.open_question", source_config="lexam"
         )
@@ -1057,8 +1002,7 @@ class TestStructuredBenchmarkFolderFallback:
 
     def test_no_drop_means_first_pass_answers(self):
         # Segment 0 does not name the folder, so nothing is dropped and the
-        # retry never runs — today's path already reports the folder-shaped
-        # leading segment as the identity.
+        # retry never runs.
         match = self._resolver().resolve_structured_benchmark(
             "polistemics.nl_tk2025.en.faithfulness", source_config="other-folder"
         )
@@ -1069,9 +1013,8 @@ class TestStructuredBenchmarkFolderFallback:
         )
 
     def test_unregistered_child_under_registered_folder_reports_folder(self):
-        # The documented contract change: a subset of an UNREGISTERED benchmark
-        # under a registered aggregator is reported as that aggregator with the
-        # subset kept, never as the subset alone.
+        # A subset of an unregistered benchmark under a registered aggregator is
+        # reported as that aggregator with the subset kept, never the subset alone.
         match = self._resolver().resolve_structured_benchmark(
             "vals_ai.programbench.strict", source_config="vals-ai"
         )
@@ -1082,8 +1025,7 @@ class TestStructuredBenchmarkFolderFallback:
         )
 
     def test_no_source_config_is_not_an_a_case(self):
-        # Without a source_config nothing is dropped, so this is today's
-        # answer via the first pass — unchanged by the retry.
+        # Without a source_config nothing is dropped, so the first pass answers.
         match = self._resolver().resolve_structured_benchmark(
             "vals_ai.programbench.strict", source_config=None
         )
@@ -1099,9 +1041,8 @@ class TestStructuredBenchmarkFolderFallback:
         )
 
     def test_folder_fallback_never_uses_fuzzy_on_the_folder(self):
-        # `zzz-bench-cot` fuzzy-stems to `zzz-bench` (a run-configuration
-        # token), so the folder WOULD match if the retry probed it through the
-        # full chain. The retry uses the alias tiers only, so it does not.
+        # `zzz-bench-cot` fuzzy-stems to `zzz-bench`, so the folder would match
+        # through the full chain; the retry uses alias tiers only.
         store = _store_with_aliases(
             ("zzz-bench", "benchmark", "zzz-bench", None, "confirmed")
         )
@@ -1116,9 +1057,8 @@ class TestStructuredBenchmarkFolderFallback:
 
 
 class TestHarnessVersionFallback:
-    """Change C: a versioned harness string whose bare name IS a registered
-    harness resolves to it, in resolve mode only, after every other strategy
-    missed."""
+    """A versioned harness string whose bare name is a registered harness
+    resolves to it, in resolve mode only, after every other strategy missed."""
 
     def _resolver(self, config=None):
         return Resolver(
@@ -1219,9 +1159,8 @@ class TestHarnessVersionFallback:
         assert direct.canonical_id is None and direct.strategy == "no_match"
 
     def test_harness_detail_is_empty_without_strip(self):
-        # No canonical store attached here, so the enriched detail is unset;
-        # the contract is that a non-stripped harness hit carries NO strip keys
-        # (the HTTP projection turns that into `{}` — tests/test_d1_hierarchy.py).
+        # A non-stripped harness hit carries no strip keys (the HTTP projection
+        # turns that into `{}`).
         result = self._resolver().resolve("helm", "harness")
         assert "harness_version_stripped" not in (result.resolution_detail or {})
 
@@ -1257,8 +1196,7 @@ class TestStructuredBenchmarkSubsetIsIdentity:
         return Resolver(
             _store_with_aliases(
                 ("mmlu", "benchmark", "mmlu", None, "confirmed"),
-                # every MMLU subject reaches `mmlu` through the NORMALIZED
-                # tier, exactly as the production registry has it
+                # every MMLU subject reaches `mmlu` through the normalized tier
                 ("mmlu_anatomy", "benchmark", "mmlu", None, "confirmed"),
                 ("polyglotoxicityprompts", "benchmark",
                  "polyglotoxicityprompts", None, "confirmed"),
@@ -1297,11 +1235,9 @@ class TestStructuredBenchmarkSubsetIsIdentity:
         )
 
     def test_a_normalized_alias_hit_is_not_an_identity_claim(self):
-        """The line that keeps MMLU honest. `mmlu anatomy` reaches `mmlu`
-        through the spelling-insensitive tier, which absorbs every subject
-        name; treating that as an identity would make all 183 subject rows
-        whole-benchmark observations and hand the page a median over its own
-        parts."""
+        """A normalized-tier hit is not an identity claim: that tier absorbs every
+        MMLU subject name, so treating it as identity would make every subject
+        row a whole-benchmark observation."""
         m = self._resolver().resolve_structured_benchmark("mmlu.mmlu.anatomy")
         assert m.canonical_id == "mmlu"
         assert m.subset == "anatomy"
@@ -1314,8 +1250,8 @@ class TestStructuredBenchmarkSubsetIsIdentity:
         )
 
     def test_a_real_member_name_is_still_a_part(self):
-        """The guard: only a subset that names the benchmark itself is
-        identity. `anatomy` names something inside MMLU."""
+        """Only a subset that names the benchmark itself is identity; `anatomy`
+        names something inside MMLU."""
         r = Resolver(
             _store_with_aliases(
                 ("mmlu", "benchmark", "mmlu", None, "confirmed"),
@@ -1326,12 +1262,9 @@ class TestStructuredBenchmarkSubsetIsIdentity:
         assert (m.subset, m.subset_is_identity) == ("anatomy", False)
 
     def test_subset_naming_the_benchmark_is_detected_space_insensitively(self):
-        """The predicate behind the Vals SWE-Bench fix, tested directly.
-
-        `normalize` maps separators to spaces, so the canonical `swe-bench`
-        becomes `swe bench` while the source spells the subset `swebench`.
-        Comparing on alphanumerics is what makes the two the same benchmark.
-        """
+        """`normalize` maps separators to spaces (`swe-bench` → `swe bench`) while
+        a source may spell the subset `swebench`; comparing on alphanumerics
+        makes them the same benchmark."""
         r = Resolver(_store_with_aliases(("mmlu", "benchmark", "mmlu", None,
                                           "confirmed")))
         assert r._subset_names_the_benchmark("swebench", "swe-bench") is True
@@ -1340,16 +1273,10 @@ class TestStructuredBenchmarkSubsetIsIdentity:
         assert r._subset_names_the_benchmark(None, "mmlu") is False
 
     def test_resolving_to_the_same_canonical_is_not_identity(self):
-        """The predicate asks whether the subset SPELLS the benchmark, and
-        nothing else.
-
-        Every alias of a benchmark resolves to that benchmark — including the
-        aliases that name its PARTS. Vals LegalBench is the live case: the
-        registry aliases `conclusion_tasks` and its four siblings to
-        `legalbench`, so an identity test built on resolution called each of
-        the five category aggregates a whole-benchmark reading and left the
-        source's own `.overall` unable to win its own cell.
-        """
+        """The predicate asks whether the subset SPELLS the benchmark, not whether
+        it resolves to it: aliases naming a benchmark's PARTS also resolve to it,
+        and treating those as identity would make category aggregates
+        whole-benchmark readings."""
         r = Resolver(
             _store_with_aliases(
                 ("legalbench", "benchmark", "legalbench", None, "confirmed"),
@@ -1368,20 +1295,12 @@ class TestStructuredBenchmarkSubsetIsIdentity:
 
 
 class TestValsLegalBenchObservationRoles:
-    """The six real Vals LegalBench names, end to end.
-
-    The alias set is the registry's own (`seed/benchmarks.yaml`, `legalbench`):
-    the benchmark, its `.overall` total and its five category aggregates are
-    ALL aliases of one canonical, because the registry models LegalBench as a
-    single benchmark. That makes resolution useless as an identity test —
-    every one of the six resolves to `legalbench` — and the roles have to come
-    from what each name SAYS.
-
-    The shape matters as much as the aliases: only the leading `vals_ai`
-    segment resolves on its own, so the identity path lands on the folder and
-    the JOINED spelling is what carries the benchmark. That is the branch the
-    defect lived in.
-    """
+    """The six real Vals LegalBench names, end to end. The benchmark, its
+    `.overall` total and its five category aggregates are all aliases of one
+    canonical, so resolution cannot serve as the identity test; roles come from
+    what each name says. Only the leading `vals_ai` segment resolves on its own,
+    so the identity path lands on the folder and the joined spelling carries the
+    benchmark."""
 
     ALIASES = (
         "vals_ai_legal_bench",
@@ -1442,14 +1361,10 @@ class TestValsLegalBenchObservationRoles:
 
 
 class TestBenchmarkObservationRole:
-    """`observation_role` — the same match read as what the row OBSERVED.
-
-    Two of the three answers live on the match: a real subset is a `part`,
-    anything else is a `whole`. The third, `unknown`, is the absence of a
-    match, and belongs to the caller: a name the structured path declines to
-    read was never checked, and calling it a whole is the claim that let a
-    benchmark's own subjects outvote the total published beside them.
-    """
+    """`observation_role`: a real subset is a `part`, anything else a `whole`.
+    `unknown` is the absence of a match and belongs to the caller: an unread
+    name must not be called a whole, or a benchmark's own subjects can outvote
+    the total published beside them."""
 
     def _resolver(self):
         return Resolver(
@@ -1480,11 +1395,9 @@ class TestBenchmarkObservationRole:
         )
 
     def test_a_flat_or_spaced_name_yields_no_match_at_all(self):
-        """HELM's shape. `prepare_eval_name_segments` declines anything
-        without a dot or with a space in it, so there is no match to carry a
-        role — the caller has to supply `unknown`, and must not substitute
-        `whole`. `MMLU All Subjects` and its 34 sibling subject rows are
-        equally unread; the difference between them is not in this answer."""
+        """`prepare_eval_name_segments` declines names without a dot or with a
+        space, so there is no match to carry a role; the caller must supply
+        `unknown`, not `whole`."""
         r = self._resolver()
         assert r.resolve_structured_benchmark("MMLU All Subjects") is None
         assert r.resolve_structured_benchmark("mmlu") is None

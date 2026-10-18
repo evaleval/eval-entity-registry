@@ -37,25 +37,19 @@ class AliasStore:
     def __init__(self, df: pd.DataFrame, read_only: bool = False) -> None:
         self._df = df.copy()
         self.read_only = read_only
-        # Per-entity_type caches — built lazily on first access
-        # Normalized lookup key: (entity_type, source_config or None)
+        # Lazy per-(entity_type, source_config) caches.
         self._normalized_cache: dict[tuple[str, Optional[str]], dict[str, str]] = {}
         self._candidates_cache: dict[tuple[str, Optional[str]], list[tuple[str, str]]] = {}
         self._lookup_index: dict[tuple[str, str, Optional[str]], str] | None = None
 
     def _ensure_lookup_index(self) -> None:
-        """Build a dict index for O(1) exact lookups."""
         if self._lookup_index is not None:
             return
         self._lookup_index = {}
         df = self._df[self._df["status"] != "rejected"]
         for _, row in df.iterrows():
-            # Convert pandas NaN to None so dict.get((..., ..., None))
-            # finds rows whose source_config is null. Without this,
-            # exact_match silently misses every global alias (since
-            # NaN != None in dict-key comparison) and the resolver
-            # falls through to normalized_match, which can't
-            # disambiguate when two canonicals share a normalized form.
+            # NaN != None as a dict key: global aliases must be keyed by None
+            # or `lookup` misses every one of them.
             sc = row.get("source_config")
             if pd.isna(sc):
                 sc = None
@@ -75,9 +69,7 @@ class AliasStore:
     def from_parquet(cls, path: str | Path, read_only: bool = False) -> "AliasStore":
         p = Path(path) / "aliases.parquet"
         if not p.exists():
-            # Missing dir / missing file is the legitimate "fresh store"
-            # case (used by tests and first-time seed runs), so log at INFO
-            # instead of WARNING — but still surface it.
+            # A missing file is the legitimate fresh-store case: INFO, not WARNING.
             logger.info(
                 "AliasStore.from_parquet: %s not found; falling back to empty store",
                 p,
@@ -86,11 +78,7 @@ class AliasStore:
         try:
             df = pd.read_parquet(p)
         except (OSError, ValueError) as exc:
-            # OSError covers permission / IO errors; ValueError is what
-            # pyarrow raises for corrupt parquet (ArrowInvalid is a
-            # ValueError subclass). Keep the empty-store fallback so a
-            # corrupt local cache doesn't hard-crash callers, but log so
-            # the failure isn't silent.
+            # pyarrow's ArrowInvalid (corrupt parquet) subclasses ValueError.
             logger.warning(
                 "AliasStore.from_parquet: failed to read %s (%s: %s); "
                 "falling back to empty store",
@@ -125,20 +113,9 @@ class AliasStore:
             OSError,
             ValueError,
         ) as exc:
-            # Specific catches:
-            #   - RepositoryNotFoundError: repo missing or auth failure
-            #     (HF returns 401 disguised as 404 when token is invalid).
-            #   - EntryNotFoundError: repo exists but aliases/part-0.parquet
-            #     hasn't been seeded yet.
-            #   - HfHubHTTPError: catch-all for other HTTP failures
-            #     (network errors, 5xx, rate limits).
-            #   - FileNotFoundError / OSError: filesystem-level errors
-            #     reading the downloaded file.
-            #   - ValueError: pyarrow.lib.ArrowInvalid (parquet corruption)
-            #     subclasses ValueError.
-            # Fall back to an empty store (callers expect construction to
-            # succeed) but emit a warning so auth and corruption failures
-            # stay visible rather than silently degrading to no aliases.
+            # RepositoryNotFoundError also covers an invalid token (HF returns
+            # 401 disguised as 404); ValueError covers pyarrow's ArrowInvalid.
+            # Construction must succeed, so fall back to an empty store but warn.
             logger.warning(
                 "AliasStore.from_hf: failed to load aliases from %r (%s: %s); "
                 "falling back to empty store",
@@ -155,9 +132,7 @@ class AliasStore:
 
     def iter_alias_pairs(self, entity_type: str):
         """Yield (raw_value, canonical_id) for every non-rejected alias of
-        `entity_type`. Used to build the resolver's org-fold map from the org
-        ALIAS rows (the curated orgs.yaml alias tier lives here, NOT as a
-        canonical_orgs column)."""
+        `entity_type`, global and scoped alike."""
         df = self._df
         sub = df[(df["entity_type"] == entity_type) & (df["status"] != "rejected")]
         for raw, cid in zip(sub["raw_value"], sub["canonical_id"]):
@@ -170,14 +145,12 @@ class AliasStore:
         entity_type: str,
         source_config: Optional[str],
     ) -> Optional[str]:
-        """Return canonical_id for first non-rejected match. Config-scoped before global."""
+        """canonical_id of the first non-rejected match, config-scoped before global."""
         self._ensure_lookup_index()
-        # Config-scoped
         if source_config:
             result = self._lookup_index.get((raw_value, entity_type, source_config))
             if result is not None:
                 return result
-        # Global
         return self._lookup_index.get((raw_value, entity_type, None))
 
     # ------------------------------------------------------------------
@@ -255,13 +228,9 @@ class AliasStore:
     def get_normalized_lookup(
         self, entity_type: str, source_config: Optional[str] = None
     ) -> dict[str, str]:
-        """Return {normalized_raw_value: canonical_id} for use by strategies.
-
-        When ``source_config`` is given, the returned map merges config-scoped
-        aliases on top of global (source_config IS NULL) aliases, so scoped
-        matches win over global for the same normalized form. When
-        ``source_config`` is None, only global aliases are included — scoped
-        aliases do NOT leak into unrelated lookups.
+        """{normalized_raw_value: canonical_id}. With ``source_config``, that
+        config's scoped aliases overlay the global ones; without it only global
+        aliases are included, so scoped aliases never leak into other configs.
         """
         key = (entity_type, source_config)
         if key in self._normalized_cache:
@@ -270,12 +239,10 @@ class AliasStore:
         from eval_entity_resolver.normalization import normalize
 
         base = self._df[(self._df["entity_type"] == entity_type) & (self._df["status"] != "rejected")]
-        # Start from global aliases.
         global_df = base[base["source_config"].isna()]
         result: dict[str, str] = {}
         for _, row in global_df.iterrows():
             result[normalize(row["raw_value"])] = row["canonical_id"]
-        # Overlay scoped aliases for the requested source_config.
         if source_config:
             scoped_df = base[base["source_config"] == source_config]
             for _, row in scoped_df.iterrows():
@@ -286,12 +253,8 @@ class AliasStore:
     def get_all_for_type(
         self, entity_type: str, source_config: Optional[str] = None
     ) -> list[tuple[str, str]]:
-        """Return [(raw_value, canonical_id)] for non-rejected aliases of ``entity_type``.
-
-        Filtering matches ``get_normalized_lookup`` — when ``source_config`` is
-        given, includes global + that config's scoped aliases; otherwise global
-        only. Cached per (entity_type, source_config).
-        """
+        """[(raw_value, canonical_id)] for non-rejected aliases of ``entity_type``,
+        filtered like ``get_normalized_lookup``. Cached."""
         key = (entity_type, source_config)
         if key in self._candidates_cache:
             return self._candidates_cache[key]

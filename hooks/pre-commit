@@ -1,0 +1,3 @@
+#!/bin/sh
+# Code hygiene: no spec-section refs, phase/session tags, or tombstones in code.
+exec python3 "$(git rev-parse --show-toplevel)/scripts/check_code_hygiene.py"

@@ -6,7 +6,6 @@ import pytest
 from eval_entity_registry.config import settings
 from eval_entity_registry.store import queries, hf_store
 
-# Repo root (parent of tests/) — scripts/ live one level up from this file.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -27,10 +26,9 @@ def load_script_module(script_stem, module_name=None):
 
 @pytest.fixture(autouse=True)
 def _reset_query_caches():
-    """Clear module-level caches and pending buffers before each test for isolation."""
+    """Clear module-level caches and pending buffers around each test."""
     queries._alias_index.clear()
     queries._pending_result_ids.clear()
-    # Clear any pending buffer on the singleton store
     store = getattr(hf_store, "_store", None)
     if store is not None and hasattr(store, "_pending"):
         store._pending = {}
@@ -44,8 +42,7 @@ def _reset_query_caches():
 
 @pytest.fixture(autouse=True)
 def _disable_hub_stats_lookup():
-    """Hub-stats live lookup hits HF — disable globally for tests.
-    Individual tests that exercise the lookup path can re-enable + mock."""
+    """The hub-stats lookup hits HF; tests that need it re-enable and mock."""
     original = settings.hub_stats_lookup_enabled
     settings.hub_stats_lookup_enabled = False
     yield
@@ -54,9 +51,8 @@ def _disable_hub_stats_lookup():
 
 @pytest.fixture(autouse=True)
 def _disable_live_hf_id_check():
-    """The HF id verifier's live tier hits the Hub API — disable globally
-    for tests so the offline suite never makes network calls. Tests that
-    exercise the live tier re-enable + mock (see test_hf_id_verifier.py)."""
+    """The verifier's live tier hits the Hub API; tests that need it
+    re-enable and mock (test_hf_id_verifier.py)."""
     original = settings.hf_live_id_check_enabled
     settings.hf_live_id_check_enabled = False
     yield

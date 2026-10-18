@@ -1,8 +1,5 @@
-"""Invariant tests for the inference_platforms entity.
-
-Asserts the seed YAML, the seeded table, and the single-sourced host-token map
-are mutually consistent. Runs the real `seed --local` against the repo's
-seed/ dir into an isolated fixtures dir (LOCAL_MODE).
+"""The inference_platforms seed YAML, the seeded table, and the host-token
+map are mutually consistent. Runs a real `seed --local` into a tmp dir.
 """
 from __future__ import annotations
 
@@ -43,8 +40,6 @@ def _strip_marker(form: str) -> str:
 
 @pytest.fixture
 def seeded_store(tmp_path, monkeypatch):
-    """Run `seed --local` against the repo seed/ dir into an isolated
-    fixtures dir, returning the loaded store."""
     fixtures_dir = tmp_path / "fixtures"
     fixtures_dir.mkdir()
 
@@ -84,8 +79,7 @@ def test_author_lab_canonical_org_fk(seeded_store):
     authors = plat[plat["kind"] == "author_lab"]
     for _, row in authors.iterrows():
         co = row["canonical_org"]
-        # `canonical_org` is only set when the org is itself curated in
-        # seed/orgs.yaml; assert FK validity when present.
+        # `canonical_org` is set only when the org is curated; FK must hold then.
         if pd.isna(co) or co == "":
             continue
         assert co in org_ids, (
@@ -101,9 +95,7 @@ def test_variant_of_points_at_platform(seeded_store):
     variants = df[df["kind"].isin(["regional_variant", "coding_plan"])]
     for _, row in variants.iterrows():
         vo = row["variant_of"]
-        # `variant_of` is only set when the base platform is itself in the
-        # curated list (a few coding_plan rows have no curated base). Assert
-        # FK validity when present.
+        # `variant_of` is set only when the base platform is curated; FK must hold then.
         if pd.isna(vo):
             continue
         assert vo in all_ids, (
@@ -135,8 +127,6 @@ def test_unknown_sentinel_maps_to_none():
 
 
 def test_seed_yaml_author_lab_org_consistency():
-    """Cross-check the YAML directly (not just the table) for author_lab
-    rows that declare canonical_org."""
     rows = yaml.safe_load((SEED_DIR / "inference_platforms.yaml").read_text())
     org_ids = {
         o["id"] for o in yaml.safe_load((SEED_DIR / "orgs.yaml").read_text())
@@ -150,11 +140,8 @@ def test_seed_yaml_author_lab_org_consistency():
 
 
 def test_fuzzy_captured_platforms_are_seeded(seeded_store):
-    """Invariant (fuzzy half): every platform_id the fuzzy strategy
-    can CAPTURE — from `_HOST_PREFIXES_TO_STRIP` (prefix) and
-    `_SUFFIX_PLATFORM_MAP` (suffix) — must exist in the seeded
-    `canonical_inference_platforms` table. Guards drift between the resolver's
-    single-source map loader and the seed table."""
+    """Every platform_id the fuzzy strategy can capture exists in the seeded
+    table; a miss means the resolver's map and the seed have drifted."""
     from eval_entity_resolver.strategies.fuzzy import (
         _HOST_PREFIXES_TO_STRIP,
         _SUFFIX_PLATFORM_MAP,

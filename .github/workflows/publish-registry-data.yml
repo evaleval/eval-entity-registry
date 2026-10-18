@@ -1,20 +1,7 @@
 name: Publish registry data
 
-# Publishes the registry's flat canonical parquets to
-# evaleval/entity-registry-data via scripts/publish_registry_data.py. These are
-# the versioned producer/backend inputs. The legacy live Space reads a separate
-# partitioned layout; migrating that larger historical universe is deliberately
-# outside this workflow and this workflow must not claim to deploy/restart it.
-#
-#   - On PRs that touch seed YAML or registry code: --dry-run + tests.
-#     Catches schema breakage / parse failures before merge without
-#     publishing.
-#
-#   - On push to main: real publish to evaleval/entity-registry-data.
-#     Idempotent — the script reads the remote manifest.json and
-#     skips the upload if content_hash hasn't changed.
-#
-# See notes/hierarchy-alignment.md for the design.
+# Publishes the flat canonical parquets the producer reads. The live Space
+# reads a separate per-table subdir layout; this workflow never restarts it.
 
 on:
   pull_request:
@@ -42,11 +29,9 @@ on:
 permissions:
   contents: read
 
-# Concurrency is declared per job below. The PR dry-run cancels an obsolete
-# run for the same PR; the production publish joins the `registry-data-publish`
-# lane shared with seed.yml, where every arrival must be held rather than
-# superseded (GitHub rejects `queue: max` together with cancellation, so the
-# two cannot share one workflow-level block).
+# Concurrency is per job because GitHub rejects `queue: max` together with
+# cancel-in-progress: the PR dry-run cancels superseded runs; the publish
+# joins the `registry-data-publish` lane (invariant stated in seed.yml).
 
 jobs:
   reject-nonproduction-manual-run:
@@ -64,16 +49,10 @@ jobs:
     concurrency:
       group: publish-registry-data-pr-${{ github.event.pull_request.number }}
       cancel-in-progress: true
-    # Seeds, runs the full gate suite, then inspects those exact fixtures.
-    # The seed grew with the carry-forward/enrichment work, so 15 min now
-    # clips the trailing publish step after the gates have already passed.
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
         with:
-          # publish_registry_data.py reads `git rev-parse HEAD` for the
-          # manifest's seed_git_sha. Default fetch-depth=1 is fine; full
-          # history isn't required.
           fetch-depth: 1
 
       - name: Install uv
@@ -82,11 +61,8 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
-      # Seed the parquet fixtures FROM the YAML under review first — fixtures
-      # are gitignored (generated), so without this the gate suite
-      # (tests/test_gate_invariants.py) reads no fixtures and cannot validate
-      # the seed under change. Seeding here makes the PR check actually exercise
-      # the gates against the diff. Mirrors seed.yml.
+      # fixtures/ is gitignored, so the gate suite validates nothing unless the
+      # YAML under review is seeded first.
       - name: Seed fixtures from the YAML under review
         run: LOCAL_MODE=true uv run eval-entity-registry seed --local
 
@@ -104,19 +80,13 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    # Same lane as seed.yml: hold every arrival; 'single' would let a queued
-    # publish and a dispatched seed child cancel each other.
     concurrency:
       group: registry-data-publish
       cancel-in-progress: false
       queue: max
-    # Main must prove the exact checkout is seedable and regression-clean before
-    # it can mutate the remote dataset. The full suite can take 15–25 minutes on
-    # hosted runners, so leave bounded headroom for setup and upload.
     timeout-minutes: 60
     steps:
-      # Publish the live tip of main, not the pushed sha: main may have moved
-      # while this run was queued, and the data is a function of main's tree.
+      # Live tip of main, not github.sha: main may move while this run is queued.
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.ref }}
@@ -128,8 +98,7 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
-      # Superseded (main moved forward past this checkout) is a green skip: the
-      # newer head's own publish covers this tree. Diverged still fails.
+      # Superseded-vs-diverged rule: see seed.yml.
       - name: Skip if superseded
         id: fresh
         run: >-
@@ -148,7 +117,7 @@ jobs:
         if: steps.fresh.outputs.superseded != 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        # Do not seed again here: the exact fixture bytes above passed pytest.
+        # --skip-seed: see seed.yml.
         run: >-
           uv run python scripts/publish_registry_data.py --skip-seed
           --require-origin-main-head --skip-if-superseded

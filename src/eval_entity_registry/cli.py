@@ -1,11 +1,4 @@
-"""
-eval-entity-registry CLI.
-
-Commands:
-  seed      Load known entities from seed/ YAML files
-  stats     Print registry summary
-  sync      Batch sync one or all EEE configs → eval_results table
-"""
+"""eval-entity-registry CLI: seed, stats, sync."""
 import json
 import math
 import re
@@ -18,54 +11,33 @@ import typer
 import yaml
 
 
-# Source scope keys — the `source_config` on a scoped alias or a scoped
-# metric fold. A key is an UPSTREAM DATASET CONFIG NAME exactly as published
-# in the EEE datastore (`data/<config>/`): `openeval`, `llm-stats`,
-# `helm_capabilities`, … Registry ids are never scope keys, and the spelling
-# is not normalised — `llm-stats` and `llm_stats` are different configs. This
-# pattern is the shape the datastore uses, so a typo'd or path-like key fails
-# the seed instead of silently scoping an alias to a config that never calls.
+# A scope key (`source_config` on a scoped alias or metric fold) is an EEE
+# dataset config name verbatim (`openeval`, `helm_capabilities`): never a
+# registry id, never normalised. A typo'd or path-like key fails the seed
+# instead of scoping an alias to a config that never calls.
 _SOURCE_SCOPE_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def seed_collision_key(s: str) -> str:
-    """The key under which two seed surface forms count as one entity:
-    NFKD + combining-mark strip (so "racé" and "race" collide before the
-    alphanumeric strip would silently drop the accent), casefold, and drop
-    everything but [a-z0-9]. Used by the benchmark collision guard at seed
-    time and by tests/test_seed_unique_ids.py for every flat seed file.
-    Residual: cross-script confusables (Cyrillic 'а') still evade."""
+    """Key under which two seed surface forms count as one entity: NFKD +
+    combining-mark strip (so "racé" collides with "race"), casefold, and
+    [a-z0-9] only. Cross-script confusables still evade."""
     decomposed = unicodedata.normalize("NFKD", str(s))
     base = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]", "", base.casefold())
 
 
 def _json_encode_if_needed(value):
-    """Encode lists/dicts as JSON strings; pass through anything else.
-
-    seed/models.yaml uses YAML-native lists for `tags` (e.g. `["open-weight"]`)
-    while seed/benchmarks.yaml stores them pre-encoded as strings (e.g.
-    `'["instruction-following"]'`). The canonical_* parquet columns are all
-    VARCHAR, so we coerce on the way in to keep both formats supported.
-    """
+    """Encode lists/dicts as JSON strings; the canonical_* parquet columns are
+    all VARCHAR and seed files mix native lists with pre-encoded strings."""
     if isinstance(value, (list, dict)):
         return json.dumps(value)
     return value
 
 
 def _legacy_parent_model_id_to_parents(entry: dict) -> None:
-    """Translate a legacy `parent_model_id: X` field to the typed `parents`
-    list shape. Mutates the entry in place.
-
-    Legacy core.yaml / sources/*.generated.yaml use a single scalar
-    `parent_model_id` to express a family/variant relationship (e.g.
-    Llama-3-8B → Llama-3). The new schema replaces this with a typed list
-    of parent edges. This shim converts on load so existing YAML keeps
-    working until each file is migrated to emit `parents` natively.
-
-    No-op when `parents` is already present (new shape wins) or when neither
-    field is set.
-    """
+    """Translate a legacy scalar `parent_model_id` into the typed `parents`
+    list in place; no-op when `parents` is already present."""
     if "parents" in entry and entry["parents"] is not None:
         entry.pop("parent_model_id", None)
         return
@@ -83,48 +55,23 @@ from eval_entity_resolver.display import humanize_model_slug
 
 
 def _humanized_display(entry: dict) -> str:
-    """Presentation display_name for a model, humanized at load time.
+    """Presentation display_name for a model; shapes only the stored column,
+    never alias promotion, so resolution is unchanged.
 
-    This shapes ONLY the stored display column — NOT alias promotion — so display
-    coverage stays fully DECOUPLED from resolution: the seed loop promotes the
-    ORIGINAL display_name (pre-humanize) as an alias exactly as before, leaving
-    every raw's resolved canonical unchanged.
-
-    Rule: a display is a label if it contains a SPACE; otherwise it is a slug.
-    - Empty display: humanize the id.
-    - Slug display (no spaces — a raw id, a bare leaf like `miqu-1-70b-sf`, an
-      org-qualified id like `meta-llama/Llama-3.1-8B-Instruct`, or a tier-3 raw
-      `EVA-UNIT-01/eva-qwen2-5-32b-v0-2`): humanize it. In a slug every hyphen is
-      a separator, so this is safe.
-    - Label display (has spaces — curated/generator human names like
-      `Jamba Large 1.6` or `Lingma Agent + Lingma SWE-GPT 72b (v0918)`): keep
-      as-is. Humanizing here would mangle proper-noun hyphens (`SWE-GPT` ->
-      `SWE GPT`).
-
-    A leading `unknown/` placeholder-org prefix is dropped from the rendered
-    label (`unknown` is the "real org not known" sentinel, never a display org).
-
-    KNOWN LIMITATION: `humanize_model_slug` is a heuristic, so a handful of
-    slug displays with intentional casing lose it (`QwQ-32B` -> `QWQ 32B`,
-    `...-128E-Instruct` -> `...128e...`). These stay readable; fixing them means
-    extending the shared humanizer, which also ripples into generator-output
-    confluence, so it is deferred.
-    """
+    A display with a space is a label and is kept as-is (humanizing would
+    mangle proper-noun hyphens like `SWE-GPT`); a slug is humanized. A
+    leading `unknown/` placeholder org is dropped."""
     cid = str(entry.get("id") or "")
     dn = str(entry.get("display_name") or "").strip()
     name = cid.split("/", 1)[1] if "/" in cid else cid  # org-stripped id
     if not dn or dn == cid:
-        # No real label — derive from the id. An org-stripped name that already
-        # reads as a label (has spaces, e.g. `Amazon Q Developer Agent (...)`)
-        # is used verbatim; a slug name is humanized.
+        # An org-stripped name that already reads as a label is used verbatim.
         out = name if " " in name else humanize_model_slug(cid)
     elif " " not in dn:
         out = humanize_model_slug(dn)
     else:
         out = dn
-    # Drop a leading `unknown/` placeholder-org prefix. The slug/id branches
-    # already strip it via the org split; this catches the space-containing
-    # curated labels (e.g. `unknown/Lingma Agent + ...`).
+    # The slug branches strip it via the org split; this catches curated labels.
     if out.startswith("unknown/"):
         out = out[len("unknown/"):]
     return out
@@ -161,22 +108,10 @@ def seed(
     store = _load_store()
     seed_path = Path(seed_dir)
 
-    # ------------------------------------------------------------------
-    # Models — three-layer load from seed/models/:
-    #   sources/*.generated.yaml  → external catalog data (e.g. models.dev),
-    #                               flat lists, never hand-edited
-    #   core.yaml                 → curated canonicals (the source of truth),
-    #                               flat list OR {skip_ids, entries} dict
-    #   enrichments/aliases.yaml  → optional alias-only entries ({id, aliases})
-    #                               that union onto whatever exists
-    #
-    # Merge order: sources → core → enrichments. Field-level merge per entry
-    # (aliases / tags UNION; other scalars prefer non-empty, last-write-wins).
-    # `skip_ids` from core drops generated entries we don't want.
-    # Source enrich records may carry a `weak:` scalar map (donated from a
-    # suppressed/folded mint); weak values are applied LAST, filling only
-    # fields every strong merge left empty — see the weak-fill block below.
-    # ------------------------------------------------------------------
+    # Models — three-layer load from seed/models/: sources/*.generated.yaml
+    # (never hand-edited) → core.yaml (curated; flat list or
+    # {skip_ids, skip_source_ids, entries}) → enrichments/*.yaml (overlays).
+    # Field-level merge per entry (_merge_into); `weak:` scalars last.
     def _load_models_merged() -> list[dict]:
         models_dir = seed_path / "models"
         sources_dir = models_dir / "sources"
@@ -197,12 +132,8 @@ def seed(
                 return True
             return False
 
-        # WEAK scalar contributions: a generated enrich record may carry a
-        # `weak: {field: value}` map (scalars donated from a suppressed/folded
-        # mint by scripts/refresh_from_modelsdev.py). Pulled out at load so
-        # they never enter the strong field merge; applied after ALL strong
-        # merges (see the weak-fill block below). Collected in deterministic
-        # order: source files in sorted-filename order, records in file order.
+        # `weak:` scalars never enter the strong merge; collected in
+        # deterministic order (files by sorted name, records in file order).
         weak_candidates: list[tuple[str, str, object]] = []
         if sources_dir.is_dir():
             for src_path in sorted(sources_dir.glob("*.generated.yaml")):
@@ -229,29 +160,21 @@ def seed(
             elif isinstance(loaded, dict):
                 core_entries = loaded.get("entries", []) or []
                 skip_ids = set(loaded.get("skip_ids", []) or [])
-                # `skip_source_ids` drops these ids from sources/enrichments only,
-                # leaving core entries authoritative. Used when models.dev (or any
-                # auto-generated source) ships bad aliases for a model that core.yaml
-                # curates correctly — otherwise the loader's UNION-merge would
-                # re-introduce the bad aliases on every refresh.
+                # Drops ids from sources/enrichments only, so a generated source's
+                # bad aliases cannot be UNION-merged back onto a curated entry.
                 skip_source_ids = set(loaded.get("skip_source_ids", []) or [])
             else:
                 raise typer.BadParameter(f"{core_file} unexpected shape {type(loaded)}")
 
-        # Keys EXPLICITLY present on each core entry — even with a null value.
-        # An explicit core null (e.g. `open_weights: null` where the upstream
-        # catalog's value is known-wrong) is a curated "unknown" and blocks
-        # weak fill on that field; weak fills only keys core leaves ABSENT.
+        # An explicit core key, even null, is a curated claim that blocks weak
+        # fill; weak fills only keys core leaves absent.
         core_explicit: dict[str, set[str]] = {}
         for entry in core_entries:
             if isinstance(entry, dict) and entry.get("id"):
                 core_explicit.setdefault(entry["id"], set()).update(entry.keys())
 
-        # Enrichment overlays: every enrichments/*.yaml (flat list of {id, ...}),
-        # field-merged onto the matching canonical (aliases + parents UNION; see
-        # _merge_into). Separate files keep concerns apart — aliases.yaml carries
-        # alias bridges, parents.yaml the curated typed-edge graph (lineage edges
-        # the bulk generators can't reconstruct from their source data).
+        # aliases.yaml carries alias bridges, parents.yaml curated lineage
+        # edges the bulk generators cannot reconstruct from their sources.
         if enrichments_dir.is_dir():
             for enr_path in sorted(enrichments_dir.glob("*.yaml")):
                 with open(enr_path) as f:
@@ -261,25 +184,11 @@ def seed(
                 enrichment_entries.extend(loaded)
 
         def _merge_into(target: dict, src: dict) -> dict:
-            """Merge two entries with the same canonical_id.
-
-            Field-level merge policy:
-            - `aliases`: UNION (case-insensitive dedup).
-            - `tags`: UNION (case-insensitive dedup). Both YAML-list and
-              JSON-encoded-string forms supported. Protects against session
-              additions overwriting `[open-weight, moe]` with `[open-weight]`.
-            - `metadata`: per-KEY merge of the two JSON objects (later source
-              wins per key, no key ever dropped). Protects against e.g.
-              models_dev_catalog's `{alias_platforms}` wiping hub_stats'
-              `{hf_id, downloads_all_time, ...}`. Falls back to the scalar
-              rule when either side isn't a JSON object.
-            - Other scalars: prefer non-empty across the pair; when both
-              sides have a non-empty value, last-write-wins. Protects against
-              session-batch entries that omit `architecture` /
-              `params_billions` from silently overwriting earlier rich entries.
-
-            "Empty" means: None, "", [], {}, or default-looking '{}' / '[]'.
-            """
+            """Merge two entries with the same canonical_id: `aliases` / `tags`
+            union (case-insensitive); `metadata` per-key, later wins (scalar
+            rule when a side is not a JSON object); other scalars prefer
+            non-empty then last-write-wins, so a sparse later entry never
+            blanks a rich one. Empty = None, "", [], {}, '{}' or '[]'."""
             import json as _json
 
             existing_aliases = list(target.get("aliases") or [])
@@ -291,9 +200,7 @@ def seed(
                     existing_lc.add(a.lower())
 
             def _decode_list_field(v):
-                """tags / metadata may be either YAML-list or JSON-encoded
-                string. Return a list (best-effort) and a boolean indicating
-                whether to re-encode on write."""
+                """(list, was_json) from a YAML list or JSON-encoded string."""
                 if v is None:
                     return [], False
                 if isinstance(v, list):
@@ -310,7 +217,6 @@ def seed(
                         pass
                 return [v], False
 
-            # Union tags (handles both list and JSON-string formats)
             tgt_tags, tgt_was_json = _decode_list_field(target.get("tags"))
             src_tags, src_was_json = _decode_list_field(src.get("tags"))
             seen_tags_lc = {str(t).lower() for t in tgt_tags}
@@ -318,14 +224,10 @@ def seed(
                 if t is not None and str(t).lower() not in seen_tags_lc:
                     tgt_tags.append(t)
                     seen_tags_lc.add(str(t).lower())
-            # Re-encode if either source was a JSON string (the parquet column
-            # is VARCHAR; _json_encode_if_needed downstream handles either).
             tags_merged = _json.dumps(tgt_tags) if (tgt_was_json or src_was_json) else tgt_tags
 
-            # Union `parents` by id. For an edge present in both, field-merge
-            # within the edge so a later source can fill in `axis` (or correct
-            # `relationship`) without duplicating the edge. Edges from the
-            # target preserve their order; new edges from src are appended.
+            # `parents` union by edge id; a shared edge is field-merged so a later
+            # source can fill `axis` without duplicating it. Target order kept.
             tgt_parents, tgt_p_was_json = _decode_list_field(target.get("parents"))
             src_parents, src_p_was_json = _decode_list_field(src.get("parents"))
             parents_by_id: dict[str, dict] = {}
@@ -357,9 +259,7 @@ def seed(
                 else parents_list
             )
 
-            # Per-key metadata merge. Both sides may be a dict or a
-            # JSON-encoded string; malformed/non-dict input opts that pair out
-            # (handled by the scalar last-non-empty-wins loop below instead).
+            # A malformed or non-dict side opts the pair out of the per-key merge.
             def _decode_dict_field(v):
                 """Return (dict, was_json, is_dict)."""
                 if v is None:
@@ -402,8 +302,7 @@ def seed(
                 merged["metadata"] = metadata_merged
             merged["aliases"] = existing_aliases
             merged["tags"] = tags_merged
-            # Only emit `parents` if at least one side had any (avoids creating
-            # a spurious empty list on entries that never had a parents field).
+            # No `parents` key unless one side had any.
             if tgt_parents or src_parents:
                 merged["parents"] = parents_merged
             return merged
@@ -417,8 +316,6 @@ def seed(
                     raise typer.BadParameter(f"models seed entry missing id: {e!r}")
                 if e["id"] in drop:
                     continue
-                # Translate legacy `parent_model_id` scalar to the typed
-                # `parents` list before any merge / column-filter step.
                 _legacy_parent_model_id_to_parents(e)
                 if e["id"] in by_id:
                     by_id[e["id"]] = _merge_into(by_id[e["id"]], e)
@@ -432,40 +329,28 @@ def seed(
         _absorb(enrichment_entries, extra_skip=skip_source_ids)
         merged = list(by_id.values())
 
-        # Attribute the developer org to malformed-org draft ids (no '/', org
-        # glued by -/.) so genuine models aren't orphaned from their developer
-        # (cohere-march-2024 -> org cohere; nvidia.nemotron-* -> nvidia/...).
-        # Runs BEFORE the fold so any normalised id can collapse with its twin.
+        # Before the fold, so a normalised id can collapse with its twin.
         merged, _org_merges = org_attribution.attribute_orgs(
             merged, build_hf_to_dev_from_orgs_yaml(seed_path / "orgs.yaml")
         )
 
-        # Fold normalize-collisions: the SAME model minted under different
-        # separator spellings (gemini-1.5-pro vs gemini-1-5-pro, gpt-5.2 vs the
-        # venice relabel gpt-52) collapses into ONE canonical so it surfaces as
-        # one page. Guarded against false size merges (opt-1.3b != opt-13b); a
-        # curated collision_overrides.yaml carries the do-not-fold list + winner
-        # pins. (See lib/collision_fold.py.)
+        # collision_overrides.yaml carries the do-not-fold list and winner pins
+        # for lib/collision_fold.py.
         ov_file = models_dir / "collision_overrides.yaml"
         never_fold, prefer, curated_merge, non_lineage_bases = [], {}, {}, set()
         if ov_file.is_file():
             ov = yaml.safe_load(ov_file.read_text()) or {}
             never_fold = ov.get("never_fold") or []
             prefer = ov.get("prefer") or {}
-            # `merge`: curated {loser_id -> HF-true winner_id} for same-model
-            # cross-namespace spellings the automatic fold can't key together
-            # (different org prefix, or a `1-2b`-vs-`1.2B` size-guard false block).
+            # `merge`: {loser_id -> winner_id} for spellings the automatic fold
+            # cannot key together (different org prefix, size-guard false block).
             curated_merge = ov.get("merge") or {}
-            # `non_lineage_bases`: underspecified umbrella ids that stay resolvable
-            # but may never be a lineage PARENT (see collision_overrides.yaml).
+            # Umbrella ids that stay resolvable but may never be a lineage parent.
             non_lineage_bases = set(ov.get("non_lineage_bases") or [])
-        # An HF-true canonical (oracle-sourced, or HF-promoted by the models.dev
-        # refresh with `hf_deferred`) carries the invented ids it replaced as
-        # aliases. A side source the refresh never rewrites (enrichments,
-        # tier3, hub_stats) may still key a record by such an id; left alone it
-        # materialises a second canonical that collides on the alias. Fold
-        # those records onto the HF entry, like a curated `merge` (core ids are
-        # never folded this way).
+        # An HF-true canonical carries the invented ids it replaced as aliases.
+        # A side source the refresh never rewrites may still key a record by
+        # such an id, which would materialise a second canonical colliding on
+        # the alias; fold those onto the HF entry (core ids never).
         core_ids = {e["id"] for e in core_entries}
         # A multi-child family root (`alibaba/qwen3-vl-235b-a22b` over Instruct
         # and Thinking) is not one repo and stays a root, like an umbrella.
@@ -500,8 +385,6 @@ def seed(
             if e["id"] not in hf_true_ids:
                 continue
             for a in e.get("aliases") or []:
-                # Never a core id, a curated umbrella, another HF-true
-                # canonical, or a multi-child root under a different name.
                 if a in core_ids or a in non_lineage_bases or a in hf_true_ids:
                     continue
                 if a in multi_child and not _own_name(a, e["id"]):
@@ -511,10 +394,8 @@ def seed(
         # A loser that is itself a declared winner would make a cycle.
         promoted_merge = {l: w for l, w in promoted_merge.items() if w not in promoted_merge}
         for l, w in promoted_merge.items():
-            # A casing twin shares the collision key; pin the HF id as that
-            # group's winner so the group fold cannot pick the alias and leave
-            # the two remaps pointing at each other. A key a core entry owns
-            # keeps its core winner.
+            # A casing twin shares the collision key: pin the HF id as winner so
+            # the group fold cannot leave the two remaps pointing at each other.
             key = collision_fold.collision_key(w)
             if collision_fold.collision_key(l) == key and key not in core_keys:
                 prefer.setdefault(key, w)
@@ -524,14 +405,9 @@ def seed(
             non_lineage_bases=non_lineage_bases,
         )
 
-        # WEAK FILL — LAST, after every strong merge INCLUDING the collision
-        # fold (a folded-in full entry's scalars are strong too), so a value
-        # from any full entry beats a weak one regardless of file load order.
-        # A weak value lands only when the merged field is still empty AND the
-        # key is not explicitly present on the core entry (an explicit core
-        # null is a curated unknown — see core_explicit above). Two weak values
-        # for the same (id, field): the FIRST contribution wins — source files
-        # in sorted-filename order, records in file order (weak_candidates).
+        # Weak fill runs after the collision fold so a folded-in full entry's
+        # scalars also beat weak ones. A weak value lands only on a still-empty
+        # field the core entry does not explicitly carry; first contribution wins.
         weak_scalars: dict[tuple[str, str], object] = {}
         for eid, field, value in weak_candidates:
             if eid in skip_ids or eid in skip_source_ids:
@@ -542,9 +418,7 @@ def seed(
             target = by_merged_id.get(eid)
             if target is None or field in core_explicit.get(eid, ()):
                 continue
-            # A dated-snapshot id's parsed date outranks weak data: the
-            # seed-time derive fallback (`release_date_derived_from_id`) would
-            # fill it anyway, and the id stamp is the snapshot's own identity.
+            # A dated-snapshot id's own date stamp outranks weak data.
             if field == "release_date" and _derive_release_date_from_id(eid) is not None:
                 continue
             if _is_empty(target.get(field)):
@@ -552,19 +426,8 @@ def seed(
         return merged
 
     # ------------------------------------------------------------------
-    # Benchmarks — two-source load:
-    #   seed/benchmarks.yaml                 → curated canonicals (the
-    #                                          source of truth, hand-edited)
-    #   seed/benchmarks_generated/*.yaml     → bulk auto-generated entries
-    #                                          (e.g. AIR-Bench 2024's 373
-    #                                          categories, derived from
-    #                                          scripts/data/air_bench_2024_raw_strings.txt)
-    #
-    # Merge order: generated → curated. Field-level merge per id (aliases
-    # union; other scalars prefer non-empty, last-write-wins) so curated
-    # entries can refine an auto-generated row without losing its aliases.
-    # Generator scripts must use stable canonical_ids so refreshes are
-    # idempotent.
+    # Benchmarks — seed/benchmarks_generated/*.yaml (bulk, stable ids so
+    # refreshes are idempotent) → seed/benchmarks.yaml (curated, wins).
     # ------------------------------------------------------------------
     def _load_benchmarks_merged() -> list[dict]:
         curated_path = seed_path / "benchmarks.yaml"
@@ -598,9 +461,8 @@ def seed(
             curated_entries = _load_benchmarks_yaml(curated_path)
 
         def _merge_benchmark(generated: dict, curated: dict) -> dict:
-            """Curated wins on every field it specifies; aliases are
-            unioned (case-insensitive dedup) so generator-emitted aliases
-            survive even when curated narrows the entry."""
+            """Curated wins on every field it specifies; aliases are unioned so
+            generator-emitted aliases survive."""
             merged = dict(generated)
             for k, v in curated.items():
                 if k == "aliases":
@@ -627,9 +489,8 @@ def seed(
                 by_id[entry["id"]] = _merge_benchmark(by_id[entry["id"]], entry)
             else:
                 by_id[entry["id"]] = entry
-        # `preferred_metric` (seed key) -> `preferred_metric_id` (column),
-        # validated against metrics.yaml so a typo can't silently null the
-        # merged-view default.
+        # `preferred_metric` is validated against metrics.yaml so a typo cannot
+        # silently null the merged-view default.
         metrics_path = seed_path / "metrics.yaml"
         metric_ids: set[str] = set()
         if metrics_path.exists():
@@ -660,20 +521,11 @@ def seed(
         return list(by_id.values())
 
     def _check_benchmark_collisions(entries: list[dict]) -> None:
-        """Seed-time guard: two benchmarks whose ids, display names, or
-        global aliases collapse to the same normalized key (casefold +
-        strip non-alphanumerics — stricter than collision_fold's
-        separator-only key, so spaced llm-stats-mint aliases like
-        "Vita Bench" are covered) are one entity split in two — fold them
-        (specs/benchmark-relationships-audit.md). Flag-only, never
-        auto-folds. Groups verified genuinely distinct go in
-        seed/benchmarks_distinct_allowlist.yaml (a list of id groups).
-        Residual: semantic dupes with different normalized keys
-        (mmmu-val vs mmmu-validation) are invisible to this check.
-        Also rejects '/' in benchmark ids — reserved by the merged-view
-        URL scheme (single-segment merged eval ids stay collision-free
-        with two-segment per-source ids only while benchmark ids are
-        slash-free)."""
+        """Flag (never auto-fold) benchmarks whose ids, display names or global
+        aliases share a seed_collision_key (stricter than collision_fold's key
+        so spaced aliases are covered); verified-distinct groups live in
+        seed/benchmarks_distinct_allowlist.yaml. Also rejects '/' in ids: the
+        merged-view URL scheme needs single-segment benchmark ids."""
         _norm = seed_collision_key
         allow_path = seed_path / "benchmarks_distinct_allowlist.yaml"
         allowed: list[frozenset[str]] = []
@@ -682,8 +534,7 @@ def seed(
                 for group in yaml.safe_load(f) or []:
                     allowed.append(frozenset(group))
 
-        # Typo guard: every allowlisted id must name a real benchmark,
-        # else a stale/misspelled allowlist entry silently stops guarding.
+        # A stale or misspelled allowlist entry would silently stop guarding.
         all_ids = {str(e["id"]) for e in entries}
         stale = sorted({bid for grp in allowed for bid in grp} - all_ids)
         if stale:
@@ -698,9 +549,8 @@ def seed(
                 raise typer.BadParameter(
                     f"benchmark id {bid!r} contains '/' (reserved for merged-view routing)"
                 )
-            # id + display_name + aliases: all three become resolver
-            # aliases at seed time (display_name is auto-promoted), so all
-            # three can carry a dupe in.
+            # id, display_name and aliases all become resolver aliases at seed
+            # time, so any of them can carry a dupe in.
             keys = {_norm(bid)}
             if e.get("display_name"):
                 keys.add(_norm(e["display_name"]))
@@ -722,15 +572,8 @@ def seed(
             )
 
     # ------------------------------------------------------------------
-    # Families — translate seed/families.yaml's nested {slug: {fields}}
-    # shape into flat dicts ready for upsert. The YAML uses the slug as
-    # the mapping key for human friendliness (`mmlu:` reads as a header);
-    # the table needs `id` as a column.
-    #
-    # Output schema mirrors `canonical_families`: list-valued fields
-    # (`benchmark_ids`, `folder_aliases`, `composite_keys`) are
-    # JSON-encoded so they round-trip through the parquet StringDtype
-    # column without losing structure.
+    # Families — seed/families.yaml is keyed {slug: {fields}} for
+    # readability; flattened to `id` rows for upsert.
     # ------------------------------------------------------------------
     def _load_families_seed() -> list[dict]:
         path = seed_path / "families.yaml"
@@ -742,7 +585,6 @@ def seed(
             raise typer.BadParameter(f"{path} must be a top-level mapping {{slug: {{...}}}}")
 
         out: list[dict] = []
-        # Validation: each benchmark may only appear in one curated family.
         seen_benchmarks: dict[str, str] = {}
         for slug, fields in raw.items():
             if not isinstance(fields, dict):
@@ -771,8 +613,7 @@ def seed(
         return out
 
     # ------------------------------------------------------------------
-    # Composites — same translation as families. YAML shape:
-    #   {slug: {display, configs: [...], category?, family_id?}}
+    # Composites — {slug: {display, configs: [...], category?, family_id?}}
     # ------------------------------------------------------------------
     def _load_composites_seed() -> list[dict]:
         path = seed_path / "composites.yaml"
@@ -789,21 +630,15 @@ def seed(
                 raise typer.BadParameter(f"composite {slug!r} entry must be a mapping, got {type(fields).__name__}")
             raw_configs = fields.get("configs")
             if raw_configs is None:
-                # Display-only override (no explicit `configs:`): implicit
-                # single source_config equal to the slug. Some upstream
-                # EEE folders are kebab (`arc-agi`), others snake
-                # (`helm_classic`); ship both forms so the producer's
-                # composite_config_map JOIN matches whichever the data
-                # uses. De-dup when slug has no `-`.
+                # Implicit single source_config equal to the slug. Upstream EEE
+                # folders are kebab (`arc-agi`) or snake (`helm_classic`), so
+                # both spellings ship for the producer's JOIN.
                 kebab = slug
                 snake = slug.replace("-", "_")
                 source_configs = [kebab] if kebab == snake else [kebab, snake]
             else:
-                # Members are bare config strings or scoped mappings
-                # {config, org[, source]} (composite-partition spec).
-                # Scoped mappings pass through as objects — the mixed
-                # list is JSON-encoded below by _json_encode_if_needed;
-                # str() would ship Python-repr garbage.
+                # Scoped members {config, org[, source]} pass through as objects
+                # into the JSON-encoded list; str() would ship Python-repr garbage.
                 source_configs = []
                 for c in raw_configs:
                     if isinstance(c, dict):
@@ -840,17 +675,9 @@ def seed(
         return out
 
     # ------------------------------------------------------------------
-    # Orgs — two-file load:
-    #   seed/orgs.yaml            → curated first-party labs (the source
-    #                               of truth, hand-edited)
-    #   seed/orgs.generated.yaml  → auto-created orgs from hub-stats refresh
-    #                               (HF authors that aren't curated labs)
-    #
-    # Curated wins on id collision. Unlike the models merge (field-level),
-    # orgs use a simple "drop generated entry if id is in curated" policy:
-    # curated entries are deliberate and richer; auto-created entries are
-    # thin (just id, display_name, kind=unknown), so a partial overlay
-    # would never improve the curated record.
+    # Orgs — curated seed/orgs.yaml + seed/orgs.generated.yaml. On id
+    # collision the generated entry is dropped outright (not field-merged):
+    # generated entries are thin and never improve a curated record.
     # ------------------------------------------------------------------
     def _load_orgs_merged() -> list[dict]:
         curated_path = seed_path / "orgs.yaml"
@@ -883,55 +710,34 @@ def seed(
 
     # table name, yaml file, label, entity_type (for alias creation)
     seed_specs = [
-        # Orgs: load via merge helper to combine curated + auto-generated.
         ("canonical_orgs", "__merged_orgs__", "orgs", "org"),
-        # Benchmarks: load via merge helper. Curated entries live in
-        # seed/benchmarks.yaml; bulk-generated entries (e.g. AIR-Bench
-        # 2024's 373 categories from the refresh script) live in
-        # seed/benchmarks_generated/*.yaml. Sentinel path triggers the
-        # _load_benchmarks_merged() helper.
         ("canonical_benchmarks", "__merged_benchmarks__", "benchmarks", "benchmark"),
         ("canonical_metrics", seed_path / "metrics.yaml", "metrics", "metric"),
         ("eval_harnesses", seed_path / "harnesses.yaml", "harnesses", "harness"),
-        # Families & composites are first-class registry entities. Their
-        # YAML uses {slug: {...}} shape, so we need translation loaders
-        # rather than the flat-list path.
-        # entity_type='family'/'composite' aliases are emitted for
-        # consistency but aren't consulted by the resolver today.
+        # family/composite aliases are emitted for consistency; the resolver
+        # does not consult them.
         ("canonical_families", "__nested_families__", "families", "family"),
         ("canonical_composites", "__nested_composites__", "composites", "composite"),
-        # Models: load via the merge helper; pass a sentinel path that
-        # signals the loop below to invoke _load_models_merged() instead of
-        # reading a single YAML file.
         ("canonical_models", "__merged_models__", "models", "model"),
     ]
 
     alias_count = 0
-    # Distinct source scope keys (EEE dataset config names) seen across
-    # scoped aliases and scoped metric folds — reported in the seed summary
-    # so a typo'd config shows up as a new key rather than a silent no-op.
+    # Reported in the summary so a typo'd config shows up as a new key.
     source_scope_keys: set[str] = set()
-    # Track all seed entity IDs and alias keys so we can remove stale ones.
-    # Alias key: (raw_value, entity_type, canonical_id, source_config)
+    # For stale removal; alias key = (raw_value, entity_type, canonical_id, source_config).
     seed_snapshot: list[tuple[str, str, set[str], set[tuple[str, str, str, Optional[str]]]]] = []
 
-    # Detect same-run alias collisions: two DIFFERENT canonicals declaring the
-    # same (raw_value, entity_type, source_config) within ONE seed pass. The
-    # add_alias/repoint path below silently last-write-wins on these, so the
-    # owner is seed-order-dependent (nondeterministic) — a real data bug. We
-    # record them here and raise after the loop so dirty seed data can't ship
-    # silently. NOTE: a legitimate YAML *rename* (the persisted store had the
-    # alias on a canonical that no longer claims it) is NOT a collision — only
-    # same-pass double-claims are, which is why this is keyed on this run only.
-    # Values/rows carry (owner, declarer) pairs: `owner` is the post-redirect
-    # target the row will point at; `declarer` is the entity whose alias list
-    # actually claimed the raw (what the operator must edit to resolve it).
+    # Two canonicals declaring one (raw_value, entity_type, source_config) in
+    # a single pass would make the owner seed-order-dependent, so collisions
+    # are collected and raised after the loop. Keyed on this run only: a YAML
+    # rename against the persisted store is not a collision. Values are
+    # (owner, declarer): the post-redirect target and the entity whose alias
+    # list claimed the raw.
     run_alias_owners: dict[tuple[str, str, Optional[str]], tuple[str, str]] = {}
     alias_collisions: list[tuple[str, str, Optional[str], str, str, str, str]] = []
 
-    # Build the alias index once so add_alias collision checks are O(1) instead
-    # of O(N) DataFrame mask scans. Combined with buffered=True below, this
-    # avoids the O(N²) pd.concat-per-row cost on ~1k entities + ~13k aliases.
+    # O(1) add_alias collision checks; with buffered=True this avoids
+    # O(N²) concat-per-row.
     queries._rebuild_alias_index(store)
 
     for table, yaml_file, label, entity_type in seed_specs:
@@ -971,36 +777,17 @@ def seed(
         yaml_ids: set[str] = set()
         yaml_alias_keys: set[tuple[str, str, str, Optional[str]]] = set()
 
-        # Anti-shadowing (models): a community/non-lab model's display_name is a
-        # noisy identity signal. When a fork's bare display_name (e.g.
-        # "aya-expanse-8b") normalizes to the same form as a real LAB model
-        # ("Aya Expanse 8B"), auto-seeding it as a global alias makes the fork
-        # WIN the bare name at confidence 1.0 and shadow the lab. Build the set
-        # of lab-owned normalized forms so we can drop only the COLLIDING
-        # display_name aliases off non-lab models (non-colliding ones still seed,
-        # so coverage is unaffected). org kind comes from canonical_orgs, which
-        # seeds before models.
+        # Anti-shadowing: a non-lab fork's bare display_name normalizing to a
+        # lab model's name would win it at confidence 1.0, so only colliding
+        # display_name aliases are dropped off non-lab models.
         lab_norms: set[str] = set()
-        # Prefer-official: normalized bare LEAF -> owning canonical id, decided
-        # by precedence instead of seed load order:
-        #   1. lab_leaf_owner — a LAB model owns its leaf. A lab rarely seeds
-        #      its own bare leaf as an alias (its forms are org-prefixed), so a
-        #      non-lab FORK sharing the leaf (jebish7/Llama-3.1-8B-Instruct,
-        #      whose display IS the bare "Llama-3.1-8B-Instruct") would
-        #      otherwise win the un-namespaced name.
-        #   2. strong_leaf_owner — else the leaf's UNIQUE confirmed entry
-        #      (hf-sourced or reviewed) owns it: a machine-minted draft
-        #      (models.dev / tier3 name inference, where org mis-attributions
-        #      live) never beats a real repo (e.g. the models.dev draft
-        #      `alibaba/dolphin-2-9.2-qwen2-72b` vs the real hf
-        #      `dphn/dolphin-2.9.2-qwen2-72b`). Applied only when the alias's
-        #      own entry is neither confirmed nor lab-owned — evidence can rank
-        #      a draft below a real repo, but not two real repos against each
-        #      other, and a lab draft (e.g. `microsoft/WizardLM-2-8x22B`, repo
-        #      deleted upstream) keeps its name on developer-attribution
-        #      grounds.
-        # Leaves with 2+ confirmed non-lab claimants stay unowned: those are
-        # duplicate re-uploads to deduplicate, not a name-preference call.
+        # Prefer-official: bare leaf -> owner by precedence, not load order.
+        # 1. lab_leaf_owner: a lab owns its leaf (a fork whose display is the
+        #    bare leaf would otherwise win it). 2. strong_leaf_owner: else the
+        #    leaf's unique confirmed (hf/reviewed) entry, applied only against
+        #    unconfirmed non-lab drafts so two real repos are never ranked. A
+        #    leaf with 2+ confirmed non-lab claimants is a duplicate, not a
+        #    name call, and stays unowned.
         lab_leaf_owner: dict[str, str] = {}
         lab_owner_dev: dict[str, str] = {}
         strong_leaf_owner: dict[str, str] = {}
@@ -1010,18 +797,11 @@ def seed(
         org_names: dict[str, str] = {}
 
         def _entry_dev(it: dict) -> str:
-            # Resolved developer org id for a seed entry. A set org_id is
-            # authoritative (curated remaps put the TRUE developer there —
-            # e.g. the mis-prefixed draft `alibaba/dolphin-2-9.2-qwen2-72b`
-            # carries org_id `cognitivecomputations`, and trusting its
-            # `alibaba/` prefix would launder the mis-attribution into lab
-            # status). Only when org_id is unset at load time (derived later,
-            # e.g. dated snapshots) fall back to the id's org prefix, resolved
-            # through the curated org map and then the merged-orgs name map —
-            # the same surface forms `derive_model_lineage_fields` uses to
-            # fill org_id, so the seed's lab decision and the seeded org_id
-            # agree (a prefix-shaped org display_name like "Scale" resolves
-            # identically in both).
+            # A set org_id is authoritative: curated remaps put the true
+            # developer there, and trusting the id prefix would launder a
+            # mis-attribution into lab status. Only an unset org_id falls back
+            # to the prefix, resolved through the same maps
+            # derive_model_lineage_fields uses, so the two agree.
             org_id = it.get("org_id")
             if org_id:
                 return str(org_id)
@@ -1035,9 +815,8 @@ def seed(
             return org_kind.get(_entry_dev(it)) == "lab"
 
         if entity_type == "model":
-            # Read kinds from the YAML source, not store.table — orgs above were
-            # upserted buffered=True and aren't flushed yet. Curated labs live in
-            # orgs.yaml; any org absent here (or kind!=lab) is treated as non-lab.
+            # From the YAML, not store.table: orgs were upserted buffered=True
+            # and are not flushed yet.
             merged_orgs = [
                 o for o in (_load_orgs_merged() or []) if isinstance(o, dict) and o.get("id")
             ]
@@ -1054,11 +833,8 @@ def seed(
                 if not isinstance(it, dict):
                     continue
                 cid = str(it.get("id") or "")
-                # "Confirmed" = a real repo (hf-sourced) or a reviewed entry —
-                # never a tier3 name-inferred draft, which is where org
-                # mis-attributions live (e.g. `meta/reflection-llama-3.1-70b`,
-                # inferred, would otherwise steal `Reflection-Llama-3.1-70B`
-                # from the real hf `mattshumer/Reflection-Llama-3.1-70B`).
+                # Confirmed = hf-sourced or reviewed; never a tier3 name-inferred
+                # draft, where org mis-attributions live.
                 confirmed = "/" in cid and (
                     it.get("resolution_source") == "hf"
                     or it.get("review_status") == "reviewed"
@@ -1070,17 +846,15 @@ def seed(
                     ).add(cid)
                 if not _entry_is_lab(it):
                     continue
-                # Only the aliases a lab actually SEEDS (display_name + explicit
-                # aliases) can catch a raw via normalized match — so only drop a
-                # community display that collides with one of THOSE. (name-part /
-                # id are NOT bare aliases, so dropping on them would orphan the raw.)
+                # Only the forms a lab seeds (display_name + explicit aliases)
+                # catch a raw; the id/name-part are not bare aliases, so dropping
+                # on them would orphan the raw.
                 for s in [it.get("display_name"), *(it.get("aliases") or [])]:
                     if isinstance(s, str) and s:
                         lab_norms.add(_normalize_alias(s))
                 if confirmed:
-                    # First claimant wins on a shared lab leaf; the gate
-                    # (test_lab_leaf_ownership_is_unambiguous) enforces that
-                    # no two confirmed lab models actually share one.
+                    # First claimant wins; test_lab_leaf_ownership_is_unambiguous
+                    # enforces that confirmed lab models never share a leaf.
                     _leaf_norm = _normalize_alias(cid.split("/", 1)[1])
                     if lab_leaf_owner.setdefault(_leaf_norm, cid) == cid:
                         lab_owner_dev[_leaf_norm] = _entry_dev(it)
@@ -1092,15 +866,9 @@ def seed(
 
         for original_item in items:
             item = dict(original_item)
-            # Pop 'aliases' / 'scoped_aliases' before upserting — not table columns.
             extra_aliases = item.pop("aliases", []) or []
             scoped_aliases = item.pop("scoped_aliases", {}) or {}
-            # Normalize list/dict columns: YAML may have native lists/dicts,
-            # but the canonical_* parquet columns are VARCHAR, so encode if
-            # needed. `parents` is a list-of-edges on canonical_models.
-            # `benchmark_ids` / `folder_aliases` / `composite_keys` are
-            # list-valued on canonical_families. `source_configs` is
-            # list-valued on canonical_composites.
+            # canonical_* parquet columns are VARCHAR.
             for col in (
                 "tags", "metadata", "parents",
                 "input_modalities", "output_modalities",
@@ -1118,10 +886,8 @@ def seed(
                 )
             if "id" not in entity_item:
                 raise typer.BadParameter(f"{label} seed entry is missing required id: {original_item!r}")
-            # Presentation-only: humanize the STORED display column for label-less
-            # model rows (tier-3 raws, empty, id-placeholder). Alias promotion
-            # below uses `display_name` = the ORIGINAL value, so resolution is
-            # unchanged — display coverage is decoupled from resolution.
+            # Alias promotion below uses the original `display_name`, so
+            # humanizing the stored column leaves resolution unchanged.
             display_name = entity_item.get("display_name", "")
             if entity_type == "model":
                 humanized = _humanized_display(entity_item)
@@ -1131,18 +897,12 @@ def seed(
             canonical_id = entity_item["id"]
             yaml_ids.add(canonical_id)
 
-            # Global aliases (source_config=None): matched regardless of caller's source_config.
-            # Scoped aliases (source_config=<name>): matched only when the caller passes that
-            # source_config — lets short tokens ("Overall", "Arabic") map to different
-            # benchmarks depending on which EEE config they came from.
+            # Scoped aliases match only under their source_config, so short
+            # tokens ("Overall") can map to different benchmarks per EEE config.
             global_aliases = {canonical_id, display_name} | set(extra_aliases)
-            # Drop a non-lab model's display_name alias when it would shadow a
-            # lab model (see lab_norms above). canonical_id + explicit aliases
-            # are kept — only the auto-promoted display_name is suppressed.
-            # global_aliases is a set, so when display_name IS the canonical_id
-            # (id-placeholder display) or an explicitly curated alias,
-            # discarding it would destroy that stronger claim too (an entity
-            # unresolvable by its own id) — never drop those strings.
+            # Suppress only the auto-promoted display_name of a non-lab model that
+            # would shadow a lab (lab_norms). global_aliases is a set, so a string
+            # that is also the canonical_id or an explicit alias is never dropped.
             item_dev = _entry_dev(entity_item) if entity_type == "model" else ""
             item_is_lab = org_kind.get(item_dev) == "lab"
             if (
@@ -1170,18 +930,11 @@ def seed(
                         alias_specs.append((raw, source_cfg))
 
             for raw_value, source_cfg in alias_specs:
-                # Prefer-official redirect: an un-namespaced leaf alias (a fork's
-                # bare display "Llama-3.1-8B-Instruct", or a short/dated form) is
-                # pointed at the leaf's owner (see the precedence above
-                # lab_leaf_owner / strong_leaf_owner) so the official model wins
-                # the bare name, not whichever entry sorts first. Global aliases
-                # only (source_config=None). The lab tier takes names from
-                # non-lab entries and from SAME-developer lab entries (a lab's
-                # models.dev/casing mint folding onto its confirmed repo) but
-                # never across distinct labs — a lab entry keeps its name on
-                # developer-attribution grounds even against another lab's
-                # colliding leaf. The confirmed tier only takes names FROM
-                # unconfirmed non-lab drafts.
+                # Prefer-official redirect (global aliases only): a bare leaf
+                # alias points at the leaf's owner (lab_leaf_owner /
+                # strong_leaf_owner). The lab tier takes names from non-lab
+                # entries and same-developer lab entries, never across distinct
+                # labs; the confirmed tier only from unconfirmed non-lab drafts.
                 target_cid = canonical_id
                 if entity_type == "model" and source_cfg is None:
                     _norm = _normalize_alias(raw_value)
@@ -1194,11 +947,7 @@ def seed(
                         _strong = strong_leaf_owner.get(_norm)
                         if _strong and _strong != canonical_id:
                             target_cid = _strong
-                # Index stale-removal by (raw_value, entity_type, canonical_id, source_config)
                 yaml_alias_keys.add((raw_value, entity_type, target_cid, source_cfg))
-                # Same-run collision check (see run_alias_owners above): if a
-                # different canonical already claimed this exact alias in this
-                # pass, the owner would be nondeterministic — record it.
                 _claim_key = (raw_value, entity_type, queries._source_config_key(source_cfg))
                 _prev = run_alias_owners.get(_claim_key)
                 if _prev is None:
@@ -1222,14 +971,9 @@ def seed(
                     }, buffered=True)
                     alias_count += 1
                 except ValueError:
-                    # add_alias raises on uniqueness collision: an alias row
-                    # already exists for (entity_type, raw_value, source_config).
-                    # YAML is the source of truth, so if the existing row points
-                    # at a different canonical_id, this is a YAML rename and we
-                    # must REPOINT the existing row — NOT silently swallow it.
-                    # Without this, stale-removal at the end of seed would then
-                    # delete the row (its old key is no longer in
-                    # yaml_alias_keys), causing total alias loss.
+                    # An existing row pointing at a different canonical is a YAML
+                    # rename: repoint it, or stale-removal at the end of seed
+                    # deletes it (its old key is not in yaml_alias_keys).
                     aliases_df = store.table("aliases")
                     mask = (
                         (aliases_df["raw_value"] == raw_value)
@@ -1242,18 +986,10 @@ def seed(
                         mask = mask & aliases_df["source_config"].isna()
                     existing = aliases_df[mask]
                     if existing.empty:
-                        # Collision came from the pending buffer (this run added
-                        # the same key earlier). For same-canonical re-adds this
-                        # is a no-op; for different-canonical we must mutate the
-                        # pending dict in place so the rename isn't lost on
-                        # flush. _alias_index points at the same dict, so
-                        # updating it here keeps the index consistent.
-                        # Repoint to target_cid, NOT canonical_id: a redirected
-                        # alias (see target_cid above) must keep its redirect
-                        # target even when a duplicate same-run claim lands here
-                        # — repointing to the raw claimant would silently undo
-                        # prefer-official for exactly the contested names it
-                        # exists to protect.
+                        # Collision from this run's pending buffer: mutate the
+                        # pending dict in place (the alias index shares it).
+                        # Repoint to target_cid, not canonical_id, so a
+                        # prefer-official redirect survives a duplicate claim.
                         for p in queries._get_pending(store, "aliases"):
                             if (p.get("entity_type") == entity_type
                                     and p.get("raw_value") == raw_value
@@ -1275,7 +1011,6 @@ def seed(
                         continue
                     row = existing.iloc[0]
                     if row["canonical_id"] != target_cid:
-                        # Rename: repoint the existing row at the new canonical.
                         queries.update_alias(store, row["id"], {
                             "canonical_id": target_cid,
                             "source_field": "seed",
@@ -1293,11 +1028,7 @@ def seed(
         seed_snapshot.append((table, entity_type, yaml_ids, yaml_alias_keys))
         typer.echo(f"  {label}: {len(items)}")
 
-    # Fail fast on same-run alias collisions (nondeterministic owner). Don't
-    # flush — dirty data must not persist. Each line names the contended alias
-    # and the two canonicals; fix by removing the duplicate declaration from
-    # the non-owning entity (per project rule: the later/more-specific entity
-    # owns the name).
+    # Raised before flush so dirty data never persists.
     if alias_collisions:
         deduped = sorted(set(alias_collisions))
         lines = "\n".join(
@@ -1313,16 +1044,12 @@ def seed(
             "exactly one canonical:\n" + lines
         )
 
-    # Flush all buffered upserts (entities + aliases) into their tables in a
-    # single pd.concat per table. prune_stale below reads store.table(...)
-    # directly, so this must happen before that block.
+    # prune_stale reads store.table() directly, so flush first.
     queries.flush_pending(store)
 
     # ------------------------------------------------------------------
-    # Inference platforms — flat dim table. Loaded directly into
-    # canonical_inference_platforms rather than through the seed_specs loop:
-    # its `aliases` column is a stored JSON list of host-token spellings (the
-    # single source for lib/inference_platforms_map.py), NOT alias-table rows.
+    # Inference platforms — bypasses the seed_specs loop: its `aliases`
+    # column is a stored JSON list of host-token spellings, not alias rows.
     # ------------------------------------------------------------------
     def _load_inference_platforms_merged() -> list[dict]:
         path = seed_path / "inference_platforms.yaml"
@@ -1359,7 +1086,6 @@ def seed(
             }
             inf_plat_rows.append(row)
         inf_plat_df = pd.DataFrame(inf_plat_rows)
-        # Schema-pad any missing columns and order to match the schema.
         for col in inf_cols:
             if col not in inf_plat_df.columns:
                 inf_plat_df[col] = None
@@ -1368,9 +1094,8 @@ def seed(
         typer.echo(f"  inference_platforms: {len(inf_plat_rows)}")
 
     # ------------------------------------------------------------------
-    # Benchmark metric folds — flat dim table (no entity ids, so it skips
-    # the seed_specs/upsert path). Entries state that `from_metric` on
-    # `benchmark` is the preferred measurement under a generic name.
+    # Benchmark metric folds — flat dim table with no entity ids, so it
+    # skips the seed_specs/upsert path.
     # ------------------------------------------------------------------
     folds_path = seed_path / "metric_folds.yaml"
     if folds_path.exists():
@@ -1411,9 +1136,8 @@ def seed(
                 )
             if source_config is not None:
                 source_scope_keys.add(source_config)
-            # A scoped row may fold a metric onto ITSELF: that is a pure
-            # published-scale conversion for one source, not a rename. An
-            # unscoped row saying `x is x` carries no information.
+            # A scoped self-fold is a pure published-scale conversion; an
+            # unscoped one carries no information.
             if fm == tm and source_config is None:
                 raise typer.BadParameter(f"metric_folds ({b}): self-fold {fm!r}")
             row_key = (b, fm, source_config)
@@ -1465,13 +1189,9 @@ def seed(
                 "scale_factor": factor, "scale_offset": offset,
                 "note": e.get("note"),
             })
-        # A scoped row is either (a) the per-source conversion attached to a
-        # benchmark-wide naming fold — then it must name that fold's target —
-        # or (b) a standalone published-scale conversion, which renames
-        # nothing (from_metric == to_metric) and must actually carry a
-        # conversion. Naming a DIFFERENT target than the benchmark-wide row
-        # would make one source's metric mean something else, so it is
-        # rejected either way.
+        # A scoped row is either the per-source conversion of a benchmark-wide
+        # fold (and must name that fold's target, or one source's metric would
+        # mean something else) or a standalone conversion that renames nothing.
         for row in fold_rows:
             source_config = row["source_config"]
             if source_config is None:
@@ -1503,9 +1223,7 @@ def seed(
         store.set_table("benchmark_metric_folds", folds_df)
         typer.echo(f"  metric_folds: {len(fold_rows)}")
 
-    # Derive denormalized parent-walk caches now that all canonical_models
-    # rows are present. `model_group_id` and `lineage_origin_model_org_id`
-    # are computed from `parents` and need the full graph to be in place.
+    # Needs the full parents graph, so after every model row is present.
     lineage_counts = queries.derive_model_lineage_fields(store)
     typer.echo(
         f"  derived: model_group_id={lineage_counts['group_set']}, "
@@ -1519,11 +1237,9 @@ def seed(
     removed_entities = 0
     removed_aliases = 0
     if prune_stale:
-        # Remove seed-originated entities and aliases that are no longer in the YAML.
-        # Only touches rows that were created by seed (strategy == "seed"), never
-        # sync-created aliases or auto-draft entities.
+        # Only seed-originated rows (strategy == "seed", reviewed entities)
+        # are pruned; sync-created aliases and auto-drafts are never touched.
         for table, entity_type, yaml_ids, yaml_alias_keys in seed_snapshot:
-            # Remove stale seed aliases for this entity type.
             aliases_df = store.table("aliases")
             seed_mask = (aliases_df["strategy"] == "seed") & (aliases_df["entity_type"] == entity_type)
             if seed_mask.any():
@@ -1542,19 +1258,13 @@ def seed(
                     store.set_table("aliases", aliases_df[~stale_alias_mask].reset_index(drop=True))
                     removed_aliases += int(n_stale)
 
-            # Remove stale seed entities — only those with review_status "reviewed"
-            # that came from seed and are no longer in the YAML.
             entity_df = store.table(table)
             if len(entity_df) > 0:
                 stale = entity_df["id"].isin(yaml_ids)
                 stale_entities = entity_df[~stale & (entity_df["review_status"] == "reviewed")]
-                # FK guard: never prune an org still referenced by a surviving
-                # FK. A model whose org_id is DERIVED from its id-prefix (no
-                # curated remap) gets an org row auto-created at seed time that
-                # isn't in the orgs YAML; without this guard prune would drop it
-                # and orphan the model (dangling org_id FK). Orgs also reference
-                # other orgs via parent_org_id, so an org that is any other org's
-                # parent must be kept too.
+                # FK guard: an org auto-created from a model's id prefix is not
+                # in the orgs YAML, and pruning it would dangle the model's
+                # org_id; parent_org_id references are kept for the same reason.
                 if entity_type == "org" and len(stale_entities) > 0:
                     referenced: set[str] = set()
                     models = store.table("canonical_models")
@@ -1571,8 +1281,7 @@ def seed(
                     stale_entities = stale_entities[
                         ~stale_entities["id"].astype(str).isin(referenced)
                     ]
-                # Only remove if every alias for this entity is also seed-originated,
-                # meaning it wasn't referenced by sync data.
+                # An entity referenced by a sync-created alias is kept.
                 current_aliases = store.table("aliases")
                 for eid in stale_entities["id"]:
                     entity_aliases = current_aliases[
@@ -1581,7 +1290,6 @@ def seed(
                     ]
                     if len(entity_aliases) == 0 or (entity_aliases["strategy"] == "seed").all():
                         entity_df = entity_df[entity_df["id"] != eid]
-                        # Also remove any remaining aliases pointing to it.
                         current_aliases = current_aliases[
                             ~((current_aliases["canonical_id"] == eid)
                               & (current_aliases["entity_type"] == entity_type))
@@ -1651,10 +1359,8 @@ def sync(
     rerun: bool = typer.Option(False, "--rerun", help="Re-resolve all raw strings even if already aliased"),
     local: bool = typer.Option(False, "--local"),
 ):
-    """
-    Batch sync EEE config(s) → writes resolved results to eval_results table.
-    Each result row is one (model × benchmark × metric) combination with resolved canonical IDs.
-    """
+    """Batch sync EEE config(s) into eval_results: one row per
+    (model x benchmark x metric) with resolved canonical ids."""
     import os
     if local:
         os.environ["LOCAL_MODE"] = "true"

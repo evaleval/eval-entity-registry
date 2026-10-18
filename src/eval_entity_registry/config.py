@@ -14,18 +14,11 @@ class Settings(BaseSettings):
     read_only: bool = False
     hf_log_bucket: str = ""
     log_flush_interval_seconds: int = 300
-    # Live hub-stats enrichment at draft creation. When True (default for
-    # CLI sync runs), the resolver's auto-create path looks up unmatched
-    # HF-shaped raw values in cfahlgren1/hub-stats and pre-populates the
-    # draft entity with release_date / params / parents / lineage_origin.
-    # Disable for tests and offline dev — every lookup hits HF.
+    # Live hub-stats enrichment of auto-created model drafts; every lookup
+    # hits HF, so disable for tests and offline dev.
     hub_stats_lookup_enabled: bool = True
-    # Live HF repo-id existence check (the `hf_live` tier of HfIdVerifier).
-    # When True (default, incl. the deployed Space), an HF-shaped model raw
-    # value that misses the local hub_stats_index is confirmed against the
-    # Hub API (one small GET per unknown id, cached, budgeted, and behind a
-    # circuit breaker). With it off the checker answers from the index and
-    # cache only. Auto-disabled in tests via conftest.
+    # Live Hub API existence check (HfIdVerifier `hf_live` tier) for HF-shaped
+    # model ids missing from the local hub_stats_index; off = index + cache only.
     hf_live_id_check_enabled: bool = True
     # Timeout (seconds) for a single live Hub API id check.
     hf_live_id_check_timeout: float = 5.0
@@ -33,8 +26,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Export HF_TOKEN to the environment so that libraries that read it directly
-# (e.g. `datasets.load_dataset`) pick it up, not just code that uses
-# `settings.hf_token`.
+# Libraries such as `datasets.load_dataset` read HF_TOKEN from the environment,
+# not from settings.
 if settings.hf_token and not os.environ.get("HF_TOKEN"):
     os.environ["HF_TOKEN"] = settings.hf_token

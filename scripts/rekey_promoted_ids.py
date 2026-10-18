@@ -2,11 +2,9 @@
 """Re-key seed references to ids the models.dev refresh promoted to HF-true ids.
 
 When the refresh folds an invented `{org}/{slug}` canonical onto its real HF
-repo, the old id survives as an alias on the HF entry, but every other seed
-file that still *keys* a record by the old id (an enrichment, a tier3 or
-hub-stats row) or names it in a `parents` edge now points at an alias. The
-gates fail closed on that until the references follow the rename. This script
-does the follow: text-level edits so curated comments survive.
+repo, the old id survives only as an alias, so any seed record still keyed by
+it or naming it in a `parents` edge points at an alias and the gates fail
+closed. Edits are text-level so curated comments survive.
 
 Per file:
   core.yaml, enrichments/parents.yaml, hub_stats.generated.yaml,
@@ -115,9 +113,8 @@ def promotion_map() -> dict[str, str]:
         return (hf_to_dev.get(org.lower(), org.lower()), rfm._identity_sig(name), _bsizes(name))
 
     out: dict[str, str] = {}
-    # 1. Every alias the generated sources put on an HF-true entry (a full
-    #    hf_deferred entry, or an enrich record on an oracle id) that is an id:
-    #    `org/...`-shaped, or an org-less id some side file still keys by.
+    # Aliases on an HF-true entry that are themselves ids: `org/...`-shaped,
+    # or org-less but still keyed by a side file.
     for path in GENERATED:
         for e in _entries(path):
             if e["id"] not in hf_true:
@@ -129,9 +126,8 @@ def promotion_map() -> dict[str, str]:
                     continue
                 if "/" in a or a in side_keys:
                     out.setdefault(a, e["id"])
-    # 2. A tier3 draft that is the same model as an HF-true entry under the
-    #    folded-identity gate's own key (dev org, variant-preserving token
-    #    signature, size signature): the inferred spelling folds too.
+    # A tier3 draft matching an HF-true entry under the folded-identity gate's
+    # own key folds too.
     by_key: dict = {}
     for hf_id in hf_true:
         if "/" in hf_id:
@@ -295,11 +291,9 @@ def _merge_record(tgt: dict, rec: dict) -> None:
 
 
 def merge_duplicate_records(text: str) -> tuple[str, int]:
-    """A re-keyed record may now share its id with a record the file already
-    had. The loader unions same-id records, but the seed files keep one record
-    per id: fold later duplicates (aliases, parent edges) into the first one.
-    Only the first duplicate's block is re-emitted, so comments elsewhere
-    survive."""
+    """Fold later same-id records into the first one (the seed files keep one
+    record per id). Only the first duplicate's block is re-emitted, so comments
+    elsewhere survive."""
     blocks = re.split(r"(?m)^(?=- id: )", text)
     first: dict[str, int] = {}
     merged: dict[int, dict] = {}

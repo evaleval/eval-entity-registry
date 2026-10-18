@@ -1,12 +1,8 @@
-"""The bare resolver. Matches a raw value to a canonical id via the
-strategy chain (exact → normalized → fuzzy → no_match), and — when
-given a `CanonicalStore` — enriches the result with the matched
-canonical's metadata, parent edges, model-specific lineage fields,
-and quantized-chain root collapse.
-
-The enrichment matches the HTTP API's response shape exactly. Callers
-using the resolver standalone get the same `ResolutionResult` they'd
-get back from `POST /api/v1/resolve`."""
+"""Matches a raw value to a canonical id via the strategy chain (exact →
+HF id check → normalized → fuzzy → no_match) and, given a `CanonicalStore`,
+enriches the result with the canonical's metadata and hierarchy. The
+enriched `ResolutionResult` is the rich in-process shape the HTTP API
+projects down from."""
 from __future__ import annotations
 
 import re
@@ -28,38 +24,32 @@ from eval_entity_resolver.strategies.exact import exact_match
 from eval_entity_resolver.strategies.normalized import normalized_match
 from eval_entity_resolver.strategies.fuzzy import fuzzy_match
 
-# Confidence assigned to normalized-match results. Below 1.0 (exact) and
-# above _STEM_CONFIDENCE (0.90, fuzzy) so the provenance is clear in the
-# resolution log.
+# Strictly between exact (1.0) and fuzzy (`_STEM_CONFIDENCE`, 0.90) so the
+# tier is recoverable from the confidence alone.
 _NORMALIZED_CONFIDENCE = 0.95
 
-# Two-character segments are language codes and version fragments, never a
-# benchmark, and the registry does hold a handful of two-letter canonicals
-# (`if`, `mc`, `nq`) a bare segment would otherwise collide with.
+# Two-character segments are language codes or version fragments, and the
+# registry holds two-letter canonicals (`if`, `mc`, `nq`) they would collide with.
 _MIN_BENCHMARK_SEGMENT_LEN = 3
 _MIN_METRIC_SEGMENT_LEN = 3
 
-# A trailing version token on a harness string (`lm_eval 0.4.12`,
-# `inspect_ai inspect_ai:0.3.80.dev25+g91a50728.d20250331`). Whitespace-
-# separated, optional `v` prefix, digits with at least one dot, an optional
-# PEP 440 pre/post/dev tail and an optional local segment. A `<lib>:` prefix on
-# the token is matched here and validated against the name in
-# `_strip_harness_version`.
+# Trailing version token on a harness string (`lm_eval 0.4.12`,
+# `inspect_ai inspect_ai:0.3.80.dev25+g91a50728.d20250331`); the optional
+# `<lib>:` prefix is validated against the name in `_strip_harness_version`.
 _HARNESS_VERSION_TAIL_RE = re.compile(
-    r"^(?P<name>.*\S)\s+"                                   # 'name', then whitespace
-    r"(?:(?P<lib>[A-Za-z][\w.\-]*):)?"                       # optional '<lib>:' prefix
-    r"v?(?P<version>\d+(?:\.\d+)+"                          # optional v, digits with >= 1 dot
-    r"(?:[.\-]?(?:dev|rc|a|b|alpha|beta|post|final)\d*)?"    # PEP 440-style pre/post/dev tail
-    r"(?:\+[\w.]+)?)$",                                      # optional local segment
+    r"^(?P<name>.*\S)\s+"
+    r"(?:(?P<lib>[A-Za-z][\w.\-]*):)?"
+    r"v?(?P<version>\d+(?:\.\d+)+"
+    r"(?:[.\-]?(?:dev|rc|a|b|alpha|beta|post|final)\d*)?"
+    r"(?:\+[\w.]+)?)$",
     re.IGNORECASE,
 )
 
 
 def _strip_harness_version(raw_value: str) -> Optional[str]:
-    """Return the bare harness name when `raw_value` ends in a whitespace-separated
-    version token, else None. A `<lib>:` prefix on the token is accepted only when
-    `<lib>` normalizes equal to the name (`inspect_ai inspect_ai:0.3.75`), so
-    `foo bar:1.0` is not stripped."""
+    """Bare harness name when `raw_value` ends in a whitespace-separated version
+    token, else None. A `<lib>:` prefix on the token is accepted only when `<lib>`
+    normalizes equal to the name, so `foo bar:1.0` is not stripped."""
     if not raw_value:
         return None
     m = _HARNESS_VERSION_TAIL_RE.match(raw_value.strip())
@@ -72,26 +62,15 @@ def _strip_harness_version(raw_value: str) -> Optional[str]:
 
 @dataclass
 class StructuredBenchmark:
-    """One dotted `evaluation_name` resolved against the benchmark
-    vocabulary. `benchmark_raw` is the surface form to record downstream:
-    the winning segment plus any subset segments, which is what the
-    producer's slice machinery reads.
+    """One dotted `evaluation_name` resolved against the benchmark vocabulary.
+    `benchmark_raw` is the surface form to record downstream (winning segment
+    plus any subset segments).
 
     `subset_is_identity` says whether `subset` names a PART of the benchmark
-    or merely spells the benchmark itself at greater length. The two look
-    identical in `subset` and mean opposite things to a consumer deciding
-    what a row measured:
-
-      * `mmlu.mmlu.anatomy` — the registry knows `mmlu`, not
-        `mmlu anatomy`, so `anatomy` is a real subset. The row measured one
-        subject, a PART of MMLU. `subset_is_identity` False.
-      * `polyglotoxicityprompts.polyglotoxicityprompts.small_overall` — the
-        registry aliases the whole joined spelling to the benchmark, so the
-        trailing segments belong to the identity, not to a subset of it. The
-        row measured the benchmark. `subset_is_identity` True.
-
-    `subset` is kept in both cases because the producer's slice machinery
-    spells its display axis from it either way."""
+    (`mmlu.mmlu.anatomy`: `anatomy` is one subject, False) or merely spells the
+    benchmark at greater length (`polyglotoxicityprompts.polyglotoxicityprompts.
+    small_overall`: the joined spelling is an alias of the benchmark, True).
+    `subset` is populated in both cases."""
 
     canonical_id: str
     benchmark_raw: str
@@ -100,28 +79,22 @@ class StructuredBenchmark:
 
     @property
     def observation_role(self) -> str:
-        """What this match VERIFIED the row observed, relative to the
-        benchmark it resolved to: `"whole"` or `"part"`.
+        """`"whole"` or `"part"`: what this match verified the row observed.
 
-        There is a third answer this class cannot express — `"unknown"`,
-        the row whose name the structured path could not read at all
-        (flat/spaced names such as HELM's `MMLU All Subjects`, which
-        `prepare_eval_name_segments` declines). That answer is the ABSENCE
-        of a `StructuredBenchmark`, and callers must map `None` to it
-        rather than assuming a whole: a name nobody parsed is not a
-        verified observation of anything, and labelling it `whole` is the
-        claim that made a page pool 34 subjects into their own total."""
+        The third answer, `"unknown"`, is the ABSENCE of a `StructuredBenchmark`
+        (a name `prepare_eval_name_segments` declines, e.g. HELM's
+        `MMLU All Subjects`). Callers must map `None` to unknown, not to whole:
+        an unparsed name is not a verified observation of anything."""
         return "part" if (self.subset and not self.subset_is_identity) else "whole"
 
 
 @dataclass
 class StructuredMetric:
     """One namespaced `metric_config.metric_id` resolved against the metric
-    vocabulary. `matched_segment` is the surface form that carried the
-    identity (the whole id when a whole-id alias won); `qualifier` is the
-    tail spelled after it, which narrows the same metric to a scoring
-    variant (`gpqa.accuracy.strict`, `squadv2.f1.has_ans`) and is None when
-    the tail carries no information."""
+    vocabulary. `matched_segment` is the surface form that carried the identity
+    (the whole id when a whole-id alias won); `qualifier` is the tail after it,
+    which narrows the metric to a scoring variant (`gpqa.accuracy.strict`), or
+    None when the tail carries no information."""
 
     canonical_id: str
     matched_segment: str
@@ -129,8 +102,8 @@ class StructuredMetric:
 
 
 def _is_aggregate_marker(segment: str) -> bool:
-    """`overall` and `<group>_overall` mark an aggregation level, not a
-    variant of the metric, so they never become a qualifier."""
+    """`overall` / `<group>_overall` mark an aggregation level, not a metric
+    variant, so they never become a qualifier."""
     lowered = segment.lower()
     return lowered == "overall" or lowered.endswith("_overall")
 
@@ -143,18 +116,11 @@ class Resolver:
         canonical_store: Optional[CanonicalStore] = None,
         hf_id_checker: Optional[Callable[[str], Optional[HfIdHit]]] = None,
     ) -> None:
-        """`store` is required (alias matching is the resolver's core job).
-        `canonical_store` is optional — when provided, results are
-        enriched with parent / lineage / metadata fields. Without it,
-        only the basic match fields (canonical_id, strategy, confidence)
-        are populated.
-
-        `hf_id_checker` is optional — when provided, HF-shaped model raw
-        values are checked against it as a resolution step: a verbatim
-        (case-insensitive) confirmation outranks any alias match, and a
-        normalized (separator-collapse) confirmation ranks between the
-        normalized-alias and fuzzy steps. Without it, the chain is
-        identical to the classic exact → normalized → fuzzy order."""
+        """Without `canonical_store` only the basic match fields (canonical_id,
+        strategy, confidence) are populated. With `hf_id_checker`, HF-shaped
+        model raw values are checked against it: a verbatim (case-insensitive)
+        confirmation outranks any alias match; a separator-collapse confirmation
+        ranks between the normalized-alias and fuzzy steps."""
         self.store = store
         self.config = config or ResolverConfig()
         self.canonical_store = canonical_store
@@ -166,10 +132,8 @@ class Resolver:
         path: str | Path,
         config: Optional[ResolverConfig] = None,
     ) -> "Resolver":
-        """Load both alias and canonical stores from a parquet directory
-        (e.g. `./fixtures/`) and return a fully-enriching resolver. This
-        is the recommended convenience for callers who want the same
-        response shape as the HTTP API."""
+        """Fully-enriching resolver over `<path>/*.parquet` (alias + canonical
+        tables)."""
         return cls(
             AliasStore.from_parquet(path),
             config=config,
@@ -182,8 +146,7 @@ class Resolver:
         repo_id: str,
         config: Optional[ResolverConfig] = None,
     ) -> "Resolver":
-        """Load both stores from a HF Dataset repo and return a
-        fully-enriching resolver."""
+        """Fully-enriching resolver over a HF Dataset repo."""
         return cls(
             AliasStore.from_hf(repo_id),
             config=config,
@@ -198,30 +161,22 @@ class Resolver:
         mode: str = "resolve",
         check_hf: bool = True,
     ) -> ResolutionResult:
-        """`check_hf=False` disables the injected HF id check for this call.
-        Internal inference resolves (e.g. tier-3 stem probing) use it so a
-        batch of stem candidates never draws live-lookup budget."""
-        # 1. Exact
+        """`check_hf=False` disables the injected HF id check for this call, so
+        internal candidate probing never draws live-lookup budget."""
         canonical_id = exact_match(raw_value, entity_type, source_config, self.store)
 
-        # 2. HF id check (models only, HF-shaped only, checker injected).
-        # Called at most once per resolve; the hit is reused by the
-        # normalized-tier step below.
         hf_hit = (
             self._maybe_check_hf_id(raw_value, entity_type, canonical_id)
             if check_hf else None
         )
         if hf_hit is not None and hf_hit.verbatim:
             if canonical_id is not None and canonical_id == hf_hit.hf_id:
-                # Agreement — the registry result is richer; stamp the
-                # runtime attestation onto it.
                 result = self._enrich(
                     raw_value, entity_type, source_config, canonical_id, "exact", 1.0
                 )
                 return self._stamp_hf_attestation(result, hf_hit)
-            # Disagreement or registry miss — the verbatim HF id wins over
-            # any alias mapping (owner decision: a string that IS a real HF
-            # repo id resolves to itself).
+            # A string that IS a real HF repo id resolves to itself, over any
+            # alias mapping.
             return self._hf_checker_result(
                 raw_value, entity_type, source_config, hf_hit, "exact", 1.0
             )
@@ -234,9 +189,7 @@ class Resolver:
                 result = self._stamp_hf_attestation(result, hf_hit)
             return result
 
-        # 3. Normalized alias (confidence 0.95 — only return if above
-        # threshold). A curated normalized alias outranks a merely
-        # separator-collapsed HF index hit.
+        # A curated normalized alias outranks a separator-collapsed HF hit.
         if _NORMALIZED_CONFIDENCE >= self.config.threshold:
             canonical_id = normalized_match(raw_value, entity_type, self.store, source_config)
             if canonical_id is not None:
@@ -248,14 +201,12 @@ class Resolver:
                     result = self._stamp_hf_attestation(result, hf_hit)
                 return result
 
-        # 4. Normalized-tier HF id check hit (separator-collapse match).
         if hf_hit is not None and not hf_hit.verbatim:
             return self._hf_checker_result(
                 raw_value, entity_type, source_config,
                 hf_hit, "normalized", _NORMALIZED_CONFIDENCE,
             )
 
-        # Exact-only mode stops here: no fuzzy inference.
         if mode == "exact":
             return ResolutionResult(
                 raw_value=raw_value,
@@ -266,10 +217,6 @@ class Resolver:
                 confidence=0.0,
             )
 
-        # 5. Fuzzy — thread the store-backed curated org map (incl. orgs.yaml
-        # alias tier) into the org-agreement guard so org-equivalent namespaces
-        # (AlephAlpha/aleph-alpha, MiniMaxAI/minimax, Alibaba-NLP/alibaba) fold
-        # and match.
         canonical_id, confidence, inferred_platform = fuzzy_match(
             raw_value, entity_type, self.config.threshold, self.store, source_config,
             org_dev_map=self._org_fold_map(), known_orgs=self._known_orgs(),
@@ -279,18 +226,12 @@ class Resolver:
                 raw_value, entity_type, source_config,
                 canonical_id, "fuzzy", confidence,
             )
-            # Thread the captured inference_platform onto the result. This is
-            # the per-run platform read off an EXPLICIT host token in the raw
-            # id (a `together/`-prefix or `-bedrock`-suffix), which WINS — an
-            # explicit host token in the id is the strongest per-run platform
-            # fact. Only set it when a token was actually present (None
-            # otherwise), so non-host ids leave the field untouched.
+            # An explicit host token in the raw id (`together/`, `-bedrock`) is
+            # the strongest per-run platform fact; absent one, leave the field.
             if inferred_platform is not None:
                 result.inference_platform = inferred_platform
             return result
 
-        # 6. No match — for a harness in resolve mode, one last additive try
-        # with a trailing version token stripped (see the helper).
         return self._no_match_or_harness_retry(
             raw_value, entity_type, source_config, mode
         )
@@ -302,21 +243,15 @@ class Resolver:
         source_config: Optional[str],
         mode: str,
     ) -> ResolutionResult:
-        """The final `no_match` exit, with one additive step for harnesses:
-        a versioned harness string (`lm_eval 0.4.12`, `polistemics 1.1.0`)
-        whose bare name IS a registered harness resolves to it.
+        """The `no_match` exit, with one additive step for harnesses: a versioned
+        harness string (`lm_eval 0.4.12`) whose bare name IS a registered harness
+        resolves to it.
 
-        Fires only when every existing strategy missed, only for
-        `entity_type == "harness"`, and only in `mode="resolve"` — exact mode
-        stops at the alias tiers by contract (README "Exact mode"), and the
-        strip is an inference step however mild. A per-version alias therefore
-        always wins first, which is how the strip stays overridable.
-
-        The hit is reported as a `normalized` match at 0.95 (dropping a
-        version token is a normalization of the raw value, not an exact hit)
-        and carries `resolution_detail = {"harness_version_stripped", "bare_name",
-        "bare_tier"}` so the provenance is auditable. A harness hit that did
-        NOT strip a version keeps the documented empty `resolution_detail`.
+        Runs only after every strategy missed (so a per-version alias always wins
+        first), only for `entity_type == "harness"`, and never in exact mode (the
+        strip is an inference step). Reported as `normalized` at 0.95 with
+        `resolution_detail = {harness_version_stripped, bare_name, bare_tier}`;
+        a harness hit that stripped nothing keeps an empty `resolution_detail`.
         """
         if (
             entity_type == "harness"
@@ -359,29 +294,21 @@ class Resolver:
         catch_all_ids: frozenset = frozenset(),
     ) -> Optional[str]:
         """Positionless structural resolution for a namespaced
-        `metric_config.metric_id` (`lmarena.elo.overall`,
-        `vals_ai.mgsm.mgsm_de.accuracy`, `openeval.bbq.exact-match`).
+        `metric_config.metric_id` (`lmarena.elo.overall`, `vals_ai.mgsm.mgsm_de.accuracy`).
 
-        Segment roles vary by adapter — the metric can sit last
-        (vals_ai), in the middle (lmarena), or be absent entirely
-        (artificial_analysis) — so no positional parse is trusted.
-        Instead every segment after the adapter namespace is resolved
-        against the registry's metric vocabulary (exact → normalized
-        tiers only; a fuzzy near-miss on a short token means a different
-        metric, not a spelling variant), and registry membership decides
-        which segment is the metric.
+        Segment roles vary by adapter (the metric may sit last, in the middle, or
+        be absent), so every segment after the adapter namespace is resolved
+        against the metric vocabulary and membership decides. Exact and
+        normalized tiers only: a fuzzy near-miss on a short token is a different
+        metric, not a spelling variant.
 
-        `catch_all_ids` marks no-information buckets (registry metric
-        entries whose metadata carries `"catch_all": true`, e.g. the
-        generic `score` that raw score-field names resolve to). A
-        catch-all hit is treated as "no disclosure" so a field name never
-        outranks prose that names the real metric.
+        `catch_all_ids` marks no-information buckets (e.g. the generic `score`);
+        a catch-all hit counts as no disclosure, so a field name never outranks
+        prose naming the real metric.
 
-        Returns the canonical id when the whole id is a registered
-        (non-catch-all) metric alias, else when exactly one distinct
-        non-catch-all metric is disclosed by the segments; None otherwise
-        (no hits, only catch-all hits, or conflicting hits) — callers fall
-        back to their existing description/name path unchanged.
+        Returns the canonical id when the whole id is a registered non-catch-all
+        alias, else when exactly one distinct non-catch-all metric is disclosed;
+        None otherwise (no hits, only catch-all hits, or conflicting hits).
         """
         match = self.resolve_structured_metric(raw_id, source_config, catch_all_ids)
         return match.canonical_id if match is not None else None
@@ -394,25 +321,14 @@ class Resolver:
     ) -> Optional["StructuredMetric"]:
         """`resolve_structured_metric_id` with the match span reported.
 
-        Same identity decision, plus the two pieces a consumer needs to keep
-        distinct observations apart: `matched_segment`, the surface form that
-        disclosed the metric, and `qualifier`, the tail spelled after it.
-
-        The tail is what narrows one metric to a scoring variant the source
-        reports separately — `gpqa.accuracy.strict` next to
-        `gpqa.accuracy.diamond`, `squadv2.f1.has_ans` next to
-        `squadv2.f1.no_ans` — so a consumer that pools on the canonical id
-        alone would median unrelated numbers together. Excluded from the
-        tail: aggregate markers (`overall`, `<group>_overall`) and nothing
-        else, because those state a level rather than a variant. A numeric
-        segment IS a variant and is kept — `bench.accuracy.1` and
-        `bench.accuracy.5` are k-shot readings of one metric that a source
-        reports separately, exactly the case the tail exists for. Segments
-        BEFORE the match are never part of it: those are the adapter
-        namespace, the source config and the benchmark. A whole-id alias
-        match reports the whole id as the matched segment and no qualifier,
-        because the registry has claimed that exact string and there is no
-        residue to interpret.
+        `qualifier` is the tail after the matched segment, which narrows one
+        metric to a variant the source reports separately (`gpqa.accuracy.strict`
+        vs `gpqa.accuracy.diamond`); pooling on canonical id alone would median
+        unrelated numbers. Only aggregate markers (`overall`, `<group>_overall`)
+        are excluded from the tail; a numeric segment IS a variant
+        (`bench.accuracy.1` vs `.5` are k-shot readings). Segments before the
+        match are never part of it. A whole-id alias match reports the whole id
+        as `matched_segment` with no qualifier.
 
         Returns None exactly when `resolve_structured_metric_id` returns None.
         """
@@ -424,13 +340,9 @@ class Resolver:
         segments = [s for s in re.split(r"[./]", raw_id) if s]
         if len(segments) < 2:
             return None
-        # The whole namespaced id may itself be a registered metric id/alias
-        # (every_eval_ever mints `metric_id = f"{harness}.{reported}"` for
-        # unregistered metrics, and a registry entry with that id auto-aliases
-        # it). An exact alias on the whole string is the most specific evidence
-        # there is, so it outranks any single-segment reading. Catch-all
-        # canonicals still defer. Exact only: `normalize()` deletes dots, so a
-        # normalized whole-id lookup could equate distinct ids.
+        # A whole-id alias outranks any single-segment reading. Exact tier only:
+        # `normalize()` deletes dots, so a normalized whole-id lookup could
+        # equate distinct ids.
         whole = exact_match(raw_id, "metric", source_config, self.store)
         if whole is not None and whole not in catch_all_ids:
             return StructuredMetric(whole, raw_id, None)
@@ -446,8 +358,8 @@ class Resolver:
         if len(specific) != 1:
             return None
         canonical_id = next(iter(specific))
-        # The LAST segment naming the winning metric ends the identity: a
-        # later restatement of the same metric is not a qualifier of itself.
+        # The LAST segment naming the metric ends the identity: a restatement of
+        # the metric is not a qualifier of itself.
         matched_index = max(i for i, c in hits if c == canonical_id)
         tail = [
             s for s in segments[matched_index + 1:] if not _is_aggregate_marker(s)
@@ -464,56 +376,32 @@ class Resolver:
         """Positionless structural resolution for a dotted `evaluation_name`
         (`bbq.bbq.overall`, `MMLU.MMLU-Pro.overall`, `vals_ai.mmlu_pro.biology`).
 
-        The benchmark-side counterpart to `resolve_structured_metric_id`, and
-        for the same reason: segment roles vary by adapter. The benchmark can
-        sit first (`bbq.bbq.overall`), second (`vals_ai.mmlu_pro.biology`) or
-        third (`{composite}.{family}.{benchmark}.{split}`), so no positional
-        parse is trusted. Every segment is probed against the registry's
-        benchmark vocabulary and membership decides.
+        Segment roles vary by adapter (the benchmark may sit first, second or
+        third), so every segment is probed against the benchmark vocabulary and
+        membership decides. Before probing: identical adjacent segments collapse,
+        aggregate markers and numeric segments are dropped, a leading segment
+        naming the row's `source_config` is dropped, and a trailing metric
+        segment is dropped (`bfcl.live.live_accuracy`).
 
-        Before probing: identical adjacent segments collapse, aggregate
-        markers (`overall`) and purely numeric segments are dropped, a
-        leading segment naming the row's own `source_config` is dropped, and
-        a trailing segment that names a metric is dropped (the legacy
-        `bfcl.live.live_accuracy` contract, where the last segment is the
-        metric).
-
-        Each hit is then re-tried with its trailing segments attached, from
-        the shallowest hit down, and the first surface form the registry
-        knows wins. That keeps the MOST SPECIFIC reading: a leading source /
-        composite / family namespace loses to the benchmark it qualifies
-        (`MMLU.MMLU-Pro` is MMLU-Pro), while a subset that only means
+        Each hit is re-tried with its trailing segments attached, shallowest
+        first, and the first surface form the registry knows wins. That keeps
+        the MOST SPECIFIC reading: a leading namespace loses to the benchmark it
+        qualifies (`MMLU.MMLU-Pro` is MMLU-Pro), while a subset that only means
         something under its parent stays with it (`vals_ai.mmlu_pro.math` is
         MMLU-Pro's math subject, not the MATH dataset). Segments after the
-        winner are the subset, kept on `benchmark_raw` so the producer's
-        slice machinery still sees them.
+        winner are the subset.
 
-        A leading segment naming the row's own `source_config` is dropped
-        first; if nothing then resolves it is KEPT and probed like any other
-        segment, so a datastore folder that is itself a registered benchmark is
-        the fallback identity for the dotted names under it. A subset of an
-        unregistered benchmark under a registered aggregator is therefore
-        reported as that aggregator with the subset kept, never as the subset
-        alone: `vals_ai.programbench.strict` (source_config `vals-ai`) is
+        If nothing resolves after dropping the source segment, it is probed like
+        any other, so a datastore folder that is itself a registered benchmark
+        is the fallback identity for the names under it, subset kept:
+        `vals_ai.programbench.strict` under `vals-ai` is
         `("vals-ai", "vals ai programbench strict", "programbench strict")`.
-        The same reading already applied when the leading segment did NOT name
-        the folder (`artificial_analysis.unknownbench`). The consequence for
-        seed review: registering a datastore folder name as a benchmark makes
-        it the fallback identity for every dotted name under that folder the
-        registry does not otherwise know, with one slice per child — at the
-        time of writing, `benchpress` (238 distinct names) and
-        `paperswithcode` (64) sit in that position and stay unresolved only
-        because neither is a benchmark alias.
+        Registering a folder name as a benchmark therefore claims every
+        otherwise-unknown dotted name beneath it as one slice each.
 
-        `subset` is only a real subset when the winning canonical is the
-        segment hit itself; when the JOINED form won, the trailing segments
-        belong to the identity and `subset` is informational. The two cases
-        are told apart by `subset_is_identity`, because a consumer asking
-        "did this row measure the whole benchmark or a part of it?" gets
-        opposite answers from the same `subset` string.
-
-        Returns None when no segment resolves, so callers fall back to
-        `clean_eval_name` unchanged.
+        `subset_is_identity` distinguishes a real subset (the segment hit won)
+        from trailing segments that belong to the identity (the joined form
+        won). Returns None when no segment resolves.
         """
         segments = prepare_eval_name_segments(raw_name)
         if segments is None:
@@ -525,14 +413,10 @@ class Resolver:
             and source_config
             and normalize(segments[0]) == normalize(source_config)
         ):
-            # leading source namespace: dropped first, kept as the fallback
-            # identity when nothing else resolves (see docstring)
             probe_segments = segments[1:]
             dropped_source = True
         match = self._probe_benchmark_segments(probe_segments, source_config)
         if match is None and dropped_source:
-            # Nothing under the folder resolved — retry with the folder-named
-            # segment kept, probed through the alias tiers only.
             match = self._probe_benchmark_segments(
                 segments, source_config, alias_tiers_only_at=0
             )
@@ -545,16 +429,12 @@ class Resolver:
         *,
         alias_tiers_only_at: int = -1,
     ) -> Optional["StructuredBenchmark"]:
-        """Drop a trailing metric segment, probe every segment against the
-        benchmark vocabulary and spell the winner (see
-        `resolve_structured_benchmark`). The segment at `alias_tiers_only_at`
-        is probed with the exact/normalized alias tiers ONLY, never fuzzy:
-        that index is the folder-named segment of the fallback retry, and
-        before this fallback the folder segment was never probed at all, so
-        the fuzzy tier's benchmark stem matching (run-configuration token
-        stripping) would be a new inference surface on it. `-1` (the default)
-        means every segment takes the full chain, which is the first pass and
-        is unchanged by the fallback."""
+        """Probe every segment against the benchmark vocabulary and spell the
+        winner (see `resolve_structured_benchmark`). The segment at
+        `alias_tiers_only_at` (the folder-named segment of the fallback retry)
+        takes the exact/normalized tiers only: fuzzy run-configuration stripping
+        on a source folder name would be a new inference surface. `-1` gives
+        every segment the full chain."""
         if len(segments) > 1 and self._segment_is_metric(segments[-1], source_config):
             segments = segments[:-1]
 
@@ -577,10 +457,9 @@ class Resolver:
                 continue
             nxt = segments[i + 1] if i + 1 < len(segments) else None
             if not self._is_namespace_segment(segment, nxt, source_config):
-                # An unrecognized segment ends the identity path: anything
-                # deeper is a subset of a benchmark the registry doesn't know
-                # (`vals_ai.programbench.strict`), and matching it on its own
-                # would report the subset as the benchmark.
+                # An unrecognized non-namespace segment ends the identity path:
+                # anything deeper is a subset of an unknown benchmark
+                # (`vals_ai.programbench.strict`) and must not match on its own.
                 break
         if not hits:
             return None
@@ -596,22 +475,12 @@ class Resolver:
                 benchmark_raw, "benchmark", source_config, check_hf=False
             )
             if joined.canonical_id is not None:
-                # Resolution is unchanged: the joined spelling wins whenever
-                # it resolves at all, fuzzy tier included.
-                #
-                # The identity flag is stricter, and deliberately so: EXACT
-                # alias only. An exact alias is the registry spelling this
-                # surface form, as written, as the benchmark — a statement
-                # that the trailing segments are part of its name.
-                #
-                # The looser tiers are not that statement. `mmlu anatomy`
-                # reaches `mmlu` through the normalized tier, which is
-                # spelling-insensitive and absorbs every subject name; the
-                # fuzzy tier reduces further still by stripping
-                # run-configuration tokens. Accepting either would turn all
-                # 183 MMLU subject rows into whole-benchmark observations and
-                # hand the page a median over its own parts — the number this
-                # whole workstream exists to stop publishing.
+                # The joined spelling wins whenever it resolves (fuzzy included),
+                # but the identity flag requires an EXACT alias: only that says
+                # the registry spells this surface form, as written, as the
+                # benchmark. The normalized tier absorbs every subject name
+                # (`mmlu anatomy` → `mmlu`), which would turn each subject row
+                # into a whole-benchmark observation.
                 claimed = exact_match(
                     benchmark_raw, "benchmark", source_config, self.store
                 )
@@ -638,48 +507,22 @@ class Resolver:
         subset: Optional[str],
         canonical: str,
     ) -> bool:
-        """True when the reported subset is just the benchmark again.
+        """True when the reported subset is the benchmark's own name spelled
+        differently (`vals_ai.swebench.overall` lands on the `vals-ai` folder and
+        reports `swebench` as the subset), so it narrows nothing.
 
-        A subset only narrows the observation when it names something INSIDE
-        the benchmark. When it names the benchmark itself it narrows nothing,
-        and treating it as a part excludes the source's own total from its own
-        page.
-
-        `vals_ai.swebench.overall` is the live case. The leading segment names
-        the source folder, so the identity path lands on it and reports
-        `swebench` as the subset — which is SWE-Bench. Meanwhile the sibling
-        time buckets (`vals_ai.swebench.<15 min fix>`) hit exact aliases and
-        report no subset at all, so the roles came out exactly backwards: the
-        submitted total was excluded from its own cell and the page moved
-        0.70731 -> 0.58718.
-
-        The test is SELF-SPELLING, not resolution. A subset names the
-        benchmark when it is the benchmark's own name written differently —
-        nothing more. Asking the general resolver "does this subset resolve
-        to the same canonical?" answers a different question and answers it
-        wrongly: every alias of a benchmark resolves to that benchmark,
-        including the aliases that name its PARTS. Vals LegalBench is the
-        live case — `conclusion_tasks`, `interpretation_tasks`,
-        `issue_tasks`, `rhetoric_tasks` and `rule_tasks` are all registry
-        aliases of `legalbench`, so resolution called each of the five
-        category aggregates a whole-benchmark reading and left the source's
-        own `vals_ai.legal_bench.overall` unable to win its own cell.
-
-        This is the same line the joined-spelling branch draws (see
-        `_probe_benchmark_segments`): an EXACT alias is the registry
-        spelling a surface form, as written, as the benchmark; the
-        normalized and fuzzy tiers are spelling-insensitive and absorb
-        member names. Exact identity of the joined spelling is checked
-        there; this predicate adds only self-spelling.
+        The test is SELF-SPELLING, not resolution: a benchmark's aliases include
+        the names of its PARTS (`conclusion_tasks` is an alias of `legalbench`),
+        so "resolves to the same canonical" would call a part aggregate a
+        whole-benchmark reading. Exact identity of the joined spelling is
+        checked in `_probe_benchmark_segments`; this adds only self-spelling.
         """
         if not subset:
             return False
 
         def _squash(value: str) -> str:
-            # `normalize` maps separators to spaces, so `swe-bench` becomes
-            # `swe bench` while the source spells it `swebench`. Squashing to
-            # alphanumerics makes the two comparable without loosening
-            # `normalize` itself, which other callers depend on.
+            # `normalize` keeps a separator as a space (`swe-bench` → `swe
+            # bench`) while sources spell `swebench`.
             return "".join(ch for ch in normalize(value) if ch.isalnum())
 
         return _squash(subset) == _squash(canonical)
@@ -687,10 +530,9 @@ class Resolver:
     def _is_namespace_segment(
         self, segment: str, next_segment: Optional[str], source_config: Optional[str]
     ) -> bool:
-        """A leading segment that qualifies the benchmark rather than being
-        one, so the probe may look past it: a composite or family the registry
-        knows, or a stem the next segment extends (`alpaca_eval` before
-        `alpaca_eval_v2`)."""
+        """A segment that qualifies the benchmark rather than being one, so the
+        probe may look past it: a known composite or family, or a stem the next
+        segment extends (`alpaca_eval` before `alpaca_eval_v2`)."""
         for entity_type in ("composite", "family"):
             if exact_match(
                 segment, entity_type, source_config, self.store
@@ -701,19 +543,15 @@ class Resolver:
         )
 
     def _segment_is_metric(self, segment: str, source_config: Optional[str]) -> bool:
-        """The documented dotted-name contract is that the last segment is
-        the metric (`bfcl.live.live_accuracy`). Honour it when the segment
-        resolves as a metric or reads as one to the metric extractor, so a
-        metric tail is never mistaken for a subset."""
+        """True when a trailing segment resolves as a metric or reads as one to
+        the metric extractor (`bfcl.live.live_accuracy`), so a metric tail is
+        never mistaken for a subset."""
         spelled = segment.replace("_", " ")
         if exact_match(segment, "metric", source_config, self.store):
             return True
         if len(segment) < _MIN_METRIC_SEGMENT_LEN:
-            # A one- or two-character tail is ambiguous: `mr` is a Marathi
-            # language slice (`arc.arc_multilingual.mr`) as much as the
-            # case-folded mean-recall alias `mR`. Only a byte-exact alias hit
-            # (above) may claim it; the case-insensitive and keyword tiers
-            # need a longer token, mirroring `_MIN_BENCHMARK_SEGMENT_LEN`.
+            # A two-character tail is ambiguous (`mr` is a Marathi slice as much
+            # as the mean-recall alias `mR`): only a byte-exact alias may claim it.
             return False
         if normalized_match(segment, "metric", self.store, source_config):
             return True
@@ -729,18 +567,13 @@ class Resolver:
         entity_type: str,
         exact_canonical_id: Optional[str],
     ) -> Optional[HfIdHit]:
-        """Run the injected HF id checker when it can change the outcome.
+        """Run the injected HF id checker only when it can change the outcome.
 
-        Skipped when: no checker, non-model, not HF-shaped, or the exact
-        alias hit is byte-equal to the raw value AND that canonical row
-        either is already HF-attested (oracle `resolution_source == "hf"`
-        or hub-stats-confirmed — the checker could only agree) or carries a
-        curated/models.dev provenance claim (`models_dev`/`NA`/`curated` —
-        a registered off-HF canonical like an OpenRouter or closed-API id,
-        where a live check would just 404 on every resolve). A case-only or
-        name-inferred (tier-3) agreement still runs the checker, because
-        the checker is what recovers HF-true casing for lowercased
-        drafts."""
+        Skipped for a byte-equal exact hit whose row is already HF-attested (the
+        checker could only agree) or carries an off-HF provenance claim
+        (`models_dev`/`NA`/`curated`: a closed-API or OpenRouter id, where a live
+        check would 404 on every resolve). A case-only or name-inferred agreement
+        still runs it, because the checker is what recovers HF-true casing."""
         if self.hf_id_checker is None or entity_type != "model":
             return None
         if not looks_like_hf_id(raw_value):
@@ -770,11 +603,9 @@ class Resolver:
         strategy: str,
         confidence: float,
     ) -> ResolutionResult:
-        """Build the result for a winning HF id check hit. A registered
-        canonical gets the full registry enrichment; an unregistered one
-        gets a bare result flagged `hf_attested_unregistered` so the
-        service layer can auto-create it (write mode) or serve it without
-        minting (read-only)."""
+        """Result for a winning HF id check hit: full enrichment when the id is
+        registered, else a bare result flagged `hf_attested_unregistered` for the
+        service layer to auto-create or serve without minting."""
         known = (
             self.canonical_store is not None
             and self.canonical_store.lookup("model", hit.hf_id) is not None
@@ -800,10 +631,9 @@ class Resolver:
 
     @staticmethod
     def _stamp_hf_attestation(result: ResolutionResult, hit: HfIdHit) -> ResolutionResult:
-        """The checker just runtime-attested the repo id, so surface it in
-        `resolution_detail.hf_repo_id` even when the canonical row itself
-        carries no HF provenance. Only stamped when the response canonical
-        IS the attested id (root-collapse may have moved it)."""
+        """Surface a runtime attestation in `resolution_detail.hf_repo_id` even
+        when the row carries no HF provenance; only when the response canonical
+        IS the attested id."""
         if result.canonical_id == hit.hf_id:
             result.hf_attestation = hit.hf_id
             if isinstance(result.resolution_detail, dict):
@@ -811,16 +641,10 @@ class Resolver:
         return result
 
     def _org_fold_map(self) -> dict:
-        """The org-fold map threaded into the fuzzy org-agreement guard, built
-        ONCE from BOTH stores and cached:
-          - canonical_store.org_dev_map: `_ORG_ALIASES` ∪ every canonical_orgs
-            `id`/`hf_org` (lowercased -> curated id);
-          - the org ALIAS rows in the alias table (`iter_alias_pairs("org")`),
-            which carry the curated orgs.yaml alias tier (`AI2`->`allenai`,
-            `ai21labs`->`ai21`) that is NOT a canonical_orgs column.
-        Alias rows win on key collision (they ARE the curated seed). Keyed
-        lowercase; `_fold_org` separator-strips on lookup so case/separator
-        variants fold too."""
+        """Org-fold map for the fuzzy org-agreement guard: `org_dev_map` plus the
+        org alias rows (the curated alias tier, `AI2` -> `allenai`, is not a
+        canonical_orgs column). Alias rows win on collision. Keyed lowercase;
+        cached."""
         cached = getattr(self, "_org_fold_map_cache", None)
         if cached is not None:
             return cached
@@ -834,11 +658,10 @@ class Resolver:
         return m
 
     def _known_orgs(self) -> frozenset:
-        """The set of canonical_orgs ids (a developer that has a real row). The
-        fuzzy org-agreement guard never separator-strip-merges two prefixes that
-        resolve to DIFFERENT ids in this set — so distinct uploaders kept apart in
-        canonical_orgs (the orgs_distinct_allowlist contract) stay apart at resolve
-        time too. Cached; empty when no canonical_store is attached."""
+        """canonical_orgs ids. The fuzzy guard never separator-merges two
+        prefixes that resolve to DIFFERENT ids in this set, so uploaders kept
+        distinct in canonical_orgs stay distinct at resolve time. Cached; empty
+        without a canonical_store."""
         cached = getattr(self, "_known_orgs_cache", None)
         if cached is not None:
             return cached
@@ -851,7 +674,7 @@ class Resolver:
         return self._known_orgs_cache
 
     # ------------------------------------------------------------------
-    # Enrichment (no-op when no canonical_store is attached)
+    # Enrichment
     # ------------------------------------------------------------------
 
     def build_result(
@@ -863,11 +686,8 @@ class Resolver:
         strategy: str,
         confidence: float,
     ) -> ResolutionResult:
-        """Construct an enriched `ResolutionResult` for a canonical_id
-        the caller already knows — useful for callers that bypass the
-        strategy chain (e.g. an alias-table cache hit, an auto-created
-        draft) but want the same rich response shape. Identical to the
-        enrichment that happens inside `resolve()`."""
+        """Enriched `ResolutionResult` for a canonical_id the caller already
+        knows (bypassing the strategy chain); same enrichment as `resolve()`."""
         return self._enrich(raw_value, entity_type, source_config, canonical_id, strategy, confidence)
 
     def _enrich(
@@ -879,9 +699,8 @@ class Resolver:
         strategy: str,
         confidence: float,
     ) -> ResolutionResult:
-        """Look up the matched canonical's row and populate the rich
-        response fields. When no canonical_store is attached, the rich
-        fields stay None and the result has just the basic match info."""
+        """Populate the rich response fields from the matched row; without a
+        canonical_store they stay None."""
         if self.canonical_store is None:
             return ResolutionResult(
                 raw_value=raw_value,
@@ -898,9 +717,7 @@ class Resolver:
 
         if entity_type == "model":
             fields = cs.model_metadata_fields(matched_canonical_id, matched_entity)
-            # If the response collapses to a different canonical (root),
-            # surface THAT canonical's review_status — keeps the response
-            # internally consistent.
+            # review_status must describe the canonical the response names.
             if fields["canonical_id"] != matched_canonical_id:
                 root_entity = cs.lookup("model", fields["canonical_id"])
                 if root_entity:
@@ -917,8 +734,7 @@ class Resolver:
                 resolved_leaf_id=fields["resolved_leaf_id"],
                 root_model_id=fields["root_model_id"],
                 lineage_origin_org_id=fields["lineage_origin_org_id"],
-                # Extended lineage / provenance fields. None-safe .get so a
-                # store predating these keys still works.
+                # `.get`: a store predating these keys must still load.
                 model_group_id=fields.get("model_group_id"),
                 model_family_id=fields.get("model_family_id"),
                 lineage_origin_model_id=fields.get("lineage_origin_model_id"),
@@ -936,10 +752,6 @@ class Resolver:
                 ),
             )
 
-        # Benchmark: fill in hierarchy-alignment fields (family_key,
-        # category) by walking canonical_families. composite_keys stays
-        # empty here — see CanonicalStore.benchmark_family_enrichment for
-        # why composite computation belongs in the producer.
         if entity_type == "benchmark":
             fam = cs.benchmark_family_enrichment(matched_canonical_id)
             return ResolutionResult(
@@ -961,9 +773,6 @@ class Resolver:
                 ),
             )
 
-        # Other non-model types (metric, harness, org, family, composite):
-        # parent_canonical_id + review_status, plus ancestry/detail (family
-        # carries a composite parent; the rest are roots with empty detail).
         return ResolutionResult(
             raw_value=raw_value,
             entity_type=entity_type,

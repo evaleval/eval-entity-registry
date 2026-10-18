@@ -2,19 +2,15 @@ name: Refresh hub-stats id index
 
 on:
   schedule:
-    # Twice daily: upstream uploads ~13:18–13:59 UTC and GitHub delays these
-    # crons by hours, so the evening slot guarantees a run that sees the day's
-    # file. A rebuild costs about a minute.
+    # Two slots: see refresh-hub-stats.yml.
     - cron: "23 10 * * *"
     - cron: "23 22 * * *"
   workflow_dispatch: {}
 
-# Publishes the single index file directly to the dataset repo + restarts the
-# Space. Does NOT route through publish_registry_data.py (that owns the flat
-# producer layout); this is a standalone subdir file for the read-only API.
+# Bypasses publish_registry_data.py on purpose: that script owns the flat
+# producer layout; this index is a subdir file read by the live Space.
 permissions:
   contents: read
-  # The stall beacon (final steps) opens/closes a single sticky tracking issue.
   issues: write
 
 concurrency:
@@ -24,7 +20,6 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    # ~1.6 GB snapshot download + a local DuckDB COPY; 20 is generous.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -40,9 +35,8 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: uv run python scripts/build_hub_stats_index.py
 
-      # SMOKE: the parquet must parse and clear the row floor (the build script
-      # already aborts below the floor without writing, so a present file should
-      # always be above it; re-assert here so a corrupt/truncated write fails RED).
+      # Re-asserts the floor the build script already enforces, so a truncated
+      # write fails here rather than in the Space.
       - name: Smoke check (parquet parses + row floor)
         run: |
           uv run python - <<'PY'
@@ -73,10 +67,8 @@ jobs:
           print("published hub_stats_index/part-0.parquet + restarted Space")
           PY
 
-      # Stall beacon — ONE sticky tracking issue (deduplicated by the
-      # `refresh-hub-stats-index-stalled` label), never a new issue per run. ANY
-      # failure or cancellation opens-or-comments the single issue; a successful
-      # run clears it.
+      # Stall beacon: one sticky issue keyed by label, never one per run. Any
+      # failure or cancellation opens-or-comments it; a success closes it.
       - name: Raise/refresh stall beacon
         if: failure() || cancelled()
         env:

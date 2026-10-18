@@ -1,11 +1,8 @@
-"""
-Read/write helpers for entity tables, aliases, and logs.
-All operate on in-memory DataFrames from RegistryStore.
+"""Read/write helpers over RegistryStore's in-memory DataFrames.
 
-Performance note: write helpers that are called in tight loops (add_alias,
-upsert_eval_result, append_resolution_log) accumulate rows in a pending
-buffer on the store.  Call flush_pending(store) once at the end of a sync
-to apply all buffered writes in a single pd.concat per table.
+Tight-loop writers (add_alias, upsert_eval_result, append_resolution_log)
+accumulate rows in a pending buffer; flush_pending(store) applies them in
+one pd.concat per table.
 """
 from __future__ import annotations
 
@@ -26,30 +23,19 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# Date-suffix patterns used by `_derive_release_date_from_id`. The id
-# encodes the snapshot/release date in three common shapes:
-#   `-YYYY-MM-DD`  — OpenAI / Google daily snapshot (gpt-4o-2024-08-06)
-#   `-YYYYMMDD`    — Anthropic / xAI snapshot (claude-sonnet-4-20250514)
-#   `-YYYY-MM`     — OpenAI monthly pointer (gpt-5-2025-08); day defaults
-#                    to "01" since the snapshot is month-grained
+# Snapshot-date suffix shapes: `-YYYY-MM-DD` (gpt-4o-2024-08-06),
+# `-YYYYMMDD` (claude-sonnet-4-20250514), `-YYYY-MM` (gpt-5-2025-08).
 _DATE_ISO_FULL_RE = re.compile(r"-(\d{4})-(\d{2})-(\d{2})$")
 _DATE_PACKED_RE = re.compile(r"-(\d{4})(\d{2})(\d{2})$")
 _DATE_ISO_MONTH_RE = re.compile(r"-(\d{4})-(\d{2})$")
 
-# Plausible release-year window; guards against 4-digit tails (param counts,
-# batch numbers) being mis-read as a release year.
+# Keeps 4-digit tails (param counts, batch numbers) from reading as a year.
 _VALID_YEAR_RANGE = (2015, 2035)
 
 
 def _derive_release_date_from_id(canonical_id: str) -> Optional[str]:
-    """Best-effort: parse a date suffix off the canonical id and return
-    ISO-8601 YYYY-MM-DD, or None when no recognisable suffix is present.
-
-    Year-range guard (2015-2035) keeps non-year 4-digit tails (parameter
-    counts, batch numbers, etc.) from being mis-interpreted as a release
-    year. The day/month components are validated to plausible ranges.
-    Returns None on guard failure rather than a malformed date.
-    """
+    """ISO YYYY-MM-DD parsed off a date-suffixed canonical id; None when no
+    suffix is present or a component fails its plausibility guard."""
     if not canonical_id:
         return None
 
@@ -77,9 +63,7 @@ def _derive_release_date_from_id(canonical_id: str) -> Optional[str]:
     if m:
         y, mo = m.groups()
         if _ok_year(y) and 1 <= int(mo) <= 12:
-            # Monthly pointer: day defaults to 01. Consumers wanting more
-            # precision should rely on hand-curated or hub-stats sourced
-            # release_dates, which always win over this derivation.
+            # Month-grained snapshot: day defaults to 01.
             return f"{y}-{mo}-01"
         return None
 
@@ -142,53 +126,21 @@ def decode_parents(value) -> list[dict]:
 
 
 def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
-    """Walk `canonical_models.parents` and populate the denormalized
-    `model_group_id`, `model_family_id`, `lineage_origin_model_id`,
-    `lineage_origin_model_org_id`, and inherited `open_weights` columns.
+    """Populate the denormalized lineage columns from `canonical_models.parents`
+    (caches recomputed on every seed/refresh; returns counts for logging).
 
-    Three materialised id-hierarchy walks:
-    - `model_group_id` (renamed from `root_model_id`): walk parents up
-      through edges that preserve API identity — `quantized` (different
-      precision, same model) and `variant axis=version` (dated snapshot of
-      the same release, e.g. `gpt-4o-2024-05-13` -> `gpt-4o`). GROUP
-      MEMBERSHIP is a total partition — ALWAYS set, equal to SELF when self
-      has no such ancestor (self IS the identity-group root; a singleton is a
-      group of one whose id is itself). NOT null at the root.
-
-      The group folds `{quantized, variant·version, variant·mode}`: a
-      reasoning/thinking `mode` toggle is the same underlying model at the API
-      level, so it shares identity (chat/instruct variants are NOT `axis=mode` —
-      those carry `axis=training_stage`, different trained weights). Other variant
-      axes (size, training_stage, tier, modality, domain) keep separate identity
-      at the leaf.
-    - `model_family_id`: walk up the versioned release line, folding
-      `quantized` + `variant` axes `{version, mode, training_stage, size,
-      tier}`. Does NOT fold `modality`/`domain` (a vision/coder variant is a
-      distinct artifact kept at the leaf/group level). Stops at
-      finetune/merge/adapter. The "full labeled-version boundary" (3.5 ≠ 3.7
-      ≠ 4; 4 ≠ 4o) is respected naturally: there are no cross-version parent
-      edges in the graph — `variant·version` edges are snapshot->pointer
-      within ONE labeled version, so the walk never crosses a version line.
-      FAMILY MEMBERSHIP is a total partition — ALWAYS set, equal to SELF when
-      self is the family root. NOT null at the root.
-    - `lineage_origin_model_id`: deepest ancestor reached by walking
-      non-`variant` edges (quantized / finetune / merge / adapter); the id of
-      that ancestor. NULL when self is the origin — NO self-fallback (unlike
-      `lineage_origin_model_org_id` below, which keeps its self-fallback).
-    - `lineage_origin_model_org_id` (renamed from `lineage_origin_org_id`):
-      walk through any non-`variant` edge (quantized / finetune / merge /
-      adapter) to the deepest ancestor, then read its `org_id`. For
-      Meta-originated models = self.org_id; for finetunes/quants of someone
-      else's weights = upstream lab. KEEPS its self-fallback.
-    - `open_weights`: if the row has an explicit value, keep it. Otherwise
-      walk parents through `variant` + `quantized` edges (identity-
-      preserving — a mode/size variant or a quant of an open-weight base
-      is also open-weight) until we find a parent with an explicit value.
-      Stops at finetune/merge/adapter edges since those produce new
-      releases whose openness is independent of the base.
-
-    All are caches recomputed on every seed/refresh. Returns counts
-    dict for logging.
+    - `model_group_id`: root via same-org `quantized` and `variant axis in
+      {version, mode}` edges (chat/instruct carry `training_stage` and stay
+      out). Always set, self at the root.
+    - `model_family_id`: root via same-org `quantized` + `variant axis in
+      {version, mode, training_stage, size, tier}`; stops at finetune/merge/
+      adapter. Version lines are never crossed because `variant·version`
+      edges only link a snapshot to its pointer. Always set, self at the root.
+    - `lineage_origin_model_id`: deepest ancestor via non-`variant` edges;
+      NULL at the origin. `lineage_origin_model_org_id`: its `org_id`, with
+      self-fallback.
+    - `open_weights`: explicit value wins; else inherited through `variant`
+      + `quantized` edges, never across finetune/merge/adapter.
     """
     df = store.table("canonical_models")
     if df.empty:
@@ -207,12 +159,8 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
     release_by_id: dict[str, Optional[str]] = {}
     for _, row in df.iterrows():
         cid = row["id"]
-        # Defensive: drop self-referencing parent edges (a malformed seed row
-        # can point a model at itself, e.g. a finetune/quant edge id == cid).
-        # A self-edge is never meaningful and would otherwise be a degenerate
-        # cycle in every walk; stripping it here keeps group/family/lineage
-        # walks honest. Genuinely-wrong upstream bases (e.g. tulu-3 pointing at
-        # self instead of its Llama base) are a data fix for curation, not here.
+        # A self-referencing edge (malformed seed) would be a degenerate
+        # cycle in every walk.
         parents_by_id[cid] = [
             p
             for p in decode_parents(row.get("parents"))
@@ -225,21 +173,10 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
         rd = row.get("release_date")
         release_by_id[cid] = None if _is_na(rd) else str(rd)
 
-    # Org-from-prefix RULE. For an HF-shaped
-    # `org/name` id whose org_id was never set, derive the developer the SAME
-    # way the resolver / auto-create does: the curated HF-org map
-    # (canonical_orgs.hf_org + strategies/fuzzy._ORG_ALIASES), exactly like
-    # `hf_id_to_canonical_cased`. So `openai/gpt-5.1`->openai, `xai/grok-2`->xai
-    # fall out of the registry's OWN vendor catalog — no string hardcoding.
-    # Guarantees:
-    #   - NEVER overrides an existing org_id (curated / source values
-    #     win — e.g. a finetune re-attributed to its real maker keeps it);
-    #   - NEVER invents an org for a BARE id (no `/` -> left unresolved): if the
-    #     source doesn't carry the developer namespace, we don't guess it from
-    #     the model name.
-    # Single source: the shared store-backed dev-org map (canonical_orgs id/hf_org
-    # + the org ALIAS rows — canonical_orgs has no aliases column — so the curated
-    # alias tier reaches lineage derivation the same way it reaches the resolver).
+    # An HF-shaped id with no org_id gets its developer from the same
+    # store-backed org map the resolver uses (org alias rows included, since
+    # canonical_orgs has no aliases column). Never overrides an existing
+    # org_id and never invents an org for a bare id.
     from eval_entity_resolver.fold import build_org_dev_map_from_store
 
     _adf = store.table("aliases")
@@ -265,14 +202,9 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
         edge_ok: Callable[[dict], bool],
         org_conditional: bool = False,
     ) -> str:
-        """Walk parents through edges where `edge_ok(edge)` is True.
-        Returns the deepest reachable id; stops on no-match or cycle.
-
-        When a node has multiple matching edges (e.g. a MergeKit model with
-        several `merge` parents), pick deterministically by min-id rather
-        than first-by-YAML-order, so lineage_origin_model_org_id doesn't depend on
-        edge insertion order.
-        """
+        """Deepest id reachable through edges where `edge_ok(edge)`; stops on
+        no-match or cycle. Multiple matching edges (a merge) pick min-id so the
+        result does not depend on YAML edge order."""
         visited = {start}
         current = start
         while True:
@@ -281,13 +213,10 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
             candidate_ids = [
                 p["id"] for p in edges
                 if isinstance(p, dict) and edge_ok(p) and p.get("id")
-                # org-conditional walks (family) only fold a same-developer edge,
-                # mirroring _walk_group: a third-party quant keeps its own
-                # family, with the link preserved via lineage_origin.
+                # Org-conditional: a third-party quant keeps its own family;
+                # the link survives via lineage_origin.
                 and (not org_conditional or (cur_org is not None and org_by_id.get(p["id"]) == cur_org))
             ]
-            # min-id tie-break: deterministic when a node has >1 foldable parent
-            # (independent of YAML edge order).
             next_id = min(candidate_ids) if candidate_ids else None
             if not next_id or next_id in visited or next_id not in parents_by_id:
                 return current
@@ -298,25 +227,17 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
         rel = p.get("relationship")
         if rel == "quantized":
             return True
-        # `version` = dated snapshot of the moving pointer; `mode` = a runtime
-        # reasoning/thinking toggle of the same weights. Both are the same model at
-        # the API level, so both fold into the identity group. (`mode` folds only
-        # because the mislabelled chat/instruct edges were reclassified to
-        # `training_stage`, which stays OUT of the group.)
+        # `version` = dated snapshot of the pointer; `mode` = runtime reasoning
+        # toggle of the same weights. chat/instruct carry `training_stage`.
         if rel == "variant" and p.get("axis") in ("version", "mode"):
             return True
         return False
 
     def _walk_group(start: str) -> str:
-        """Identity-group walk. Like `_walk(_is_identity_edge)`, but an identity
-        edge (quantized / variant·version / variant·mode) folds into the parent's
-        group ONLY when child and parent share the SAME developer org
-        (`org_by_id`). A third-party / community quant (e.g. `unsloth/...-bnb-4bit`
-        quantizing `microsoft/phi-4`) therefore keeps its OWN group — its
-        `quantized` edge still feeds `lineage_origin_model_id` (the link is
-        preserved), but its scores never merge into the base lab's model. The same
-        guard drops a spurious cross-org version edge (a snapshot pointer to a
-        different lab). A first-party precision variant (same org) still folds."""
+        """`_walk(_is_identity_edge)` restricted to same-org edges: a community
+        quant (`unsloth/...-bnb-4bit` of `microsoft/phi-4`) keeps its own group
+        so its scores never merge into the base lab's model; the edge still
+        feeds `lineage_origin_model_id`."""
         visited = {start}
         current = start
         while True:
@@ -338,10 +259,8 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
         return p.get("relationship") in {"quantized", "finetune", "merge", "adapter"}
 
     def _is_family_fold_edge(p: dict) -> bool:
-        """Family walk: fold the versioned release line. `quantized`
-        plus `variant` axes {version, mode, training_stage, size, tier}.
-        Does NOT fold modality/domain (kept at the leaf — a vision/coder
-        sibling is a distinct artifact). Stops at finetune/merge/adapter."""
+        """`quantized` plus `variant` axes {version, mode, training_stage, size,
+        tier}; a modality/domain sibling is a distinct artifact and stays at the leaf."""
         rel = p.get("relationship")
         if rel == "quantized":
             return True
@@ -350,17 +269,12 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
         return False
 
     def _inherit_open_from_ancestors(start: str) -> Optional[bool]:
-        """Walk ONLY ancestors (skip self) through `variant` + `quantized`
-        edges and return the first explicit `open_weights` value found.
-        Returns None when no identity-preserving ancestor has it set.
-        Caller is responsible for preferring self's explicit value over
-        anything this returns."""
+        """First explicit `open_weights` on an ancestor (self excluded) reached
+        through `variant` + `quantized` edges; None when none has it set."""
         visited = {start}
         current = start
         while True:
             edges = parents_by_id.get(current, []) or []
-            # min-id (not first-by-insertion) so the walk is deterministic
-            # regardless of YAML edge order, matching _walk / _walk_group.
             cands = [
                 p["id"] for p in edges
                 if isinstance(p, dict) and p.get("relationship") in {"variant", "quantized"} and p.get("id")
@@ -383,39 +297,18 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
     inherited_count = 0
     release_derived_count = 0
     for cid in parents_by_id:
-        # Identity-group root via quantized + variant·(version|mode) walk — each
-        # treats the parent as the same model at the API level. Org-conditional:
-        # an identity edge folds into the group ONLY when child and
-        # parent are the same developer org — a third-party quant keeps its own
-        # group (the link survives via lineage_origin).
         group = _walk_group(cid)
-        # GROUP MEMBERSHIP is a total partition: every model is in exactly one
-        # group, and a singleton is a group of one whose id is itself. So
-        # model_group_id is ALWAYS set (self at the root — _walk returns self
-        # when there is no identity-preserving ancestor, which IS the group id).
         group_updates[cid] = group
-        # Family root via the versioned-release-line fold.
-        # org-conditional like the group walk: a third-party quant keeps its own
-        # family (its link to the base survives via lineage_origin).
         family = _walk(cid, _is_family_fold_edge, org_conditional=True)
-        # FAMILY MEMBERSHIP is likewise a total partition — ALWAYS set (self at
-        # the family root). NOT null-at-root.
         family_updates[cid] = family
-        # Lineage origin via any non-variant edge.
-        # `ancestor` is reused for BOTH the model_id walk (NO self-fallback)
-        # and the org_id walk (KEEPS self-fallback) — easy to confuse, so:
+        # `ancestor` serves the model_id column (no self-fallback) and the
+        # org column (self-fallback).
         ancestor = _walk(cid, _is_lineage_edge)
-        # model_id: deepest non-variant ancestor; None when self is the origin.
         lineage_model_updates[cid] = ancestor if ancestor != cid else None
-        # org_id: org of deepest ancestor, WITH self-fallback. Use explicit
-        # None check, not `or` — an upstream lab whose org_id is an empty
-        # string or missing should keep lineage as None, not flip to
-        # self.org_id (which would mis-attribute a finetune as same-org).
+        # Explicit None check, not `or`: an upstream lab with an empty org_id
+        # must not flip to self.org_id and mis-attribute a finetune as same-org.
         ancestor_org = org_by_id.get(ancestor)
         lineage_updates[cid] = ancestor_org if ancestor_org is not None else org_by_id.get(cid)
-        # Open weights — explicit self value WINS; only fall back to
-        # ancestor inheritance when self has no value set. Never overwrite
-        # an explicit True/False with an inherited value.
         explicit = open_by_id.get(cid)
         if explicit is not None:
             open_updates[cid] = explicit
@@ -425,11 +318,7 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
             if inherited is not None:
                 inherited_count += 1
 
-        # Release date — explicit value (hand-curated, hub-stats createdAt,
-        # or models.dev release_dates) WINS. Fall back to parsing the date
-        # off the id when the canonical name encodes it (`-YYYY-MM-DD`,
-        # `-YYYYMMDD`, `-YYYY-MM`). Avoids the silly "id literally says
-        # 2025-04-14, registry says <NA>" gap on dated openai snapshots.
+        # An explicit release_date wins; a dated id is the fallback.
         explicit_release = release_by_id.get(cid)
         if explicit_release is not None and explicit_release.strip():
             release_updates[cid] = explicit_release
@@ -440,8 +329,6 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
                 release_derived_count += 1
 
     df = df.copy()
-    # `model_group_id`, `lineage_origin_model_org_id`, and the family +
-    # lineage-model walks are all written here.
     df["model_group_id"] = df["id"].map(group_updates).astype(pd.StringDtype())
     df["model_family_id"] = df["id"].map(family_updates).astype(pd.StringDtype())
     df["lineage_origin_model_id"] = df["id"].map(lineage_model_updates).astype(pd.StringDtype())
@@ -453,11 +340,8 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
             lambda r: org_prefix_updates.get(r["id"], r.get("org_id")), axis=1
         ).astype(pd.StringDtype())
 
-    # Org-less honesty: a row is in the org-less bucket iff its developer is the
-    # `unknown` sentinel org (or null). The `org-unknown` tag and that bucket move
-    # together in BOTH directions — add the tag for org-less rows, and strip it
-    # from any row that has since gained a real org (so a stale tag can't claim a
-    # resolved model is org-less).
+    # The `org-unknown` tag tracks org-less rows (null or the `unknown`
+    # sentinel) in both directions, so a stale tag cannot outlive a resolved org.
     def _sync_org_unknown_tag(row) -> Any:
         raw = row.get("tags")
         oid = row.get("org_id")
@@ -484,10 +368,8 @@ def derive_model_lineage_fields(store: RegistryStore) -> dict[str, int]:
     df["tags"] = df.apply(_sync_org_unknown_tag, axis=1).astype(pd.StringDtype())
     store.set_table("canonical_models", df)
 
-    # No dangling FK: every org the prefix rule derived must exist in
-    # canonical_orgs. Most are curated (openai, xai, …) and already present;
-    # an uploader prefix not in the catalog gets a community row (mirrors the
-    # resolver's `_ensure_hf_org`).
+    # Every org the prefix rule derived must exist in canonical_orgs; an
+    # uncatalogued uploader gets a community row (as in `_ensure_hf_org`).
     if org_prefix_updates:
         odf = store.table("canonical_orgs")
         have = set(odf["id"])
@@ -537,7 +419,6 @@ def get_entity(store: RegistryStore, table: str, entity_id: str) -> Optional[dic
     df = store.table(table)
     row = df[df["id"] == entity_id]
     if row.empty:
-        # Check pending rows too
         for pending_row in _get_pending(store, table):
             if pending_row.get("id") == entity_id:
                 return pending_row
@@ -576,7 +457,6 @@ def upsert_entity(store: RegistryStore, table: str, data: dict, buffered: bool =
     existing = df[df["id"] == entity_id]
 
     if existing.empty:
-        # Check pending too
         pending = _get_pending(store, table)
         for p in pending:
             if p.get("id") == entity_id:
@@ -603,8 +483,7 @@ def upsert_entity(store: RegistryStore, table: str, data: dict, buffered: bool =
 # Alias helpers
 # ------------------------------------------------------------------
 
-# In-memory index for fast alias lookups during sync.
-# Key: (entity_type, raw_value, source_config_or_None) → dict
+# Sync-time alias index: (entity_type, raw_value, source_config_or_None) -> row dict.
 _alias_index: dict[tuple, dict] = {}
 
 
@@ -622,7 +501,6 @@ def _rebuild_alias_index(store: RegistryStore) -> None:
                 _source_config_key(row_dict.get("source_config")),
             )
             _alias_index[key] = row_dict
-    # Also index pending aliases
     for pending_row in _get_pending(store, "aliases"):
         if pending_row.get("status") != "rejected":
             key = (
@@ -640,7 +518,6 @@ def get_alias(
     source_config: Optional[str],
 ) -> Optional[dict]:
     source_config = _source_config_key(source_config)
-    # Fast path: use index if available
     if _alias_index:
         if source_config:
             scoped = _alias_index.get((entity_type, raw_value, source_config))
@@ -651,7 +528,6 @@ def get_alias(
             return global_
         return None
 
-    # Slow path: scan DataFrame
     df = store.table("aliases")
     mask = (
         (df["raw_value"] == raw_value)
@@ -669,26 +545,20 @@ def get_alias(
 
 
 def add_alias(store: RegistryStore, data: dict, buffered: bool = False) -> dict:
-    """
-    Insert a new alias row. Enforces uniqueness on (entity_type, raw_value, source_config).
-    Raises ValueError if a non-rejected alias already exists for that key.
-
-    If buffered=True, the row is added to the pending buffer (flushed by flush_pending).
-    Otherwise it is written immediately to the DataFrame.
-    """
+    """Insert an alias row. Raises ValueError when a non-rejected alias already
+    exists for (entity_type, raw_value, source_config). buffered=True defers
+    the write to flush_pending."""
     raw_value = data["raw_value"]
     entity_type = data["entity_type"]
     source_config = _source_config_key(data.get("source_config"))
     key = (entity_type, raw_value, source_config)
 
-    # Check uniqueness via index if available
     if _alias_index and key in _alias_index:
         raise ValueError(
             f"Alias already exists for ({entity_type!r}, {raw_value!r}, source_config={source_config!r}). "
             "Use update_alias() to modify an existing alias."
         )
 
-    # Check DataFrame
     df = store.table("aliases")
     mask = (
         (df["raw_value"] == raw_value)
@@ -705,7 +575,6 @@ def add_alias(store: RegistryStore, data: dict, buffered: bool = False) -> dict:
             "Use update_alias() to modify an existing alias."
         )
 
-    # Check pending buffer
     for p in _get_pending(store, "aliases"):
         if (p["entity_type"] == entity_type and p["raw_value"] == raw_value
                 and _source_config_key(p.get("source_config")) == source_config
@@ -731,8 +600,7 @@ def add_alias(store: RegistryStore, data: dict, buffered: bool = False) -> dict:
         df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
         store.set_table("aliases", df)
 
-    # Update index only if it has already been built. If it is empty, get_alias
-    # should keep using the DataFrame/pending slow path instead of a partial index.
+    # Only an already-built index is updated; a partial one would mislead get_alias.
     if _alias_index and row.get("status") != "rejected":
         _alias_index[key] = row
     return row
@@ -748,8 +616,7 @@ def update_alias(store: RegistryStore, alias_id: str, updates: dict) -> Optional
     df.loc[df["id"] == alias_id, "updated_at"] = _now()
     store.set_table("aliases", df)
     updated = _row_to_dict(df[df["id"] == alias_id].iloc[0])
-    # Keep the in-memory index in sync if it was built — otherwise a follow-up
-    # add_alias() / get_alias() would see stale canonical data for this key.
+    # Keep a built index in sync so a follow-up lookup does not see stale data.
     if _alias_index:
         key = (
             updated["entity_type"],
@@ -773,7 +640,7 @@ def _eval_result_id(evaluation_id: str, result_index: int) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
-# Track IDs already in pending buffer to detect upsert-vs-insert
+# Ids already in the pending buffer, so an upsert finds them without a scan.
 _pending_result_ids: set[str] = set()
 
 
@@ -782,7 +649,6 @@ def upsert_eval_result(store: RegistryStore, data: dict) -> dict:
     row_id = _eval_result_id(data["evaluation_id"], data["result_index"])
     now = _now()
 
-    # Check if already in pending buffer
     if row_id in _pending_result_ids:
         pending = _get_pending(store, "eval_results")
         for p in pending:
@@ -793,7 +659,6 @@ def upsert_eval_result(store: RegistryStore, data: dict) -> dict:
                 p["updated_at"] = now
                 return p
 
-    # Check committed table
     df = store.table("eval_results")
     existing = df[df["id"] == row_id]
     if not existing.empty:
@@ -804,7 +669,6 @@ def upsert_eval_result(store: RegistryStore, data: dict) -> dict:
         store.set_table("eval_results", df)
         return _row_to_dict(df[df["id"] == row_id].iloc[0])
 
-    # New row — buffer it
     row = {**data, "id": row_id, "created_at": now, "updated_at": now}
     _get_pending(store, "eval_results").append(row)
     _pending_result_ids.add(row_id)

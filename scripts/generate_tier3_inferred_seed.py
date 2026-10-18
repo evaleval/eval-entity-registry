@@ -2,45 +2,26 @@
 """
 Generate the Tier-3 name-based-inference seed.
 
-OFFLINE, deterministic, re-runnable. Mirrors the HF-oracle generator
-(`generate_hf_oracle_seed.py`): the resolution gate is RESOLVE-based (it calls
-`Resolver.resolve()`, not auto-create), so the residual no_match tail must be
-SEEDED so every EEE id resolves to a non-null canonical.
+Offline and deterministic. The resolution gate is resolve-based (no
+auto-create), so every EEE id that still returns no_match after the Tier-1/2
+sources + curation must be seeded.
 
-What it does
-------------
-1. Re-runs `Resolver.resolve()` over all 6,720 EEE ids (the keys of
-   `hf_model_id_resolution.json`) against the CURRENT fixtures + seed YAML and
-   finds the ids that STILL return no_match (the residual tail after the
-   Tier-1/Tier-2 sources + curation).
-
-2. Mints a stable canonical for each residual id:
-   - **org present** (`org/name`): canonical id = `{org}/{name}` with the
-     two-tier org rule (big-dev namespace remap; HF/community org casing
-     preserved verbatim otherwise). model-name casing preserved. The
-     org goes through the org resolver/`hf_to_dev` so we never mint a name-only
-     id that could collide across orgs.
-   - **org-less** (no `/`, or a free-text label): a stable lowercase slug,
-     `org_id = None`, `tags: [org-unknown]`, surfaced to
-     `org_unknown_review.json` — NEVER auto-guess an org.
-
-3. Adds the raw EEE id as an exact alias of the minted canonical so
-   `resolve(raw)` hits it.
-
-4. BASE INFERENCE (inferable bucket only): from the name tokens, detect a base
-   family + (optionally) a derivation marker, build a candidate base id, and
-   look it up against the CURRENT alias/canonical universe. Emit a typed parent
-   edge (`finetune`, or `variant` with an axis) ONLY when that base
-   alias-confirms to an existing canonical. NEVER invent an edge. The
-   inferred-base org also lets us set the org for an org-less id ONLY when the
-   raw id literally carries the org as a path prefix — otherwise org stays None.
-
-5. Writes `seed/models/sources/tier3_inferred.generated.yaml`
-   (`resolution_source: inferred`, `review_status: draft`).
-
-6. Writes `curation/org_unknown_review.json` — the
-   org-null mints + a *proposed* org (from an inferred base, if any), NOT
-   auto-applied.
+1. Resolves every EEE id (the keys of `hf_model_id_resolution.json`) against
+   the current fixtures + seed YAML and collects the no_match residual.
+2. Mints a stable canonical for each residual id, with the raw EEE id as an
+   exact alias:
+   - org present (`org/name`): canonical id `{org}/{name}` verbatim, org_id
+     via the curated org map, so a name-only id never collides across orgs;
+   - org-less: a stable lowercase slug, `org_id = None`,
+     `tags: [org-unknown]`, surfaced to `org_unknown_review.json`; an org is
+     never guessed.
+3. Base inference: detect a base family in the name tokens, build candidate
+   base ids, and emit a typed parent edge (`finetune`, or `variant` with an
+   axis) only when a candidate alias-confirms to an existing canonical.
+4. Writes `seed/models/sources/tier3_inferred.generated.yaml`
+   (`resolution_source: inferred`, `review_status: draft`) and
+   `curation/org_unknown_review.json` (org-less mints plus a proposed org from
+   an inferred base, not auto-applied).
 
 Usage:
     LOCAL_MODE=true uv run python scripts/generate_tier3_inferred_seed.py
@@ -65,7 +46,7 @@ from eval_entity_registry.lib.seed_io import (
 from eval_entity_resolver.resolver import Resolver
 from eval_entity_resolver.strategies.fuzzy import _ORG_ALIASES
 
-REGISTRY_ROOT = Path(__file__).resolve().parents[1]            # eval-entity-registry/
+REGISTRY_ROOT = Path(__file__).resolve().parents[1]
 ORACLE = resolve_oracle_path()
 
 SEED = REGISTRY_ROOT / "seed"
@@ -79,10 +60,8 @@ REVIEW_JSON = SPEC_DIR / "org_unknown_review.json"
 
 
 # --- Tier-3 lexicon ---------------------------------------------------------
-# Base family tokens -> a canonical "stem" used to build the candidate base id
-# for alias confirmation. Mapping a token to its canonical stem is conservative;
-# the actual base must STILL alias-confirm against the registry before any edge
-# is emitted.
+# Base family tokens; a detected base must still alias-confirm against the
+# registry before any edge is emitted.
 BASE_FAMILY_TOKENS = [
     "tinyllama", "openhermes", "openchat", "mixtral",
     "llama", "mistral", "qwen", "gemma", "yi", "phi", "gpt", "claude",
@@ -90,31 +69,23 @@ BASE_FAMILY_TOKENS = [
     "neural", "solar", "nous", "zephyr", "orca", "dolphin",
 ]
 
-# OpenAI o-series base tokens. Deliberately NOT in `BASE_FAMILY_TOKENS`: the
-# o-series pass (`o_series_edge`) runs ONLY where the family-token pass found
-# no edge at all, so every id that already earns one keeps exactly the edge it
-# has today. A `gpt-o3-…` spelling still goes through the `gpt` stem.
+# Not in `BASE_FAMILY_TOKENS`: the o-series pass runs only where the
+# family-token pass found no edge, so existing edges never move.
 O_SERIES_TOKENS = {"o1", "o3", "o4"}
 
-# Runtime effort / call-style tokens. These select how a release is SERVED, not
-# what was trained, so they earn an `axis: mode` edge rather than a `finetune`.
-# Only honoured when they FOLLOW a validated date (see
-# `split_date_mode_suffix`): on their own, `medium` and friends are product
-# tiers in other families (Mistral Medium), not modes.
+# Serving-mode tokens: an `axis: mode` edge, not a `finetune`. Honoured only
+# after a validated date (`split_date_mode_suffix`); on their own, `medium`
+# and friends are product tiers in other families.
 EFFORT_MODE_TOKENS = {
     "high", "low", "medium", "minimal", "xhigh", "none",
     "fc", "prompt", "thinking", "reasoning",
 }
 
-# Placeholder org prefixes. These are NOT real namespaces — the upstream
-# harness/leaderboard wrote them when it didn't know the developer (e.g.
-# `unknown/MiniMax-Text-01`). Treated as org-less: the prefix is stripped and
-# the bare name re-resolved against the real-HF universe (a confident hit folds
-# the raw onto the true canonical; a miss falls to org-less review).
+# Placeholder prefixes an upstream harness wrote when it did not know the
+# developer; treated as org-less.
 SENTINEL_ORGS = {"unknown"}
 
-# Derivation markers: presence => finetune/merge (no axis). Order doesn't
-# matter; we only use them as a boolean "this is a derivation" signal.
+# Presence of any marker signals a derivation (finetune, no axis).
 DERIVATION_MARKERS = [
     "dpo", "sft", "ft", "lora", "qlora", "merge", "slerp", "orpo", "kto",
     "uncensored", "abliterated", "ablated", "dare", "ties", "finetune",
@@ -124,14 +95,8 @@ DERIVATION_MARKERS = [
 
 def _non_tier3_claim_owners() -> dict[str, str]:
     """{surface form -> owning record id} over every id / display_name / alias
-    claimed by a NON-tier3 seed layer: the other generated sources, core.yaml
-    entries, and enrichments/*.yaml records (first writer wins). Consumers:
-    the own-forms strip in `_clean_resolver` exempts these forms (a prior
-    tier3 form ANOTHER source also claims — e.g. models_dev's own entry id
-    `mistral/mistral-large-2402` — is not tier3-originated, and stripping it
-    would blind the residual pass into re-minting a shadow of an existing
-    canonical); the curated-keyed retention pass uses the OWNER to tell a
-    self-claim from a supersession."""
+    claimed by a non-tier3 seed layer (other generated sources, core.yaml,
+    enrichments/*.yaml); first writer wins."""
     owners: dict[str, str] = {}
 
     def _add(rec: dict) -> None:
@@ -185,12 +150,9 @@ def _non_tier3_defining_ids() -> set[str]:
 
 
 def _clean_resolver() -> Resolver:
-    """Resolver from fixtures with this generator's own prior output filtered
-    out (`canonical_models.resolution_source == 'inferred'` rows AND their alias
-    rows). Re-runnable: a re-run resolves against the SAME Tier-1/2 + curation
-    universe regardless of stale inferred rows left in fixtures by a previous
-    seed. If fixtures are already clean (no inferred rows) this is a no-op
-    filter."""
+    """Resolver from fixtures with this generator's own prior output
+    (`resolution_source == 'inferred'` rows and their alias rows) filtered
+    out, so a re-run resolves against the same Tier-1/2 + curation universe."""
     import pandas as pd
     from eval_entity_resolver import AliasStore, CanonicalStore
 
@@ -208,14 +170,11 @@ def _clean_resolver() -> Resolver:
         aliases_df = aliases_df[
             ~aliases_df["canonical_id"].astype(str).isin(inferred_ids)
         ].reset_index(drop=True)
-    # ALSO strip every alias row whose raw form ORIGINATED from this
-    # generator's own committed output — enrich-record aliases (folded-to-HF
-    # `{id, aliases}` rows put raws on NON-inferred canonicals) AND full-draft
-    # ids/aliases that the seed's collision_fold moved onto a twin canonical.
-    # The inferred-row filter above misses both classes. Leaving them in flips
-    # the residual tail run-to-run: with the alias seeded the raw resolves
-    # (record dropped), without it the raw is no_match again (record
-    # re-minted) — a two-state oscillation.
+    # Also strip alias rows whose raw form originated from this generator's
+    # committed output (enrich-record aliases on non-inferred canonicals, and
+    # forms the seed's collision_fold moved onto a twin); the inferred-row
+    # filter misses both, and leaving them in makes the residual oscillate
+    # run-to-run.
     if TIER3_YAML.exists():
         prior = yaml.safe_load(TIER3_YAML.read_text()) or []
         prior = prior.get("entries", prior) if isinstance(prior, dict) else prior
@@ -228,10 +187,8 @@ def _clean_resolver() -> Resolver:
             for a in e.get("aliases") or []:
                 if a:
                     own_forms.add(str(a))
-        # A prior-output form that another seed layer ALSO claims is not
-        # tier3-originated — its alias row belongs to that other canonical.
-        # Stripping it would blind the residual pass to an existing entity
-        # and re-mint a shadow draft (then steal the owner's id as an alias).
+        # A form another layer also claims is not tier3-originated; stripping
+        # it would re-mint a shadow of an existing entity.
         own_forms -= set(_non_tier3_claim_owners())
         if own_forms:
             keep = [str(rv) not in own_forms for rv in aliases_df["raw_value"]]
@@ -249,10 +206,8 @@ def _load_curated_orgs() -> list[dict]:
 
 def build_hf_to_dev(curated_orgs: list[dict]) -> dict[str, str]:
     """HF-org-lowercase -> curated developer slug (see
-    `eval_entity_registry.lib.seed_io.build_hf_to_dev_from_orgs_yaml`). Reading the alias tier folds
-    ai2->allenai / aws->amazon / kimi->moonshotai / prime-intellect->PrimeIntellect.
-    `curated_orgs` is accepted for call-site compatibility; the org map is
-    rebuilt from `ORGS_YAML` (identical result)."""
+    seed_io.build_hf_to_dev_from_orgs_yaml). `curated_orgs` is unused; kept
+    for call-site compatibility."""
     return build_hf_to_dev_from_orgs_yaml(ORGS_YAML)
 
 
@@ -269,16 +224,9 @@ def _core_entries(core_doc) -> list[dict]:
 
 
 def build_core_norm_index(core_doc) -> dict[str, str]:
-    """{normalized surface form -> owning curated-core canonical id} over every
-    id / display_name / alias of `core.yaml`'s curated entries.
-
-    Mirrors `refresh_from_modelsdev._build_existing_index`: uses the resolver's
-    `normalize` (case + ALL separators incl. `/` collapsed) so a lowercase /
-    re-separated twin of a curated id maps to the curated owner. First writer
-    wins (setdefault). Reads the source YAML DIRECTLY rather than relying on the
-    fixtures-loaded resolver, so a curated core entry that has not yet been
-    re-seeded into fixtures still wins — the spec's core-aware dedup guarantee
-    must not depend on a stale build artifact."""
+    """{normalized surface form -> curated core canonical id} over core.yaml
+    ids / display_names / aliases; first writer wins. Reads the YAML directly
+    so a curated entry not yet re-seeded into fixtures still wins."""
     from eval_entity_resolver.normalization import normalize as _rnz
 
     idx: dict[str, str] = {}
@@ -300,13 +248,7 @@ def build_core_norm_index(core_doc) -> dict[str, str]:
 
 def core_steals(cid: str, core_norm_index: dict[str, str]) -> bool:
     """True iff `cid` normalized-collides with a curated core canonical under a
-    DIFFERENT id. The steal-guard predicate, identical in form to
-    `refresh_from_modelsdev._make_steal_guard`'s `_steals` (normalized arm).
-
-    A minted tier-3 id that `core_steals` is the SAME model as a curated core
-    canonical (the stale fixtures-resolver missed it); the row must be SKIPPED
-    (not minted) so the raw resolves to the curated canonical via normalized
-    match — i.e. merge into the existing canonical, never mint a `-inferred` twin."""
+    different id, i.e. it is the same model and must not be minted as a twin."""
     from eval_entity_resolver.normalization import normalize as _rnz
 
     owner = core_norm_index.get(_rnz(cid))
@@ -319,26 +261,19 @@ def mint_collision_decision(
     core_norm_index: dict[str, str],
     resolver_hit: bool,
 ) -> str:
-    """Decide what to do with a residual tier-3 mint id `cid`. Returns one of:
+    """Collision policy for a residual tier-3 mint id `cid`:
 
-    - 'skip'     — `cid`'s normalized identity is OWNED by a CURATED CORE
-                   canonical — under a different id (`core_steals`: the SAME
-                   model, already curated; the stale fixtures resolver just
-                   missed it) or under the SAME id (core defines this exact
-                   entity; a tier3 twin would field-merge at seed and
-                   contaminate the curated row with `resolution_source:
-                   inferred`, tripping the Tier-3 honesty gate). Do NOT mint —
-                   the raw resolves to the curated canonical via its id alias
-                   (exact or normalized match).
-    - 'inferred' — `cid` clashes with a core `skip_ids` entry (would be silently
-                   dropped by the loader) or with a DIFFERENT existing canonical
-                   the resolver already owns (a genuine cross-ENTITY clash, two
-                   unrelated models sharing a slug). Suffix-disambiguate so we
-                   never name-only-merge onto an unrelated entity or vanish.
-    - 'mint'     — no collision; mint `cid` as-is.
+    - 'skip'     — a curated core canonical owns `cid`'s normalized identity
+                   (same model under another id, or core defines this id and a
+                   tier3 twin would contaminate it with `resolution_source:
+                   inferred`); the raw resolves to the curated canonical.
+    - 'inferred' — `cid` clashes with a core `skip_ids` entry (the loader would
+                   drop it) or with a different existing canonical (unrelated
+                   models sharing a slug); suffix-disambiguate.
+    - 'mint'     — no collision.
 
-    `resolver_hit` is `resolver.resolve(cid, "model").canonical_id is not None`
-    (passed in so this policy is unit-testable without a live resolver)."""
+    `resolver_hit` is `resolver.resolve(cid, "model").canonical_id is not None`,
+    passed in so the policy is testable without a resolver."""
     from eval_entity_resolver.normalization import normalize as _rnz
 
     if core_norm_index.get(_rnz(cid)) is not None:
@@ -358,8 +293,7 @@ def canon_id_for_org_present(raw: str, hf_to_dev: dict[str, str]) -> tuple[str, 
 
 
 def _slug(value: str) -> str:
-    """Stable lowercase slug for an org-less mint id (keeps the leading
-    `inferred/` namespace out — these have no org). Collapses separators."""
+    """Stable lowercase slug for an org-less mint id."""
     s = re.sub(r"[^\w\s\-./]", "", value.lower().strip())
     s = re.sub(r"[\s_]+", "-", s)
     s = re.sub(r"-{2,}", "-", s).strip("-/")
@@ -390,27 +324,21 @@ def has_derivation_marker(name: str) -> bool:
 
 def _is_pure_version_suffix(tokens: list[str]) -> bool:
     """True iff the suffix tokens (the delta between a child id and its confirmed
-    base) are PURELY a release-snapshot date or version string — e.g.
-    `2026-03-05`, `20250929`, `2025-08`, `v0-3`. When the only difference from a
-    confirmed base is such a suffix, the id is the SAME model identity along the
-    version line and earns an identity-preserving `variant/version` edge (folds
-    into the base's model group), rather than the conservative `finetune`."""
+    base) are purely a release-snapshot date or version string (`2026-03-05`,
+    `20250929`, `2025-08`, `v0-3`): such an id is the same model identity along
+    the version line and earns `variant/version` rather than `finetune`."""
     if not tokens:
         return False
     joined = "-".join(tokens)
-    # Full ISO / compact / year-month date forms (tokens split on separators, so
-    # a date like 2026-03-05 arrives as ['2026','03','05']).
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}|\d{8}|\d{4}-\d{2}|\d{6}", joined):
         return True
-    # Bare 4-digit release tag: YYMM (`2411` = Nov 2024, Mistral) or MMDD (`0514`
-    # = May 14, Gemini). Validated so a non-date 4-digit (param count, opaque
-    # version) is NOT mistaken for a snapshot and still earns the conservative
-    # finetune edge.
+    # 4-digit vendor tags: YYMM (`2411`, Mistral) or MMDD (`0514`, Gemini);
+    # range-checked so a param count or opaque version is not read as a date.
     if re.fullmatch(r"\d{4}", joined):
         a, b = int(joined[:2]), int(joined[2:])
         if (20 <= a <= 29 and 1 <= b <= 12) or (1 <= a <= 12 and 1 <= b <= 31):
             return True
-    # vN(-N)* version strings (slugified v0.3 -> v0-3).
+    # slugified v0.3 -> v0-3
     if re.fullmatch(r"v\d+(?:-\d+)*", joined):
         return True
     return False
@@ -425,17 +353,13 @@ def _valid_ymd(y: int, m: int, d: int) -> bool:
 
 
 def is_validated_date_suffix(tokens: list[str]) -> bool:
-    """Like `_is_pure_version_suffix`, but the calendar form must be a REAL
-    date: `2025-99-99`, `20250230` and `999999` are date-SHAPED and are
-    rejected. Grouping two models under a tail that only looks like a date
-    would assert they are the same release.
-
-    Kept separate from `_is_pure_version_suffix` on purpose: that helper gates
-    the long-standing family-token path, whose output must not move here.
-    Used by the o-series path and by `split_date_mode_suffix`."""
+    """Like `_is_pure_version_suffix`, but the calendar form must be a real
+    date (`2025-99-99`, `20250230`, `999999` are rejected): a tail that only
+    looks like a date must not assert two models are the same release. Kept
+    separate so the family-token path's output does not move."""
     if not tokens:
         return False
-    # vN(-N)* version strings (slugified v0.3 -> v0-3).
+    # slugified v0.3 -> v0-3
     if re.fullmatch(r"v\d+(?:-\d+)*", "-".join(tokens)):
         return True
     if not all(t.isdigit() for t in tokens):
@@ -452,32 +376,27 @@ def is_validated_date_suffix(tokens: list[str]) -> bool:
     if len(t) == 8:
         return _valid_ymd(int(t[:4]), int(t[4:6]), int(t[6:]))
     if len(t) == 6:
-        # Six digits are either YYYYMM (`202608`) or YYMMDD (`250416`). Only a
-        # leading `19`/`20` reads as a four-digit year.
+        # YYYYMM (`202608`) or YYMMDD (`250416`); only a leading `19`/`20`
+        # reads as a four-digit year.
         if t[:2] in ("19", "20") and _valid_ymd(int(t[:4]), int(t[4:]), 1):
             return True
         return _valid_ymd(2000 + int(t[:2]), int(t[2:4]), int(t[4:]))
     if len(t) == 4:
-        # Established 4-digit vendor tags: YYMM (`2411` = Nov 2024, Mistral) or
-        # MMDD (`0613`, `1106`). Still ambiguous in principle, but range-checked
-        # so a param count or opaque version (`4096`) is not read as a date.
+        # YYMM (`2411`, Mistral) or MMDD (`0613`); range-checked so a param
+        # count or opaque version (`4096`) is not read as a date.
         a, b = int(t[:2]), int(t[2:])
         if 20 <= a <= 29 and 1 <= b <= 12:
             return True
-        return _valid_ymd(2000, a, b)   # MMDD; 2000 is a leap year
+        return _valid_ymd(2000, a, b)  # 2000 is a leap year
     return False
 
 
 def split_date_mode_suffix(tokens: list[str]) -> Optional[tuple[list[str], list[str]]]:
-    """Split a delta suffix into (date tokens, mode tokens) when it is a
-    validated release date FOLLOWED by effort/mode tokens — `2025-04-16-high`
-    -> `(['2025','04','16'], ['high'])`. Such an id is the dated snapshot served
-    at one effort, so it belongs on the dated sibling under `axis: mode`.
-
-    Returns None for anything else, including a bare effort token with no date
-    in front of it: outside a dated release line those tokens are ambiguous
-    (product tier, routing pointer, or different weights) and the id stays
-    parentless for curation."""
+    """(date tokens, mode tokens) when the suffix is a validated release date
+    followed by effort/mode tokens (`2025-04-16-high` ->
+    `(['2025','04','16'], ['high'])`): the dated snapshot served at one effort,
+    which belongs on the dated sibling under `axis: mode`. None otherwise; a
+    bare effort token without a date is ambiguous and stays parentless."""
     for cut in range(len(tokens) - 1, 0, -1):
         rest = tokens[cut:]
         if all(t in EFFORT_MODE_TOKENS for t in rest) and is_validated_date_suffix(tokens[:cut]):
@@ -499,11 +418,10 @@ def strip_mode_suffix(cid: str, mode_tokens: list[str]) -> Optional[str]:
 
 
 def same_dev_org(a: str, b: str, hf_to_dev: dict[str, str]) -> bool:
-    """True iff two org-qualified ids belong to the same developer, with the
-    curated org fold applied (`kimi/…` and `moonshotai/…` agree). A sentinel
-    prefix is a placeholder, not a namespace, so it never agrees with anything:
-    openness inheritance walks `variant` edges without an org check, so an
-    unverified `unknown/…` row must not acquire a real lab's verdict."""
+    """True iff two org-qualified ids belong to the same developer after the
+    curated org fold. A sentinel prefix never agrees with anything: openness
+    inheritance walks `variant` edges without an org check, so an `unknown/…`
+    row must not acquire a real lab's verdict."""
     if "/" not in a or "/" not in b:
         return False
     oa, ob = a.split("/", 1)[0].lower(), b.split("/", 1)[0].lower()
@@ -517,24 +435,16 @@ def o_series_edge(
     hf_to_dev: dict[str, str],
     confirm,
 ) -> tuple[Optional[dict], Optional[str], Optional[str]]:
-    """Parent inference for a residual whose model NAME leads with an OpenAI
-    o-series token. Returns `(parent_edge, dated_sibling, confirmed_base)`.
+    """Parent inference for a residual whose name leads with an OpenAI o-series
+    token. Returns `(parent_edge, dated_sibling, confirmed_base)`.
 
-    Runs only where the family-token pass produced nothing, so it cannot move
-    an existing classification. It emits exactly two shapes and nothing else:
-
-      - a validated date/version tail -> `variant/version` on the base;
-      - a validated date followed by effort/mode tokens -> a deferred
-        `variant/mode` on the dated sibling (see `resolve_mode_edges`), which
-        keeps both axes where a direct edge to the base would drop one.
-
-    Everything else stays PARENTLESS for curation. There is no `finetune`
-    fallback here: a named month (`o3-high-april-2025`) or a bare effort token
-    evidences neither a date nor retraining, and an o-series model has no
-    published weights to derive from in the first place.
-
-    Candidate bases are built org-qualified and the confirmed hit is org-checked
-    again, so a name-only match can never link two labs' release lines."""
+    Emits only: a validated date/version tail -> `variant/version` on the
+    base; a validated date followed by effort/mode tokens -> a deferred
+    `variant/mode` on the dated sibling (`resolve_mode_edges`). Everything
+    else stays parentless: there is no `finetune` fallback, since an o-series
+    model has no published weights to derive from. Candidates are
+    org-qualified and the hit is org-checked, so a name-only match never links
+    two labs."""
     from eval_entity_resolver.normalization import normalize as _rnz
 
     if "/" not in raw:
@@ -545,8 +455,8 @@ def o_series_edge(
     if org_slug.strip().lower() in SENTINEL_ORGS:
         return None, None, None
     toks = _tokens(name)
-    # LEADING position only: a mid-name `o1` is the uploader's own label
-    # (`cursor-o1-7b` is a Qwen finetune), not a derivation of OpenAI o1.
+    # Leading position only: a mid-name `o1` (`cursor-o1-7b`) is the
+    # uploader's own label.
     if not toks or toks[0] not in O_SERIES_TOKENS:
         return None, None, None
 
@@ -562,7 +472,7 @@ def o_series_edge(
                 continue
             hit_name = hit.split("/", 1)[1] if "/" in hit else hit
             if _rnz(hit) == raw_nz or _rnz(hit_name) == name_nz:
-                continue   # self-edge, not a base
+                continue  # self-edge
             suffix = toks[end:]
             if is_validated_date_suffix(suffix):
                 return (
@@ -578,16 +488,11 @@ def o_series_edge(
 
 
 def resolve_mode_edges(pending, minted_by_id: dict[str, dict], confirm) -> None:
-    """Attach the deferred `variant/mode` edges. Deferred because the dated
-    sibling is usually minted from its own residual raw in the SAME run and the
-    residual is not ordered, so the sibling's final id is only known once the
-    mint loop has finished. A sibling that neither this run nor the registry
-    provides leaves the child parentless rather than dangling.
-
-    A child and its dated sibling often disagree on separators
-    (`gpt-5-4-2026-03-05-high` vs `gpt-5.4-2026-03-05`), so a normalized match
-    is accepted too, but only when it is UNIQUE: two same-run mints sharing a
-    normalized form would otherwise pick whichever was minted first."""
+    """Attach the deferred `variant/mode` edges: the dated sibling is usually
+    minted in the same unordered run, so its final id is known only after the
+    mint loop. A missing sibling leaves the child parentless. A normalized
+    match is accepted (siblings often disagree on separators) only when it is
+    unique among same-run mints."""
     from eval_entity_resolver.normalization import normalize as _rnz
 
     by_norm: dict[str, set[str]] = {}
@@ -600,7 +505,7 @@ def resolve_mode_edges(pending, minted_by_id: dict[str, dict], confirm) -> None:
         else:
             same_norm = by_norm.get(_rnz(dated)) or set()
             if len(same_norm) > 1:
-                continue   # ambiguous; leave for collision folding / curation
+                continue  # ambiguous
             target = next(iter(same_norm)) if same_norm else confirm(dated)
         if not target or target == entry["id"] or entry.get("parents"):
             continue
@@ -612,10 +517,8 @@ def resolve_mode_edges(pending, minted_by_id: dict[str, dict], confirm) -> None:
 
 
 def _prior_committed_records() -> list[dict]:
-    """The previously-committed tier3 output (full entries AND enrich records),
-    read before this run overwrites the file. Input to the carry-forward floor:
-    every surface form the committed file made resolvable must stay resolvable
-    at exact/normalized confidence after a regen ("nothing is removed")."""
+    """The previously committed tier3 output (full entries and enrich records),
+    read before this run overwrites the file; input to the carry-forward floor."""
     if not TIER3_YAML.exists():
         return []
     prior = yaml.safe_load(TIER3_YAML.read_text()) or []
@@ -624,12 +527,9 @@ def _prior_committed_records() -> list[dict]:
 
 
 def _curated_claim_forms() -> set[str]:
-    """Surface forms the CURATED layers (core.yaml entries + enrichments/*.yaml)
-    explicitly claim. The carry-forward floor must never re-carry one of these:
-    curation already places the form (possibly on a tier3-minted canonical the
-    generator's clean resolver cannot see, because it strips its own inferred
-    rows), and a second claim from a floor enrich record would be an ambiguous
-    alias collision at seed time."""
+    """Surface forms the curated layers (core.yaml + enrichments/*.yaml) claim.
+    A second claim on one of these (possibly placed on a tier3 canonical the
+    clean resolver cannot see) would be an alias collision at seed time."""
     forms: set[str] = set()
 
     def _add(rec: dict) -> None:
@@ -659,39 +559,21 @@ def main() -> None:
     hf_to_dev = build_hf_to_dev(curated_orgs)
     prior_records = _prior_committed_records()
 
-    # core.yaml `skip_ids` are intentionally-dropped canonical ids — a tier3
-    # mint colliding with one would be silently removed by the seed loader and
-    # the raw would stay no_match. Read them so we can suffix-disambiguate.
+    # A mint colliding with a core `skip_ids` entry would be dropped by the
+    # loader and its raw would stay no_match.
     core_skip_ids: set[str] = set()
     core_doc = yaml.safe_load((MODELS_DIR / "core.yaml").read_text()) or {}
     if isinstance(core_doc, dict):
         core_skip_ids = set(core_doc.get("skip_ids") or [])
 
-    # Direct core-aware steal-guard: read core.yaml's curated canonicals and
-    # index their normalized surface forms, so a mint can never be emitted as a
-    # normalized-colliding twin under a DIFFERENT id than a curated core entry.
-    # Reads the SOURCE YAML (not the fixtures-loaded resolver): the seed YAML is
-    # the source of truth, while fixtures/*.parquet are a regenerated build
-    # artifact that can lag or be polluted by a prior `seed` run.
     core_norm_index = build_core_norm_index(core_doc)
 
-    # Build a resolver from fixtures but with this generator's OWN prior output
-    # (resolution_source == "inferred") filtered out, so a re-run sees the same
-    # residual as a clean (Tier-1/2 + curation only) build. Without this, stale
-    # inferred rows from a previous run/seed pollute the fixtures and the
-    # residual collapses to ~0 (non-deterministic, non-re-runnable). Follows the
-    # "read the source of truth, not the build artifact" rule.
     r = _clean_resolver()
 
-    # Real-HF fold authority (org-aware). A residual whose minted id refers to the
-    # SAME model as a real HF repo under a dev-org-decoupled id (`cohere/c4ai...`
-    # vs `CohereLabs/c4ai...`, `alibaba/qwq-32b-preview` vs `Qwen/QwQ-32B-Preview`)
-    # must DEFER to that HF id — attach the raw as an alias of the real canonical
-    # rather than mint a shadow slug. Uses the SAME decide_fold the models_dev /
-    # catalog paths + the gate use (eval_entity_resolver.fold), so all four
-    # generators agree. Strictly additive: a raw that would have minted a useless
-    # dup now resolves to the true repo (org agreement required — no cross-vendor
-    # merge).
+    # A residual that is the same model as a real HF repo under a
+    # dev-org-decoupled id (`cohere/c4ai...` vs `CohereLabs/c4ai...`) defers to
+    # it (raw becomes an alias) rather than minting a shadow slug; same
+    # decide_fold as the other generators and the gate.
     from eval_entity_resolver.fold import build_hf_index as _build_hf_index, decide_fold as _decide_fold
 
     def _hf_source_entries() -> list[dict]:
@@ -717,17 +599,12 @@ def main() -> None:
         f = _decide_fold(mint, _hf_ids, _alias_to_hf, _by_org_name, hf_to_dev)
         return f["hf_target"] if f and f["hf_target"] != cid else None
 
-    # Enrich records {real_hf_id -> set(raw aliases)} for folded residuals — emitted
-    # so the seed loader unions the raw onto the existing HF canonical.
+    # {real_hf_id -> raw aliases}, emitted as enrich records.
     fold_enrich: dict[str, set[str]] = {}
 
-    # Seed-time collision-fold parity: the seed's fold_collisions merges any
-    # canonical whose separator/case-stripped id key matches an existing one
-    # (`cohere/CommandA` -> `cohere/command-a`). Minting such a draft here
-    # would create a one-run row the NEXT seed folds away (its raw then
-    # resolves via the fold alias, the run after re-mints it — a two-state
-    # oscillation). Detect the fold up front and emit the stable enrich
-    # record instead. Same `_bsizes` guard as fold_collisions.
+    # Parity with the seed's fold_collisions: a draft it would merge anyway
+    # (`cohere/CommandA` -> `cohere/command-a`) becomes a stable enrich record
+    # now, or the row oscillates (minted, folded away, re-minted).
     from eval_entity_registry.lib.collision_fold import _bsizes as _ck_bsizes
     from eval_entity_registry.lib.collision_fold import collision_key as _ck
 
@@ -743,15 +620,10 @@ def main() -> None:
             return hit
         return None
 
-    # SAME-RUN dev-org twin dedup. Two residual raws can name the SAME model
-    # under a curated-org respelling (`kimi/kimi-k2` vs `moonshotai/kimi-k2`)
-    # or a separator respelling the case-insensitive `_fold_dup` misses
-    # (`google/gemini-3-1-pro-preview` vs `google/gemini-3.1-pro-preview`).
-    # Minting both emits two FULL entries with one folded identity — the
-    # duplicate class the adoption gate rejects (and for the cross-org-spelling
-    # case, the seed's fold_collisions cannot merge either, so both would go
-    # live). Key: (curated dev org, separator/case-stripped name, b-size
-    # signature) — the same org fold + `_bsizes` guard the seed fold uses.
+    # Same-run dev-org twins (`kimi/kimi-k2` vs `moonshotai/kimi-k2`, separator
+    # respellings): two full entries with one folded identity fail the adoption
+    # gate, and the seed fold cannot merge cross-org spellings. Key mirrors the
+    # seed fold (dev org, stripped name, b-size signature).
     minted_by_devkey: dict[tuple, dict] = {}
 
     def _dev_key(c: str) -> tuple:
@@ -760,11 +632,8 @@ def main() -> None:
             return (hf_to_dev.get(o.lower(), o.lower()), _ck(n), _ck_bsizes(n))
         return ("", _ck(c), _ck_bsizes(c))
 
-    # Ids the CURATED layers key records by (core entries, enrichments/*.yaml
-    # bridges and edges). When a same-run twin pair contains one, that spelling
-    # must win the id slot — curation attaches aliases/parents to it, and
-    # letting the other spelling win would strand those records on a
-    # loader-materialized stand-in (and collide on the alias claim).
+    # Ids curated records key by: in a twin pair that spelling must win the id
+    # slot, or the curated aliases/parents strand on a stand-in.
     curated_record_ids: set[str] = set()
     for _e in _core_entries(core_doc):
         if isinstance(_e.get("id"), str):
@@ -779,12 +648,9 @@ def main() -> None:
                     curated_record_ids.add(_e["id"])
 
     def _twin_id_wins(challenger: str, incumbent: str, org_id_: Optional[str]) -> bool:
-        """True iff `challenger` is the better canonical spelling for a same-run
-        twin pair. A curated-record-keyed id wins outright; then mirrors the
-        seed fold's `_winner_rank` preferences (dotted version spelling, then
-        shorter id), led by: an id whose org prefix IS the curated developer
-        org (`moonshotai/…`) beats an alias-org respelling (`kimi/…`) —
-        canonical ids should carry the real namespace."""
+        """True iff `challenger` is the better spelling for a same-run twin pair:
+        curated-record-keyed id, then real developer-org prefix, then the seed
+        fold's `_winner_rank` preferences (dotted version, shorter id)."""
 
         def _score(c: str) -> tuple:
             org = c.split("/", 1)[0].lower() if "/" in c else ""
@@ -799,54 +665,38 @@ def main() -> None:
 
         return _score(challenger) > _score(incumbent)
 
-    # --- alias-confirmation index: normalized base candidate -> canonical id.
-    # Built from the resolver's own alias/canonical universe so an inferred base
-    # only yields an edge when it alias-confirms to something that exists.
     from eval_entity_registry.services.hub_stats import normalize as _nz
 
     def _confirm_base(candidate: str) -> Optional[str]:
-        """Resolve a candidate base id through the live resolver. Accept only an
-        EXACT or NORMALIZED match (no fuzzy) so we never invent a cross-version
-        / cross-family edge."""
+        """Canonical id of a candidate base, accepting only an exact or
+        normalized match so no cross-version / cross-family edge is invented."""
         res = r.resolve(candidate, "model")
         if res.canonical_id and res.strategy in ("exact", "normalized"):
             return res.canonical_id
         return None
 
-    # --- find the CURRENT no_match residual over all 6,720 EEE ids. ----------
-    # Sentinel-org ids (`unknown/<name>`) are handled up front: the placeholder
-    # prefix is a stand-in the upstream harness used when it didn't know the
-    # developer, so we drop it and re-resolve the bare name against the real-HF
-    # universe. A confident (exact/normalized) hit emits an EXPLICIT alias of
-    # the raw onto the true canonical — so `unknown/minimax-text-01` resolves to
-    # `minimax/minimax-text-01` (real org), via a stable alias rather than the
-    # fragile fuzzy tier, and never as a shadow `unknown/` mint carrying org
-    # `unknown`. Unresolvable sentinels (genuinely opaque agents like
-    # `unknown/OpenHands`) fall through to the residual and mint org-less.
+    # --- residual ------------------------------------------------------------
+    # Sentinel-org ids: the placeholder prefix is dropped and the bare name
+    # re-resolved; an exact/normalized hit aliases the raw onto the true
+    # canonical instead of a shadow `unknown/` mint. Opaque ones fall through
+    # to the residual and mint org-less.
     minted: list[dict] = []
     minted_by_id: dict[str, dict] = {}
-    # (entry, dated sibling id) for `{date}-{mode}` children, settled once the
-    # mint loop has finished (see `resolve_mode_edges`).
+    # (entry, dated sibling id) for `{date}-{mode}` children; see resolve_mode_edges.
     pending_mode_edges: list[tuple[dict, str]] = []
     review: list[dict] = []
     buckets = Counter()
 
-    # Forms the curated layers claim (core entries + enrichments records). A
-    # residual raw curation claims must NEVER mint a draft: the curated target
-    # may be a tier3-defined canonical this clean resolver cannot see (its
-    # rows are stripped as inferred), and a mint would double-claim the raw at
-    # seed time. The carry-forward floor applies the same guard.
+    # A residual raw that curation claims must never mint: the curated target
+    # may be a tier3 canonical this clean resolver cannot see, and a mint would
+    # double-claim the raw at seed time.
     curated_claims = _curated_claim_forms()
 
     # --- curated-keyed entity retention --------------------------------------
-    # A prior committed FULL entry whose id a curated record keys (an
-    # enrichments/*.yaml bridge or edge record) IS an entity by curation's
-    # declaration: enrichment records must never materialize a canonical from
-    # a bare key (gate: test_alias_enrichments_never_mint_canonicals), so the
-    # committed definition is retained verbatim unless another source now
-    # DEFINES the id. Registered as a mint up front so the residual pass
-    # folds the entity's respelled raws onto it (case dedup / dev-org twin
-    # fold) instead of minting duplicates.
+    # A prior full entry whose id a curated record keys is an entity by
+    # curation's declaration (enrich records never materialize a canonical),
+    # so it is retained unless another source now defines the id. Registered
+    # up front so the residual pass folds respelled raws onto it.
     other_defined = _non_tier3_defining_ids()
     claim_owner = _non_tier3_claim_owners()
     core_dropped_ids: set[str] = set(core_skip_ids)
@@ -861,17 +711,11 @@ def main() -> None:
         if rid in core_dropped_ids or rid.lower() in minted_by_id:
             continue
         if claim_owner.get(rid, rid) != rid:
-            # The id-string is claimed by a DIFFERENT canonical's record (a
-            # curated fold onto a real repo, or another source's alias) — the
-            # entity was deliberately superseded; resurrecting it would
-            # double-claim the form.
+            # Claimed by a different canonical's record: deliberately superseded.
             continue
         if r.resolve(rid, "model").canonical_id is None:
-            # The id still no_matches in the clean universe, so the ordinary
-            # residual pass re-mints the entity with FRESH inference (edges,
-            # org) — retention is only for ids the residual pass would DROP
-            # (the raw resolves via a fuzzy stem, a loader-materialized
-            # stand-in, or a family alias) while curation keys them.
+            # Still no_match: the residual pass re-mints it with fresh
+            # inference; retention is only for ids that pass would drop.
             continue
         entry = dict(rec)
         entry["aliases"] = [
@@ -898,15 +742,10 @@ def main() -> None:
         if raw in curated_claims:
             buckets["curated-claimed"] += 1
             continue
-        # A placeholder org prefix (`unknown/…`) is NOT a real namespace. The
-        # resolvable ones were already aliased onto their true canonical in the
-        # residual pass above, so any sentinel id reaching here is genuinely
-        # opaque (e.g. `unknown/OpenHands`). Force it down the org-less path
-        # (org_id=None + review) rather than letting `canon_id_for_org_present`
-        # mint it with org `unknown` — the bug that surfaced these as
-        # "Unknown / <model>". The mint id keeps the raw form (incl. the
-        # `unknown/` prefix) deliberately: an org-qualified id avoids the
-        # bare-name alias collisions the org-less slug is designed to dodge.
+        # A sentinel id reaching here is genuinely opaque; it takes the org-less
+        # path rather than minting with org `unknown`. The mint id keeps the
+        # `unknown/` prefix: an org-qualified id avoids bare-name alias
+        # collisions.
         sentinel_org = "/" in raw and raw.split("/", 1)[0].strip().lower() in SENTINEL_ORGS
         has_org = (
             "/" in raw
@@ -914,28 +753,21 @@ def main() -> None:
             and not sentinel_org
         )
 
-        # Base inference from the model-name part (right of `/`) or whole id.
-        # Strip a sentinel prefix here so base detection keys off the real model
-        # name, not the placeholder org.
+        # Base detection keys off the model name, never a placeholder org.
         name_for_infer = raw.split("/", 1)[1] if (has_org or sentinel_org) else raw
 
         base_tok = detect_base_token(name_for_infer)
         deriv = has_derivation_marker(name_for_infer)
 
-        # Try to alias-confirm a base. Candidate base id:
-        #   org-present: `{org}/{base-stem}` AND bare `{base-stem}` (org-aware
-        #               first so we never merge name-only across orgs).
-        # We only attempt confirmation when a base token is present.
+        # Candidate bases: `{org}/{stem}` before bare `{stem}`, so a name-only
+        # match never merges across orgs.
         parent_edge: Optional[dict] = None
         confirmed_base: Optional[str] = None
         dated_sibling: Optional[str] = None
         if base_tok:
-            # Build a small set of conservative candidate base ids from the
-            # name: progressively drop trailing derivation tokens to land on a
-            # base the registry knows. e.g. `llama-3.1-8b-instruct-dpo` ->
-            # try `llama-3.1-8b-instruct`, `llama-3.1-8b`, `llama-3.1`...
+            # Progressively drop trailing tokens (`llama-3.1-8b-instruct-dpo`
+            # -> `…-instruct`, `…-8b`, `llama-3.1`, …).
             name_toks = _tokens(name_for_infer)
-            # locate the base token start
             try:
                 start = next(
                     i for i, t in enumerate(name_toks)
@@ -952,7 +784,6 @@ def main() -> None:
                     dev = hf_to_dev.get(org_slug.lower(), org_slug)
                     candidates.append((f"{dev}/{stem}", end))
                 candidates.append((stem, end))
-            # de-dup preserving order; skip a candidate identical to raw itself.
             raw_name_nz = _nz(name_for_infer)
             seen = set()
             confirmed_end: Optional[int] = None
@@ -963,10 +794,8 @@ def main() -> None:
                 hit = _confirm_base(cand)
                 if not hit:
                     continue
-                # Reject a "base" that is really the SAME model identity: same
-                # full id (modulo separators) OR same model-NAME part as raw
-                # (e.g. raw `01-ai/yi-lightning` confirming a bare org-less
-                # `yi-lightning`). That would be a self-edge, not a base.
+                # Same full id or same model-name part as raw is a self-edge,
+                # not a base.
                 hit_name = hit.split("/", 1)[1] if "/" in hit else hit
                 if _nz(hit) == _nz(raw) or _nz(hit_name) == raw_name_nz:
                     continue
@@ -974,14 +803,9 @@ def main() -> None:
                 confirmed_end = end
                 break
             if confirmed_base:
-                # The tokens AFTER the confirmed base stem are the delta suffix.
-                # When that delta is PURELY a date/version snapshot, the id is the
-                # same model identity along the version line -> emit an
-                # identity-preserving `variant/version` edge so it folds into the
-                # base's model group (a dated snapshot like `gpt-4o-2024-05-13` is
-                # the same release as the moving `gpt-4o` pointer). Anything else
-                # stays a conservative `finetune` (community uploads are
-                # overwhelmingly finetunes/merges of the confirmed base).
+                # A delta that is purely a date/version is the same identity
+                # along the version line (`variant/version`, folds into the
+                # base's group); anything else is a conservative `finetune`.
                 suffix_toks = tail[confirmed_end:] if confirmed_end is not None else []
                 if _is_pure_version_suffix(suffix_toks):
                     parent_edge = {
@@ -992,9 +816,8 @@ def main() -> None:
                 else:
                     parent_edge = {"id": confirmed_base, "relationship": "finetune"}
 
-        # o-series fallback, for names the family-token pass cannot reach
-        # (`o3-2025-04-16` has no token in BASE_FAMILY_TOKENS). Gated on the
-        # pass above finding NOTHING, so no existing classification moves.
+        # Gated on the family-token pass finding nothing, so no existing
+        # classification moves.
         if parent_edge is None and confirmed_base is None:
             parent_edge, dated_sibling, confirmed_base = o_series_edge(
                 raw, hf_to_dev, _confirm_base
@@ -1005,43 +828,33 @@ def main() -> None:
             cid, org_id = canon_id_for_org_present(raw, hf_to_dev)
             bucket = "inferable-base" if confirmed_base else "opaque"
         else:
-            # org-less: stable slug, org_id None, flagged for review. NEVER
-            # auto-guess the org even if a base alias-confirms. Slug the full raw
-            # (keeping any `unknown/` prefix) so the mint stays org-qualified —
-            # a bare slug can normalized-collide with a real org-prefixed
+            # Never guess the org, even when a base confirms. Slug the full raw
+            # (incl. any `unknown/` prefix) so the mint stays org-qualified: a
+            # bare slug can normalized-collide with a real org-prefixed
             # canonical at seed time.
             cid = _slug(raw)
             org_id = None
             bucket = "org-less"
 
-        # --- DEFER to a real HF repo (org-aware fold) ----------------------
-        # If this residual is the SAME model as an existing real HF canonical
-        # under a dev-org-decoupled id, do NOT mint a shadow slug — alias the raw
-        # onto the real HF id (emitted as an enrich record below).
+        # Same model as a real HF canonical: alias the raw onto it instead of
+        # minting a shadow slug.
         fold_hf = fold_to_real_hf(cid, org_id, raw)
         if fold_hf is not None:
             fold_enrich.setdefault(fold_hf, set()).add(raw)
             buckets["folded-to-hf"] += 1
             continue
 
-        # --- DEFER to a seed-time collision twin ---------------------------
-        # A mint the seed's fold_collisions would merge anyway (case/separator
-        # twin of an existing canonical) becomes a stable enrich record here.
+        # Case/separator twin the seed's fold_collisions would merge anyway.
         fold_ck = fold_to_collision_twin(cid)
         if fold_ck is not None:
             fold_enrich.setdefault(fold_ck, set()).add(raw)
             buckets["folded-collision"] += 1
             continue
 
-        # id-collision guard (CASE-INSENSITIVE). Two distinct raw ids can mint to
-        # the SAME canonical (modulo case) only when they are the same model
-        # under different casing — `Dracarys2-72B-Instruct` vs
-        # `dracarys2-72b-instruct`, `Quazim0t0/ODB-14B-sce` vs `…ODB-14b-sce`.
-        # That is a legitimate same-identity merge (NOT a name-only cross-org
-        # merge — for org-present ids the org part is identical). Fold the raw
-        # as an extra alias on the existing mint (keeping the first-seen casing
-        # as the canonical id) rather than minting a case-variant duplicate
-        # (which would violate the dedup gate) or dropping it (no_match).
+        # A case-insensitive id collision is the same model under different
+        # casing (the org part is identical), so the raw folds as an alias on
+        # the first-seen casing rather than minting a case-variant duplicate
+        # or dropping it.
         def _fold_dup(target_cid: str) -> bool:
             existing = minted_by_id.get(target_cid.lower())
             if existing is None:
@@ -1052,10 +865,8 @@ def main() -> None:
 
         if _fold_dup(cid):
             continue
-        # Same-run dev-org twin (see minted_by_devkey above): fold this raw
-        # onto the already-minted twin instead of emitting a second FULL entry
-        # with the same folded identity. The better spelling wins the id slot;
-        # the loser id + raw stay as aliases, so every surface form resolves.
+        # Same-run dev-org twin: fold onto it; the better spelling takes the id
+        # slot and the loser id + raw stay aliases.
         twin = minted_by_devkey.get(_dev_key(cid))
         if twin is not None:
             for f in (raw, cid):
@@ -1073,12 +884,6 @@ def main() -> None:
                 twin["parents"] = [parent_edge]
             buckets["folded-same-run-twin"] += 1
             continue
-        # Collision policy (see mint_collision_decision): a mint that is the SAME
-        # model as a curated core canonical (normalized-collides under a different
-        # id) is SKIPPED so the raw resolves to the curated entry — NOT minted as
-        # a `{cid}-inferred` twin (which would split one model in two and shadow
-        # the curated entry). A genuine cross-entity clash (core skip_ids, or a
-        # DIFFERENT existing canonical) is suffix-disambiguated instead.
         decision = mint_collision_decision(
             cid,
             core_skip_ids,
@@ -1086,11 +891,9 @@ def main() -> None:
             resolver_hit=r.resolve(cid, "model").canonical_id is not None,
         )
         if decision == "skip":
-            # The curated core canonical owns this identity. A raw whose
-            # normalized form does NOT collapse onto the owner (scaffold raws
-            # with `+`/parens, e.g. `unknown/PatchPilot + Co-PatcheR`) would
-            # go UNRESOLVABLE on a silent skip — union it onto the owner as
-            # an explicit enrich alias instead.
+            # A raw whose normalized form does not collapse onto the owner
+            # (`+`/parens) would go unresolvable on a silent skip; union it as
+            # an explicit alias.
             skip_owner = core_norm_index[_rnz_main(cid)]
             if raw != skip_owner and _rnz_main(raw) != _rnz_main(skip_owner):
                 fold_enrich.setdefault(skip_owner, set()).add(raw)
@@ -1101,13 +904,9 @@ def main() -> None:
             if _fold_dup(cid):
                 continue
 
-        # display_name = the raw EEE id verbatim. We deliberately do NOT use the
-        # bare model-name part: the seed loop promotes display_name to a global
-        # alias, and a bare name (e.g. `granite-3.1-2b-base`, `yi-lightning`)
-        # frequently already belongs to a different canonical — that would be an
-        # ambiguous alias collision (and a name-only cross-org merge risk). Using
-        # the full raw id keeps the only emitted aliases = {cid, raw}, both
-        # org-qualified.
+        # display_name is the raw id verbatim: the seed promotes display_name
+        # to a global alias, and a bare name frequently already belongs to
+        # another canonical.
         entry: dict = {
             "id": cid,
             "display_name": raw,
@@ -1125,7 +924,7 @@ def main() -> None:
             entry["parents"] = [parent_edge]
 
         minted.append(entry)
-        minted_by_id[cid.lower()] = entry   # case-insensitive dedup key
+        minted_by_id[cid.lower()] = entry
         minted_by_devkey.setdefault(_dev_key(cid), entry)
         buckets[bucket] += 1
         if dated_sibling is not None:
@@ -1151,17 +950,11 @@ def main() -> None:
     resolve_mode_edges(pending_mode_edges, minted_by_id, _confirm_base)
 
     # --- carry-forward floor ("nothing is removed") --------------------------
-    # A regen DROPS a previously-committed draft whenever its raw now resolves
-    # against the Tier-1/2 + curation universe. When that resolution is only
-    # FUZZY, the drop silently degrades the raw from an exact alias hit
-    # (confidence 1.0) to a fuzzy stem hit (0.9) and deletes the draft's other
-    # surface forms outright. Floor rule: every id/alias the committed file
-    # carried either (a) resolves exact/normalized in the new universe, (b) is
-    # re-emitted by this run, (c) is explicitly claimed by a curated layer
-    # (core/enrichments — possibly onto a tier3 canonical this generator's
-    # clean resolver cannot see), or (d) gets carried as an enrich alias onto
-    # the entity its raw now fuzzy-resolves to, together with the dropped
-    # draft's canonical id. Dropping must never lose a resolvable surface form.
+    # A draft whose raw now resolves only fuzzily would be dropped, degrading
+    # the raw from an exact hit and deleting its other surface forms. Every
+    # form the committed file carried must resolve exact/normalized, be
+    # re-emitted, be claimed by a curated layer, or be carried as an enrich
+    # alias onto the entity its raw now resolves to.
     emitted: set[str] = set()
     for e in minted:
         emitted.add(e["id"])
@@ -1174,28 +967,24 @@ def main() -> None:
     for rec in prior_records:
         home = rec["id"]
         if home in core_dropped_ids:
-            continue  # curation removed the record on purpose — do not resurrect
+            continue  # removed by curation on purpose
         forms = ([home] if "display_name" in rec else []) + list(rec.get("aliases") or [])
         for form in forms:
             if not isinstance(form, str) or not form or form in emitted:
                 continue
             if form in curated_claims:
-                continue  # curation places this form; a floor claim would collide
+                continue  # a floor claim would collide with curation's
             if form in curated_record_ids:
-                # A curated record (core entry / enrichments bridge or edge) is
-                # KEYED by this form: the loader keeps it alive as a canonical
-                # id, so it stays resolvable at 1.0 — and a floor alias claim
-                # on another entity would collide with that id claim.
+                # A curated record keyed by this form keeps it alive as a
+                # canonical id; a floor alias claim elsewhere would collide.
                 continue
             if core_norm_index.get(_rnz_main(form)) is not None:
-                # A core-defined canonical owns the form's normalized identity
-                # (core scaffold entities keep resolution_source=inferred, so
-                # the clean resolver is blind to them) — the real seed universe
-                # resolves the form to that entity via normalized match.
+                # A core-defined canonical owns the normalized identity (core
+                # scaffold entities are invisible to the clean resolver).
                 continue
             res = r.resolve(form, "model")
             if res.canonical_id and res.strategy in ("exact", "normalized"):
-                continue  # cleanly handed off to another source's claim
+                continue  # handed off to another source's claim
             if res.canonical_id:
                 target = res.canonical_id  # fuzzy-only: pin the form as an alias
             elif home in carried_home:
@@ -1241,9 +1030,7 @@ def main() -> None:
         "# and the carry-forward floor (a dropped draft's forms pinned onto the\n"
         "# entity its raw resolves to — nothing is removed).\n"
     )
-    # Enrich records for residuals that folded onto a real HF repo: {id: hf,
-    # aliases: [raw...]} — the seed loader unions these onto the existing HF
-    # canonical so the raw resolves to the real repo (no shadow slug minted).
+    # Enrich records: the loader unions these raws onto the existing canonical.
     enrich_records = [
         {"id": hf, "aliases": sorted(raws)}
         for hf, raws in sorted(fold_enrich.items())

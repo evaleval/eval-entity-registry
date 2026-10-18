@@ -1,10 +1,6 @@
-"""Coverage for the core.yaml skip_ids / skip_source_ids loader (cli.py
-_load_models_merged). skip_ids drops an id from BOTH core and the generated
-sources; skip_source_ids drops it from sources/enrichments only, leaving the
-curated core entry authoritative (so a source's bad aliases can't be re-merged).
-
-Runs the real seed CLI against a minimal temp seed dir with FIXTURES_PATH pointed
-at a temp dir, so it neither touches the repo fixtures nor needs HF.
+"""core.yaml `skip_ids` drops an id from core and sources alike;
+`skip_source_ids` drops it from sources only, so a source's bad aliases
+cannot re-merge onto the curated entry. Runs the real seed CLI into a tmp dir.
 """
 from __future__ import annotations
 
@@ -31,15 +27,12 @@ def test_skip_ids_and_skip_source_ids(tmp_path, monkeypatch):
 
     _write(seed / "orgs.yaml", [{"id": "testorg", "display_name": "Test Org", "kind": "lab"}])
 
-    # generated source ships: an id to drop entirely, an id whose bad alias must
-    # be suppressed (core curates it), and a normal id to keep.
+    # One id to drop entirely, one whose bad alias core suppresses, one to keep.
     _write(seed / "models" / "sources" / "z.generated.yaml", [
         {"id": "testorg/dropme", "org_id": "testorg", "aliases": ["dropme-alias"]},
         {"id": "testorg/curated", "org_id": "testorg", "aliases": ["bad-source-alias"]},
         {"id": "testorg/keep", "org_id": "testorg", "aliases": ["keep-alias"]},
     ])
-    # core: skip_ids drops dropme everywhere; skip_source_ids drops curated from
-    # the SOURCE only (core's clean version wins, without the bad alias).
     _write(seed / "models" / "core.yaml", {
         "skip_ids": ["testorg/dropme"],
         "skip_source_ids": ["testorg/curated"],
@@ -56,12 +49,10 @@ def test_skip_ids_and_skip_source_ids(tmp_path, monkeypatch):
     assert "testorg/dropme" not in ids, "skip_ids did not drop the id"
     assert "testorg/keep" in ids and "testorg/curated" in ids
 
-    # the curated entry must NOT carry the source's bad alias (skip_source_ids)
     aliases = pd.read_parquet(fixtures / "aliases.parquet")
     curated_aliases = set(
         aliases[aliases["canonical_id"] == "testorg/curated"]["raw_value"]
     )
     assert "bad-source-alias" not in curated_aliases, "skip_source_ids did not suppress source alias"
     assert "good-alias" in curated_aliases, "curated alias missing"
-    # the dropped id must not appear as a resolvable alias either
     assert "dropme-alias" not in set(aliases["raw_value"])

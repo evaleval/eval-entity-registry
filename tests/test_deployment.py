@@ -1,5 +1,5 @@
-"""Tests for HF Space deployment features: read-only mode, selective table loading,
-write endpoint gating, resolve logging, and singleton resolution service."""
+"""Space deployment behaviour: selective table loading, read-only gating of
+writes and resolve side effects, and the resolve log writer."""
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
@@ -61,7 +61,7 @@ def _seed_benchmark(store: RegistryStore):
 
 @pytest.fixture
 def full_store(monkeypatch):
-    """Full store with all 8 tables (normal mode)."""
+    """All tables (normal mode)."""
     from eval_entity_registry.store import hf_store
     store = _make_store(TABLE_NAMES)
     monkeypatch.setattr(hf_store, "_store", store)
@@ -72,7 +72,7 @@ def full_store(monkeypatch):
 
 @pytest.fixture
 def query_store(monkeypatch):
-    """Store with only query tables (simulates read-only mode loading)."""
+    """Query tables only (read-only mode loading)."""
     from eval_entity_registry.store import hf_store
     store = _make_store(QUERY_TABLE_NAMES)
     monkeypatch.setattr(hf_store, "_store", store)
@@ -117,7 +117,7 @@ class TestHealthMissingTables:
         assert data["entities"]["models"] == 0
 
     def test_stats_with_query_only_tables(self, query_store, client):
-        """Stats should return 0 for pipeline tables that aren't loaded."""
+        """Unloaded pipeline tables count as 0, not an error."""
         r = client.get("/api/v1/stats")
         assert r.status_code == 200
         data = r.json()
@@ -172,7 +172,7 @@ class TestReadOnlyGating:
         assert r.status_code == 405
 
     def test_get_models_allowed(self, client):
-        """GET endpoints should still work in read-only mode."""
+        """GETs stay open in read-only mode."""
         r = client.get("/api/v1/models")
         assert r.status_code == 200
 
@@ -181,7 +181,7 @@ class TestReadOnlyGating:
         assert r.status_code == 200
 
     def test_malformed_post_model_returns_405_not_422(self, client):
-        """Read-only gate must run BEFORE body validation."""
+        """The read-only gate runs before body validation."""
         r = client.post("/api/v1/models", json={"garbage": True})
         assert r.status_code == 405
 
@@ -244,7 +244,6 @@ class TestReadOnlyResolve:
         from eval_entity_registry import config
         monkeypatch.setattr(config.settings, "read_only", True)
         _seed_benchmark(full_store)
-        # Rebuild the singleton so it picks up the seeded data
         app.state.resolution_service = ResolutionService(full_store)
 
     def test_resolve_match_returns_result(self, client, full_store):
@@ -258,12 +257,11 @@ class TestReadOnlyResolve:
         data = r.json()
         assert data["canonical_id"] == "math"
         assert data["created_new"] is False
-        # Verify no side effects even on match
         assert len(full_store.table("aliases")) == initial_aliases
         assert len(full_store.table("canonical_benchmarks")) == initial_benchmarks
 
     def test_resolve_no_match_returns_null(self, client, full_store):
-        """In read-only mode, unmatched strings return null — no draft entity created."""
+        """Read-only: an unmatched string returns null and creates no draft."""
         r = client.post("/api/v1/resolve", json={
             "raw_value": "CompletelyUnknownBenchmark",
             "entity_type": "benchmark",
@@ -273,11 +271,10 @@ class TestReadOnlyResolve:
         assert data["canonical_id"] is None
         assert data["strategy"] == "no_match"
         assert data["created_new"] is False
-        # Verify no entity was created
-        assert len(full_store.table("canonical_benchmarks")) == 1  # only "math"
+        assert len(full_store.table("canonical_benchmarks")) == 1
 
     def test_resolve_no_match_no_alias_written(self, client, full_store):
-        """Read-only resolve should not write aliases."""
+        """Read-only resolve writes no aliases."""
         initial_aliases = len(full_store.table("aliases"))
         client.post("/api/v1/resolve", json={
             "raw_value": "CompletelyUnknownBenchmark",
@@ -306,7 +303,6 @@ class TestResolveLogWriter:
         writer = ResolveLogWriter("")
         assert not writer.enabled
         writer.append({"raw_value": "test"})
-        # Should not accumulate
         assert len(writer._buffer) == 0
 
     def test_enabled_writer_buffers_entries(self):
@@ -316,7 +312,6 @@ class TestResolveLogWriter:
         assert len(writer._buffer) == 1
 
     def test_resolve_endpoint_appends_to_log(self, full_store, client):
-        """Verify resolve calls append entries to the log writer buffer."""
         _seed_benchmark(full_store)
         app.state.resolution_service = ResolutionService(full_store)
         log_writer = ResolveLogWriter("test-bucket")
@@ -343,27 +338,25 @@ class TestResolveLogWriter:
             {"raw_value": "Other", "entity_type": "benchmark"},
         ])
         assert len(log_writer._buffer) == 2
-        # All items in a batch share the same request_id
         assert log_writer._buffer[0]["request_id"] == log_writer._buffer[1]["request_id"]
 
     def test_buffer_capped_on_overflow(self):
-        """Buffer should not grow beyond _MAX_BUFFER_SIZE."""
+        """The buffer caps at _MAX_BUFFER_SIZE, dropping the oldest entries."""
         writer = ResolveLogWriter("test-bucket")
         for i in range(_MAX_BUFFER_SIZE + 100):
             writer.append({"raw_value": f"entry-{i}"})
         assert len(writer._buffer) == _MAX_BUFFER_SIZE
-        # Most recent entries are kept
         assert writer._buffer[-1]["raw_value"] == f"entry-{_MAX_BUFFER_SIZE + 99}"
 
     async def test_flush_clears_buffer(self):
-        """Flush with a mocked HF API should clear the buffer."""
+        """A successful flush clears the buffer."""
         writer = ResolveLogWriter("test-bucket")
         writer.append({"request_id": "r1", "raw_value": "test", "entity_type": "benchmark",
                         "source_config": None, "canonical_id": "math", "strategy": "exact",
                         "confidence": 1.0, "timestamp": "2026-01-01T00:00:00"})
 
         async def mock_to_thread(func, *args, **kwargs):
-            pass  # Simulate successful upload
+            pass
 
         with patch("asyncio.to_thread", side_effect=mock_to_thread):
             await writer._flush()
@@ -371,7 +364,7 @@ class TestResolveLogWriter:
         assert len(writer._buffer) == 0
 
     async def test_flush_re_adds_entries_on_failure(self):
-        """On flush failure, entries go back into the buffer."""
+        """A failed flush returns its entries to the buffer."""
         writer = ResolveLogWriter("test-bucket")
         writer.append({"request_id": "r1", "raw_value": "test", "entity_type": "benchmark",
                         "source_config": None, "canonical_id": "math", "strategy": "exact",
@@ -387,9 +380,8 @@ class TestResolveLogWriter:
         assert writer._buffer[0]["raw_value"] == "test"
 
     async def test_flush_empty_buffer_is_noop(self):
-        """Flush with empty buffer does nothing."""
+        """An empty flush is a no-op."""
         writer = ResolveLogWriter("test-bucket")
-        # Should not raise
         await writer._flush()
         assert len(writer._buffer) == 0
 
@@ -406,7 +398,6 @@ class TestReadOnlyResolveEdgeCases:
         app.state.resolution_service = ResolutionService(full_store)
 
     def test_resolve_empty_string(self, client, full_store):
-        """Empty string should return no_match without side effects."""
         r = client.post("/api/v1/resolve", json={
             "raw_value": "",
             "entity_type": "benchmark",
@@ -418,7 +409,6 @@ class TestReadOnlyResolveEdgeCases:
         assert data["created_new"] is False
 
     def test_resolve_whitespace_only(self, client, full_store):
-        """Whitespace-only should return no_match without side effects."""
         r = client.post("/api/v1/resolve", json={
             "raw_value": "   ",
             "entity_type": "benchmark",

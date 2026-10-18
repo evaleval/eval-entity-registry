@@ -1,10 +1,6 @@
-"""
-Async resolve log writer — buffers log entries in memory and periodically
-flushes them to an HF Storage Bucket as partitioned parquet files.
-
-Separate from the pipeline's resolution_log table. This tracks individual
-API resolve requests for resolver improvement.
-"""
+"""Buffered writer for API resolve requests, flushed periodically to an HF
+Storage Bucket as partitioned parquet. Separate from the pipeline's
+resolution_log table."""
 from __future__ import annotations
 
 import asyncio
@@ -30,8 +26,8 @@ _LOG_SCHEMA = {
     "timestamp": "string",
 }
 
-# Drop oldest entries when buffer exceeds this size (prevents OOM on
-# persistent flush failures). At ~200 bytes/entry this is ~2 MB.
+# Oldest entries are dropped past this size so persistent flush failures
+# cannot grow the buffer unbounded (~2 MB at ~200 bytes/entry).
 _MAX_BUFFER_SIZE = 10_000
 
 
@@ -73,7 +69,6 @@ class ResolveLogWriter:
                 await self._flush_task
             except asyncio.CancelledError:
                 pass
-        # Final flush
         await self._flush()
 
     async def _periodic_flush(self, interval: int) -> None:
@@ -112,9 +107,7 @@ class ResolveLogWriter:
             logger.info("Flushed %d resolve log entries to %s/%s", len(entries), self._bucket_id, filename)
         except Exception:
             logger.exception("Failed to flush resolve log entries")
-            # Re-add failed entries to the front of the buffer. The buffer
-            # cap in append() prevents unbounded growth if flushes keep
-            # failing — oldest entries are dropped when the cap is hit.
+            # Re-queue at the front; the cap bounds growth if flushes keep failing.
             with self._lock:
                 self._buffer = entries + self._buffer
                 if len(self._buffer) > _MAX_BUFFER_SIZE:

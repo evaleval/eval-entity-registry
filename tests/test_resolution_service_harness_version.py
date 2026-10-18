@@ -1,11 +1,10 @@
-"""Change C at the SERVICE level: a versioned harness string resolves via its
-bare name, the `auto` alias row the service mints records the strip in `notes`,
-exact mode stays an honest `no_match` on a clean store, and an existing
-`uncertain` draft alias masks the retry (drafts are never repointed).
+"""Harness version strip at the service level: a versioned harness string
+resolves via its bare name, the minted `auto` alias records the strip in
+`notes`, exact mode stays no_match on a clean store, and an existing
+`uncertain` draft alias masks the retry.
 
-One `_fresh_store()` per test on purpose: the cases are order-dependent
-because a resolve-mode call PERSISTS an alias for the raw string, and every
-later lookup of that string is served from the alias row.
+One `_fresh_store()` per test: a resolve-mode call persists an alias, and
+every later lookup of that string is served from it.
 """
 import pytest
 
@@ -84,8 +83,8 @@ def test_resolve_mode_strips_and_records_the_marker():
     assert rows[0]["confidence"] == 0.95
     assert rows[0]["notes"].startswith("harness version stripped: 1.2.3")
 
-    # After the write, exact mode serves the PERSISTED provenance (this is
-    # pre-existing behaviour for every normalized hit, pinned on purpose).
+    # After the write, exact mode serves the persisted provenance, as for
+    # every normalized hit.
     again = svc.resolve("helm 1.2.3", "harness", None, None, mode="exact")
     assert (again["canonical_id"], again["strategy"], again["confidence"]) == (
         "helm", "normalized", 0.95,
@@ -105,10 +104,8 @@ def test_rerun_keeps_strip_marker():
 
 
 def test_existing_uncertain_draft_masks_retry():
-    """C only reaches strings with no non-rejected alias. A versioned string
-    the service has already seen carries an `uncertain` alias to a draft, and
-    neither a later seed nor `rerun=True` repoints it — the clean-up is
-    manual (reject the alias, delete the draft)."""
+    """The strip only reaches strings with no non-rejected alias: an existing
+    `uncertain` draft alias is never repointed by a later seed or rerun."""
     store = _fresh_store()
     svc = ResolutionService(store)
     first = svc.resolve("alpaca_eval 2.0", "harness", None, None)

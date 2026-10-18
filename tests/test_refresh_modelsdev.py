@@ -1,4 +1,6 @@
-"""Tests for the models.dev refresh script — synthetic data, no network."""
+"""The models.dev refresh script: family derivation, provider filtering,
+snapshot and variant chains, open_weights and release_date, TEE prefixes.
+Synthetic data, no network."""
 import json
 
 import pytest
@@ -12,9 +14,7 @@ def mod():
 
 
 SYNTHETIC_API = {
-    # Author provider — should be processed. Names mirror real models.dev
-    # convention: `name` carries the lab's spelling (with dots, no dates),
-    # `id` is the slugified form (date in id when it's a snapshot).
+    # Author provider. `name` carries the lab's spelling; `id` is the slug.
     "anthropic": {
         "id": "anthropic", "name": "Anthropic", "doc": "...", "env": [], "npm": "",
         "models": {
@@ -32,13 +32,13 @@ SYNTHETIC_API = {
                 "id": "claude-opus-4-7", "name": "Claude Opus 4.7",
                 "family": "claude-opus", "open_weights": False,
             },
-            # Mirror entry — must be skipped (multi-segment id)
+            # Multi-segment mirror id: must be skipped.
             "anthropic/claude-opus-4-5": {
                 "id": "anthropic/claude-opus-4-5", "name": "(mirror)", "family": "claude-opus",
             },
         },
     },
-    # Inference provider — must be skipped entirely (not in PROVIDER_TO_ORG)
+    # Not in PROVIDER_TO_ORG.
     "fireworks-ai": {
         "id": "fireworks-ai", "name": "Fireworks", "models": {
             "some-model": {"id": "some-model", "name": "X", "family": "x"},
@@ -51,8 +51,7 @@ KNOWN_ORGS = {"anthropic", "openai", "google", "meta", "deepseek"}
 
 
 def test_family_for_uses_name_field_with_dots(mod):
-    """The `name` field carries the lab's spelling (dots preserved); we
-    prefer it over `id` to avoid models.dev's slug-mangled separators."""
+    """`name` carries the lab's spelling; `id` has slug-mangled separators."""
     assert mod._family_for({
         "id": "qwen2-5-7b-instruct",
         "name": "Qwen2.5 7B Instruct",
@@ -60,7 +59,7 @@ def test_family_for_uses_name_field_with_dots(mod):
 
 
 def test_family_for_strips_date_suffix(mod):
-    """Dated-snapshot ids fold via the date pattern (id-only, name has no date)."""
+    """A dated snapshot id folds to its family."""
     assert mod._family_for({"id": "claude-opus-4-5-20251101"}) == "claude-opus-4-5"
 
 
@@ -69,7 +68,7 @@ def test_family_for_strips_latest_suffix(mod):
 
 
 def test_family_for_strips_training_stage_suffixes(mod):
-    """`-instruct`/`-chat`/`-it`/`-base` strip per the training-stage merge rule."""
+    """Training-stage suffixes fold into the family."""
     assert mod._family_for({"id": "qwen3-30b-instruct"}) == "qwen3-30b"
     assert mod._family_for({"id": "yi-34b-chat"}) == "yi-34b"
     assert mod._family_for({"id": "gemma-2-9b-it"}) == "gemma-2-9b"
@@ -81,43 +80,33 @@ def test_family_for_passes_through_when_no_date(mod):
 
 
 def test_generate_filters_to_known_providers(mod):
-    """fireworks-ai is not in PROVIDER_TO_ORG -> entire provider skipped."""
+    """A provider not in PROVIDER_TO_ORG never becomes an org_id."""
     out, _missing = mod._generate_models(SYNTHETIC_API, KNOWN_ORGS)
     org_ids = {e["org_id"] for e in out}
     assert "anthropic" in org_ids
-    # No fireworks output even though it has models, because it's not a model author
     assert all(e["org_id"] != "fireworks-ai" for e in out)
 
 
 def test_generate_skips_mirror_entries(mod):
-    """Multi-segment mirror ids like 'anthropic/claude-opus-4-5' never produce a
-    two-slash canonical. After the full-catalog refactor, a re-host/closed-API
-    model with no extractable org (fireworks-ai's `some-model`) IS now minted as
-    a bare org-less slug (flagged `org-unknown`) — only true `org/a/b` mirrors
-    are dropped."""
+    """Only true `org/a/b` mirrors are dropped; a model with no extractable
+    org mints as a bare org-less slug tagged `org-unknown`."""
     out, _missing = mod._generate_models(SYNTHETIC_API, KNOWN_ORGS)
     for e in out:
         assert e["id"].count("/") <= 1, f"expected <=1 slash, got {e['id']!r}"
     by_id = {e["id"]: e for e in out}
-    # fireworks-ai's some-model is now seeded org-less (full-catalog seed).
     assert "some-model" in by_id
     assert by_id["some-model"]["org_id"] is None
     assert "org-unknown" in by_id["some-model"]["tags"]
 
 
 def test_generate_dated_snapshot_becomes_child_canonical(mod):
-    """After the parents-shape refactor, dated snapshots are emitted as
-    separate canonical entries with a typed `parents` edge back to the
-    family root (axis: version) — not collapsed into the root's aliases.
-
-    The leaf canonical id inherits the family's dotted spelling (from the
-    lab's `name` field), and the original dashed models.dev id stays on
-    the leaf as an alias so the resolver still maps it via exact match."""
+    """A dated snapshot is its own canonical with a version-axis edge to the
+    family root; its id takes the family's dotted spelling and the dashed
+    models.dev id stays as an alias."""
     out, _missing = mod._generate_models(SYNTHETIC_API, KNOWN_ORGS)
     by_id = {e["id"]: e for e in out}
     root = by_id["anthropic/claude-opus-4.5"]
     assert root["parents"] == []
-    # Leaf canonical: dotted base + dashed snapshot token
     snap_id = "anthropic/claude-opus-4.5-20251101"
     assert snap_id in by_id, f"missing snapshot canonical {snap_id!r} in output"
     snap = by_id[snap_id]
@@ -127,20 +116,14 @@ def test_generate_dated_snapshot_becomes_child_canonical(mod):
         "axis": "version",
     }]
     assert snap["release_date"] == "2025-11-01"
-    # Original models.dev id (dashed) survives as an alias for resolver coverage
     assert "claude-opus-4-5-20251101" in snap["aliases"]
     assert "anthropic/claude-opus-4-5-20251101" in snap["aliases"]
-    # Snapshot id is in family root's metadata.snapshots (still a useful index).
     assert "claude-opus-4-5-20251101" in json.loads(root["metadata"]).get("snapshots", [])
 
 
 def test_generate_emits_mode_variants_as_children(mod):
-    """A dated -instruct snapshot in models.dev produces a multi-level chain:
-    family root, instruct intermediate (variant/training_stage), and the dated
-    leaf (variant/version of the instruct intermediate). Mirrors the
-    post-promotion shape of curated core.yaml so the loader's parents-merge
-    agrees on edges. `-instruct` is a TRAINING STAGE axis, not a runtime
-    mode."""
+    """A dated -instruct snapshot yields root -> instruct (training_stage)
+    -> dated leaf (version); `-instruct` is a training stage, not a mode."""
     api = {
         "mistral": {
             "id": "mistral", "name": "Mistral", "models": {
@@ -156,11 +139,9 @@ def test_generate_emits_mode_variants_as_children(mod):
     known = {"mistralai"}
     out, _missing = mod._generate_models(api, known)
     by_id = {e["id"]: e for e in out}
-    # All three levels emitted:
     assert "mistralai/mistral-9b" in by_id, "family root missing"
     assert "mistralai/mistral-9b-instruct" in by_id, "instruct intermediate missing"
     assert "mistralai/mistral-9b-instruct-v0-3" in by_id, "leaf snapshot missing"
-    # Edges chain correctly:
     assert by_id["mistralai/mistral-9b"]["parents"] == []
     assert by_id["mistralai/mistral-9b-instruct"]["parents"] == [{
         "id": "mistralai/mistral-9b", "relationship": "variant", "axis": "training_stage",
@@ -168,13 +149,12 @@ def test_generate_emits_mode_variants_as_children(mod):
     assert by_id["mistralai/mistral-9b-instruct-v0-3"]["parents"] == [{
         "id": "mistralai/mistral-9b-instruct", "relationship": "variant", "axis": "version",
     }]
-    # Leaf carries the source release_date; intermediate is anchor-only.
+    # The intermediate is anchor-only: no release_date.
     assert by_id["mistralai/mistral-9b-instruct-v0-3"]["release_date"] == "2024-05-22"
     assert by_id["mistralai/mistral-9b-instruct"]["release_date"] is None
 
 
 def test_generate_keeps_distinct_major_versions(mod):
-    """claude-opus-4-5 and claude-opus-4-7 are separate canonicals."""
     out, _missing = mod._generate_models(SYNTHETIC_API, KNOWN_ORGS)
     ids = {e["id"] for e in out}
     assert "anthropic/claude-opus-4.5" in ids
@@ -182,10 +162,7 @@ def test_generate_keeps_distinct_major_versions(mod):
 
 
 def test_generate_propagates_open_weights_flag(mod):
-    """`open_weights` must round-trip from models.dev to the emitted entries.
-    Closed-API models stay False; open-weight models become True; NULL when
-    the source omits the field. Family root aggregates with `any()` so
-    a single open snapshot in a mixed family marks the root open."""
+    """open_weights round-trips from models.dev to every level of the chain."""
     api = {
         "anthropic": {
             "id": "anthropic", "name": "Anthropic", "models": {
@@ -207,17 +184,15 @@ def test_generate_propagates_open_weights_flag(mod):
     }
     out, _missing = mod._generate_models(api, {"anthropic", "mistralai"})
     by_id = {e["id"]: e for e in out}
-    # Closed-API: family root + child both False
     assert by_id["anthropic/claude-foo-1"]["open_weights"] is False
-    # Open-weight: every level of the chain inherits True
     assert by_id["mistralai/mistral-9b"]["open_weights"] is True
     assert by_id["mistralai/mistral-9b-instruct"]["open_weights"] is True
     assert by_id["mistralai/mistral-9b-instruct-v0-3"]["open_weights"] is True
 
 
 def test_generate_promotes_earliest_release_date(mod):
-    """`release_date` is a first-class field — earliest snapshot date for the
-    family. Models without any release_date in the source get None."""
+    """The family's release_date is its earliest snapshot date; None when
+    the source has none."""
     api = {
         "anthropic": {
             "id": "anthropic", "name": "Anthropic", "models": {
@@ -231,7 +206,6 @@ def test_generate_promotes_earliest_release_date(mod):
                 },
                 "claude-bar-1": {
                     "id": "claude-bar-1", "name": "Claude Bar 1",
-                    # no release_date
                 },
             },
         },
@@ -243,8 +217,8 @@ def test_generate_promotes_earliest_release_date(mod):
 
 
 def test_tee_prefix_is_serving_marker_for_org_derivation(mod):
-    """A `TEE/`-prefixed id (nano-gpt's trusted-execution namespace) is a
-    serving marker, not an uploader org: the developer comes from the name."""
+    """`TEE/` is a serving marker, not an uploader org; the developer comes
+    from the name."""
     org, rehost = mod._derive_group_org(
         [{"raw": "TEE/gemma9x-31b", "name": "Gemma 9X 31B"}], mod._dev_alias_index()
     )
@@ -253,8 +227,7 @@ def test_tee_prefix_is_serving_marker_for_org_derivation(mod):
 
 
 def test_provider_alias_forms_keep_tee_prefixed_raw(mod):
-    """The raw `TEE/...` spelling stays resolvable as an alias on whatever the
-    stripped name resolves to (fold-keeps-alias)."""
+    """The raw `TEE/...` spelling stays resolvable as an alias."""
     forms = mod._provider_alias_forms("TEE/gemma9x-31b", "google")
     assert "TEE/gemma9x-31b" in forms
     assert "gemma9x-31b" in forms
@@ -262,9 +235,8 @@ def test_provider_alias_forms_keep_tee_prefixed_raw(mod):
 
 
 def test_generate_tee_group_mints_under_name_vendor_with_tee_alias(mod):
-    """End-to-end TEE strip: a TEE-only group mints via the bare-name path
-    (developer from the leading name token), never under org `TEE`, and the
-    raw TEE/ spellings survive as aliases."""
+    """A TEE-only group mints under the name's developer, never org `TEE`,
+    with the raw spellings as aliases."""
     api = {
         "nano-gpt": {
             "id": "nano-gpt", "name": "NanoGPT", "models": {
@@ -289,20 +261,17 @@ def test_generate_tee_group_mints_under_name_vendor_with_tee_alias(mod):
 
 
 def test_generate_reports_missing_org_ids(mod):
-    """When PROVIDER_TO_ORG references an org_id not in known_orgs, report it."""
+    """An org_id missing from known_orgs is reported, not silently minted."""
     api = {
         "anthropic": {
             "id": "anthropic", "name": "Anthropic", "doc": "...", "env": [], "npm": "",
             "models": {"claude-x": {"id": "claude-x", "name": "X", "family": "claude"}},
         },
     }
-    # Pass an empty known_orgs set — `anthropic` provider's org_id will be missing
     out, missing = mod._generate_models(api, set())
     assert out == []
     assert any("anthropic" in m for m in missing)
 
 
-# The refresh script does NOT merge overrides into the generated YAML: the seed
-# CLI loader (`_load_models_merged` in `eval_entity_registry.cli`) applies
-# `seed/models/core.yaml` and `seed/models/enrichments/aliases.yaml` at load time.
-# Override-merge coverage belongs against that loader, not this script.
+# Override merging happens in the seed loader (`_load_models_merged`), not in
+# this script; it is covered in test_cli_seed.py.

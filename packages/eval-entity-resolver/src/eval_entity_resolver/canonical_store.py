@@ -1,18 +1,6 @@
-"""Wraps the canonical entity tables (models / benchmarks / metrics /
-harnesses / orgs) for the resolver to enrich its results with metadata
-beyond just the matched canonical_id.
-
-The resolver package is intentionally small — alias matching is its core
-job. But callers consistently want richer return values: the matched
-entity's `review_status`, parent edges, model-specific lineage fields,
-quantized-chain root collapse. Putting that lookup logic here means any
-caller of the bare `Resolver` gets the same response shape as the HTTP
-API, without duplicating logic in the service wrapper.
-
-Structure mirrors `AliasStore`: lazy loading from parquet/HF, an empty
-fallback when the underlying file is missing, and read-only lookup
-methods. Writes are out of scope — entity creation is a service-side
-concern (the resolver doesn't auto-draft anything)."""
+"""Read-only access to the canonical entity tables, used by the resolver to
+enrich a match with metadata and hierarchy. Mirrors `AliasStore`: parquet/HF
+loading with an empty-table fallback. Writes are a service-side concern."""
 from __future__ import annotations
 
 import json
@@ -24,25 +12,19 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# Per-entity-type parquet filenames (matches the eval-entity-registry
-# fixtures layout / HF Dataset config naming).
+# Parquet filenames per entity type (registry fixtures / HF dataset naming).
 _TABLES = {
     "model": "canonical_models",
     "benchmark": "canonical_benchmarks",
     "metric": "canonical_metrics",
     "harness": "eval_harnesses",
     "org": "canonical_orgs",
-    # families and composites are first-class registry entities.
-    # Resolution lookups don't query them directly, but the resolver
-    # enrichment for a `benchmark` consults `canonical_families` to
-    # populate `ResolutionResult.family_key` and `category`.
     "family": "canonical_families",
     "composite": "canonical_composites",
 }
 
-# The `parent_*` column for each entity type that carries the
-# in-family parent id (used for non-model types). Models use the typed
-# `parents` JSON list instead — see `decode_parents`.
+# Scalar parent column for non-model types; models carry a typed `parents`
+# JSON list instead (`decode_parents`).
 _PARENT_FIELD = {
     "benchmark": "parent_benchmark_id",
     "org": "parent_org_id",
@@ -50,7 +32,7 @@ _PARENT_FIELD = {
 
 
 # ---------------------------------------------------------------------------
-# Helpers (pure, exported for reuse — service wrapper imports these)
+# Helpers (pure; the service wrapper imports these)
 # ---------------------------------------------------------------------------
 
 def _is_na(value) -> bool:
@@ -65,9 +47,7 @@ def _na_to_none(value: Any) -> Any:
 
 
 def _safe_json_load(s: str, default: Any = None) -> Any:
-    """Tolerant `json.loads`: returns `default` on any decode/type error
-    instead of raising. Used wherever a JSON-encoded parquet column may
-    hold malformed or unexpected content."""
+    """`json.loads` that returns `default` on any decode/type error."""
     try:
         return json.loads(s)
     except (ValueError, TypeError):
@@ -75,27 +55,20 @@ def _safe_json_load(s: str, default: Any = None) -> Any:
 
 
 def _hf_repo_id_of(ent: Optional[dict], canonical_id: Optional[str]) -> Optional[str]:
-    """The matched model's Hugging Face repo id when the registry can ATTEST it
-    at runtime, else None.
+    """The model's HF repo id when the registry can ATTEST it, else None.
 
-    Attested = sourced from the HF oracle (`resolution_source == "hf"`) OR
-    hub-stats confirmed that exact id (`metadata.hf_id == canonical_id`) — the
-    runtime-available half of the gate's `has_real_hf_id` predicate. A shadow slug
-    (e.g. a `kimi/...` slug whose `metadata.hf_id` points at a DIFFERENT
-    `moonshotai/...` repo) is correctly excluded — its own id is not the real repo.
-
-    None is CONSERVATIVE: it means "not runtime-attested", NOT "not on HF". A
-    genuine HF repo whose provenance isn't verifiable at runtime (a models.dev-only
-    or name-inferred entry carrying no `hf_id`) also returns None. So a non-null
-    value is reliable; a null is the absence of attestation, not a negative claim."""
+    Attested = HF oracle provenance (`resolution_source == "hf"`) or hub-stats
+    confirmation of that exact id (`metadata.hf_id == canonical_id`); a shadow
+    slug whose `metadata.hf_id` names a DIFFERENT repo is excluded. None means
+    "not attested", not "not on HF": a non-null value is reliable, a null is not
+    a negative claim."""
     if not ent or not canonical_id:
         return None
     if _na_to_none(ent.get("resolution_source")) == "hf":
         return canonical_id
     md = _na_to_none(ent.get("metadata"))
     if isinstance(md, str) and md.strip():
-        # metadata is free-form JSON — guard against a value that parses to a
-        # non-dict (list/str/number) so `.get` can't raise and 500 the resolve.
+        # metadata is free-form JSON and may parse to a non-dict.
         md_obj = _safe_json_load(md, {})
         if isinstance(md_obj, dict) and md_obj.get("hf_id") == canonical_id:
             return canonical_id
@@ -103,9 +76,8 @@ def _hf_repo_id_of(ent: Optional[dict], canonical_id: Optional[str]) -> Optional
 
 
 def decode_parents(value) -> list[dict]:
-    """Decode `canonical_models.parents` (JSON-encoded list-of-edges) to a
-    Python list. Tolerant of NA/NaN, None, empty strings, and pre-decoded
-    lists. Returns [] for any unparseable input."""
+    """Decode `canonical_models.parents` (JSON list of edges); accepts NA, None,
+    empty strings and pre-decoded lists, returning [] for anything unparseable."""
     if _is_na(value) or value is None:
         return []
     if isinstance(value, list):
@@ -120,9 +92,7 @@ def decode_parents(value) -> list[dict]:
 
 
 def variant_parent_id(parents: list[dict]) -> Optional[str]:
-    """Return the id of the first `variant` edge in a parents list, or
-    None. Feeds the ResolutionResult `parent_canonical_id` field, which
-    exposes a model's immediate family / variant parent."""
+    """Id of the first `variant` edge in a parents list, or None."""
     for edge in parents:
         if isinstance(edge, dict) and edge.get("relationship") == "variant":
             pid = edge.get("id")
@@ -132,10 +102,8 @@ def variant_parent_id(parents: list[dict]) -> Optional[str]:
 
 
 def _kwarg_for(entity_type: str) -> str:
-    """Map an entity_type to its CanonicalStore constructor kwarg name.
-    Constructor uses canonical English plurals (`models_df`,
-    `benchmarks_df`, `harnesses_df`, `families_df`, `composites_df`),
-    not the simpler `<type>s_df` rule that breaks on `harness`/`family`."""
+    """Constructor kwarg for an entity_type (English plurals, so no `<type>s_df`
+    rule: `harnesses_df`, `families_df`)."""
     return {
         "model": "models_df",
         "benchmark": "benchmarks_df",
@@ -152,10 +120,8 @@ def _kwarg_for(entity_type: str) -> str:
 # ---------------------------------------------------------------------------
 
 class CanonicalStore:
-    """Read-only access to the canonical entity tables. Holds one
-    DataFrame per entity type; provides `lookup(entity_type, id)` for
-    O(1) row retrieval. Empty tables are valid — `lookup` just returns
-    None."""
+    """One DataFrame per entity type with O(1) `lookup(entity_type, id)`.
+    Empty tables are valid; `lookup` returns None."""
 
     def __init__(
         self,
@@ -176,12 +142,8 @@ class CanonicalStore:
             "family": families_df if families_df is not None else pd.DataFrame(),
             "composite": composites_df if composites_df is not None else pd.DataFrame(),
         }
-        # Per-table id-indexed cache for O(1) lookups
         self._index: dict[str, dict[str, dict]] = {}
-        # Lazy reverse index: benchmark_id → family_id (built from
-        # canonical_families.benchmark_ids on first access). Used by
-        # benchmark-side enrichment to populate ResolutionResult.family_key
-        # without scanning the families table per resolve call.
+        # benchmark_id → family_id, built lazily from canonical_families.
         self._benchmark_to_family: Optional[dict[str, str]] = None
 
     # ------------------------------------------------------------------
@@ -190,9 +152,8 @@ class CanonicalStore:
 
     @classmethod
     def from_parquet(cls, path: str | Path) -> "CanonicalStore":
-        """Load all five canonical tables from `<path>/<table>.parquet`.
-        Missing files become empty tables — matches the AliasStore
-        fallback so a partial fixtures directory still works."""
+        """Load every `_TABLES` entry from `<path>/<table>.parquet`; missing or
+        unreadable files become empty tables."""
         p = Path(path)
         kwargs: dict[str, pd.DataFrame] = {}
         for entity_type, fname in _TABLES.items():
@@ -217,9 +178,8 @@ class CanonicalStore:
 
     @classmethod
     def from_hf(cls, repo_id: str) -> "CanonicalStore":
-        """Load all five canonical tables from a HF Dataset repo. Each
-        table lives at `<table>/part-0.parquet`. Missing tables fall
-        back to empty (matches AliasStore's behavior)."""
+        """Load every `_TABLES` entry from `<table>/part-0.parquet` in a HF
+        Dataset repo; missing tables become empty tables."""
         from huggingface_hub import hf_hub_download
         from huggingface_hub.errors import (
             EntryNotFoundError,
@@ -271,22 +231,15 @@ class CanonicalStore:
         return idx
 
     def lookup(self, entity_type: str, canonical_id: str) -> Optional[dict]:
-        """Return the canonical row as a dict (with NaN coerced to None),
-        or None when the id isn't present. O(1)."""
+        """The canonical row as a dict (NaN coerced to None), or None."""
         if not canonical_id:
             return None
         return self._ensure_index(entity_type).get(canonical_id)
 
     @property
     def org_dev_map(self) -> dict[str, str]:
-        """The curated HF-namespace -> developer-org map built from the LOADED
-        `canonical_orgs` table (its `id` / `hf_org` / `aliases`), unioned with
-        the hardcoded `_ORG_ALIASES`. This is how the resolver gets the orgs.yaml
-        ALIAS tier (e.g. `AlephAlpha`->`aleph-alpha`, `MiniMaxAI`->`minimax`,
-        `kimi`->`moonshotai`) that the bare `_ORG_ALIASES` lacks — without the
-        resolver needing to read orgs.yaml. Threaded into the fuzzy org-agreement
-        guard so a fuzzy stem match folds org-equivalent namespaces correctly.
-        Cached after first build."""
+        """HF-namespace -> developer-org map: `_ORG_ALIASES` unioned with the
+        loaded `canonical_orgs` (`id` / `hf_org` / `aliases`). Cached."""
         cached = getattr(self, "_org_dev_map", None)
         if cached is not None:
             return cached
@@ -297,8 +250,7 @@ class CanonicalStore:
         if df is not None and not df.empty:
             for rec in df.to_dict("records"):
                 rec = {k: _na_to_none(v) for k, v in rec.items()}
-                # `aliases` is VARCHAR (JSON-encoded list) in the parquet tables;
-                # build_curated_org_map expects a list, so decode it.
+                # `aliases` is a JSON-encoded VARCHAR in the parquet tables.
                 al = rec.get("aliases")
                 if isinstance(al, str):
                     rec["aliases"] = _safe_json_load(al, default=[])
@@ -307,27 +259,21 @@ class CanonicalStore:
         return self._org_dev_map
 
     # ------------------------------------------------------------------
-    # Enrichment — used by `Resolver` to populate the rich response
-    # fields. Pure functions of (entity, optional root entity); no
-    # access to any state outside what's passed in.
+    # Enrichment (pure functions of the loaded tables)
     # ------------------------------------------------------------------
 
     def benchmark_family_enrichment(
         self, benchmark_id: Optional[str]
     ) -> dict:
-        """For a matched benchmark canonical_id, return the family/category
-        fields that populate the benchmark side of `ResolutionResult`.
+        """Family/category fields for a matched benchmark.
 
-        Output shape (dict; consumed by Resolver._enrich):
-          - `family_key`: id of the canonical_families row whose
-            benchmark_ids contains `benchmark_id`. Falls back to
-            `benchmark_id` itself for singleton families (`family.id ==
-            benchmark.id` when no curated family covers it).
-          - `category`: family's curated category, or None.
-          - `composite_keys`: empty list at the resolver layer. The
-            producer's view layer is the right place to compute which
-            composites a benchmark appears in (it has the facts), so the
-            resolver leaves this empty and downstream callers fill it.
+          - `family_key`: id of the canonical_families row listing
+            `benchmark_id` (a slice inherits its parent's family); falls back
+            to the parent-walk terminus, i.e. `benchmark_id` itself for a
+            singleton.
+          - `category`: the family's curated category, or None.
+          - `composite_keys`: always [] here; which composites a benchmark
+            appears in is a fact only the producer's view layer has.
         """
         if not benchmark_id:
             return {"family_key": None, "category": None, "composite_keys": []}
@@ -335,13 +281,8 @@ class CanonicalStore:
         if self._benchmark_to_family is None:
             self._benchmark_to_family = self._build_benchmark_to_family_index()
 
-        # 1. Curated family directly listing this benchmark id.
         family_key = self._benchmark_to_family.get(benchmark_id)
 
-        # 2. Slice inherits its parent's family. A benchmark with
-        #    parent_benchmark_id != self is a slice; walk up to find the
-        #    root, then look that root up in the curated families. Cycle-
-        #    safe via visited set; terminates at a root or a missing entry.
         if family_key is None:
             visited: set[str] = {benchmark_id}
             cur = benchmark_id
@@ -358,10 +299,6 @@ class CanonicalStore:
                 if fam:
                     family_key = fam
                     break
-            # When no curated family covers this id or any of its parents,
-            # the family root IS the parent walk's terminus (or the id
-            # itself for true root benchmarks). That's the singleton-family
-            # default.
             if family_key is None:
                 family_key = cur
 
@@ -378,16 +315,12 @@ class CanonicalStore:
         }
 
     # ------------------------------------------------------------------
-    # Hierarchy: ancestry (type-agnostic) + typed resolution_detail.
-    # Pure functions of the loaded tables. `ancestry` lists the matched
-    # entity's immediate parent UP to the root; `resolution_detail` is a
-    # typed sub-object keyed by entity_type.
+    # Hierarchy: ancestry + typed resolution_detail
     # ------------------------------------------------------------------
 
     def _family_to_composite(self, family_id: Optional[str]) -> Optional[str]:
-        """Return the composite a family rolls up into (the family's first
-        `composite_keys` entry), or the first composite whose `family_id`
-        points back at this family. None when the family is a root."""
+        """The family's first `composite_keys` entry, else the first composite
+        whose `family_id` points back at it; None for a root family."""
         if not family_id:
             return None
         family_row = self.lookup("family", family_id)
@@ -399,7 +332,6 @@ class CanonicalStore:
                 for k in keys:
                     if isinstance(k, str) and k:
                         return k
-        # Fall back to the reverse pointer (composite.family_id == family).
         comp_df = self._tables.get("composite")
         if comp_df is not None and not comp_df.empty and "family_id" in comp_df.columns:
             hit = comp_df[comp_df["family_id"] == family_id]
@@ -413,15 +345,13 @@ class CanonicalStore:
         self, entity_type: str, canonical_id: Optional[str],
         matched_entity: Optional[dict] = None,
     ) -> list[dict]:
-        """Ordered `[{canonical_id, level}]` from the matched entity's
-        IMMEDIATE PARENT up to the root. `[]` when self is a root.
+        """Ordered `[{canonical_id, level}]` from the matched entity's immediate
+        parent up to the root; `[]` for a root.
 
-        - model: group (model_group_id, when it differs from the leaf) then
-          family (model_family_id, when distinct from leaf+group).
-        - benchmark: family (family_key, when != self) then that family's
-          composite.
+        - model: group (when != leaf) then family (when distinct from both).
+        - benchmark: family (when != self) then that family's composite.
         - family: its composite.
-        - composite/metric/harness/org: [] (roots).
+        - composite/metric/harness/org: [].
         """
         if not canonical_id:
             return []
@@ -451,7 +381,6 @@ class CanonicalStore:
             if composite and composite != canonical_id:
                 out.append({"canonical_id": composite, "level": "composite"})
             return out
-        # composite, metric, harness, org are roots in this graph.
         return out
 
     def resolution_detail(
@@ -461,12 +390,12 @@ class CanonicalStore:
     ) -> dict:
         """Typed resolution-detail sub-object keyed by entity_type.
 
-        - model:     {"granularity": variant|group|family}
+        - model:     {"granularity": variant|group|family,
+                      "hf_repo_id": str|None (see `_hf_repo_id_of`)}
         - benchmark: {"level": composite|family|benchmark|slice,
                       "matched_subset": str|None}
-        - harness:   {} here — the RESOLVER (not the store) fills
-                     {harness_version_stripped, bare_name, bare_tier} on a
-                     match it reached by stripping a trailing version token.
+        - harness:   {} here; the resolver fills {harness_version_stripped,
+                     bare_name, bare_tier} on a version-stripped match.
         - others:    {}
         """
         if entity_type == "model":
@@ -480,25 +409,17 @@ class CanonicalStore:
             if ent:
                 parent = _na_to_none(ent.get("parent_benchmark_id"))
                 if parent and parent != canonical_id:
-                    # The matched canonical is itself a decomposed slice of a
-                    # parent benchmark (a parent-only alias-fold, not its own
-                    # entity): surface as a slice match.
                     level = "slice"
-            # A subset/alias-fold match (e.g. "Anatomy" -> mmlu) is surfaced
-            # via `matched_subset` when the raw value differs from the
-            # canonical's own surface forms. We carry the raw value through;
-            # downstream forensics maps it to the folded subset.
+            # An alias-fold match (`Anatomy` -> mmlu) carries the raw value
+            # through so downstream can map it to the folded subset.
             if raw_value and canonical_id and raw_value.strip().lower() != canonical_id.lower():
                 matched_subset = raw_value
             return {"level": level, "matched_subset": matched_subset}
         return {}
 
     def _build_benchmark_to_family_index(self) -> dict[str, str]:
-        """Walk canonical_families and produce a benchmark_id → family_id
-        index. `benchmark_ids` is JSON-encoded on the parquet column;
-        decode tolerantly. Returns an empty index when the families table
-        is absent, so a deployment without it still resolves benchmarks
-        (just without family ancestry)."""
+        """benchmark_id → family_id from canonical_families; empty when the
+        table is absent so benchmarks still resolve without family ancestry."""
         out: dict[str, str] = {}
         df = self._tables.get("family")
         if df is None or df.empty or "id" not in df.columns:
@@ -516,25 +437,21 @@ class CanonicalStore:
                 s = raw.strip()
                 if not s or s in ("[]", "null"):
                     continue
-                # A malformed value decodes to [], so the row contributes
-                # no benchmark→family entries (same effect as skipping it).
                 items = _safe_json_load(s, default=[])
             else:
                 continue
             for bid in items:
                 if isinstance(bid, str):
-                    # Validation has already rejected multi-family
-                    # benchmarks at seed time, so first-write-wins is
-                    # safe (and deterministic by family load order).
+                    # Seed validation rejects multi-family benchmarks, so
+                    # first-write-wins is safe.
                     out.setdefault(bid, family_id)
         return out
 
     def parent_canonical_id(
         self, entity_type: str, entity: Optional[dict]
     ) -> Optional[str]:
-        """Family/variant parent id. For models: the first `variant` edge
-        in the typed parents list. For benchmarks/orgs: the
-        `parent_*_id` scalar column."""
+        """Immediate parent id: the first `variant` edge for models, the
+        `parent_*_id` column for benchmarks/orgs."""
         if not entity:
             return None
         if entity_type == "model":
@@ -547,34 +464,21 @@ class CanonicalStore:
     def model_metadata_fields(
         self, matched_canonical_id: str, matched_entity: Optional[dict]
     ) -> dict:
-        """Compute the model-specific response fields.
+        """Model-specific response fields.
 
-        `canonical_id` is the exact matched LEAF (the precise artifact
-        evaluated — snapshot, precision, mode all distinct). `model_group_id`
-        carries the identity-GROUP id, which is GROUP MEMBERSHIP — a total
-        partition, so it is ALWAYS present: it equals the group root for a
-        member of a non-trivial group, and equals the leaf (== canonical_id)
-        for a singleton (a group of one whose id is itself). NOT null at the
-        root. `resolved_leaf_id == canonical_id` (both the leaf), retained
-        for compat. The deprecated `root_model_id` output key keeps its
-        null-at-root semantics: it carries the group root ONLY when the leaf
-        actually collapses into a larger group (`model_group_id != leaf_id`),
-        else None.
-
-        `model_family_id` and `lineage_origin_model_id` are read straight off
-        the matched (leaf) entity row — `derive_model_lineage_fields` already
-        materialised them at seed time. Metadata fields (`open_weights`,
-        `release_date`, `params_billions`) come from the matched LEAF row —
-        the response identifies the leaf, so its own row is the consistent
-        source for these per-artifact values."""
+        `canonical_id` is the matched LEAF (snapshot, precision and mode all
+        distinct); `resolved_leaf_id` equals it (compat). `model_group_id` is
+        group membership, a total partition, so it is always set: the group
+        root, or the leaf itself for a singleton. The deprecated `root_model_id`
+        keeps null-at-root semantics: the group root only when the leaf
+        collapses into a larger group, else None. Lineage and metadata fields
+        are read off the leaf row, where seed time materialised them."""
         if not matched_entity:
             return {
                 "canonical_id": matched_canonical_id,
                 "resolved_leaf_id": matched_canonical_id,
                 "root_model_id": None,
                 "lineage_origin_org_id": None,
-                # Extended lineage / provenance fields — None when there is no
-                # matched entity row to read them from.
                 "model_group_id": None,
                 "model_family_id": None,
                 "lineage_origin_model_id": None,
@@ -588,40 +492,24 @@ class CanonicalStore:
                 "params_billions": None,
             }
 
-        # `model_group_id` is the identity-GROUP id (GROUP MEMBERSHIP — a
-        # total partition), so it is ALWAYS set on the column: equal to the
-        # group root for a member of a larger group, equal to SELF (the leaf)
-        # for a singleton. canonical_id stays the matched LEAF; for a
-        # singleton model_group_id == canonical_id.
         group_id = _na_to_none(matched_entity.get("model_group_id"))
         leaf_id = matched_canonical_id
         parents_decoded = decode_parents(matched_entity.get("parents")) or None
-        # The three walk fields are read straight off the matched LEAF row —
-        # materialised at seed by derive_model_lineage_fields.
         leaf_family = _na_to_none(matched_entity.get("model_family_id"))
         leaf_lineage_model = _na_to_none(matched_entity.get("lineage_origin_model_id"))
         leaf_lineage_org = _na_to_none(matched_entity.get("lineage_origin_model_org_id"))
 
-        # The leaf collapses into a LARGER group iff `model_group_id !=
-        # leaf_id`. The deprecated `root_model_id` compat key keeps its
-        # null-at-root semantics — it carries the group only on a real
-        # collapse, else None (a singleton, whose group is itself, reports
-        # root_model_id == None, matching the producer's null-at-root
-        # contract).
         collapses = group_id is not None and group_id != leaf_id
         return {
             "canonical_id": leaf_id,
             "resolved_leaf_id": leaf_id,
             "root_model_id": group_id if collapses else None,
             "lineage_origin_org_id": leaf_lineage_org,
-            # ALWAYS present (self at root) — group membership is total.
             "model_group_id": group_id,
             "model_family_id": leaf_family,
             "lineage_origin_model_id": leaf_lineage_model,
             "lineage_origin_model_org_id": leaf_lineage_org,
             "inference_platform": None,
-            # Provenance fields read straight off the matched LEAF row (set at
-            # seed from the YAML, or at live auto-create by resolution_service).
             "resolution_source": _na_to_none(matched_entity.get("resolution_source")),
             "resolution_granularity": _na_to_none(matched_entity.get("resolution_granularity")),
             "parents": parents_decoded,

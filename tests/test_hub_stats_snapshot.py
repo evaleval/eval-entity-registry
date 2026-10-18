@@ -1,10 +1,7 @@
-"""Pinned hub-stats snapshot helper (services/hub_stats_snapshot.py) — offline.
-
-Pins: (1) one metadata HEAD yields commit sha + LFS sha256 + size, and missing
-pieces fail loudly; (2) the download is pinned to that sha and size-checked;
-(3) the DuckDB-native pinned source never names the converter endpoint or a
-moving ref; (4) no bulk script references the converter URL any more (the
-whole point of specs/hub-stats-snapshot-fetch.md).
+"""services/hub_stats_snapshot.py, offline: one metadata HEAD yields sha +
+sha256 + size (incomplete fails loudly), the download is pinned and
+size-checked, the DuckDB source never names the converter endpoint or a
+moving ref, and no script or workflow references the converter URL.
 """
 from __future__ import annotations
 
@@ -52,7 +49,7 @@ def test_resolve_snapshot_maps_metadata(monkeypatch):
         repo_id=HUB_STATS_REPO, revision=SHA, filename=HUB_STATS_FILE,
         sha256=ETAG, size=1622261921, local_path=None,
     )
-    # One request, against the raw resolve URL (resolvers bucket), with the token.
+    # One request, against the raw resolve URL, with the token.
     assert len(calls) == 1
     url, tok = calls[0]
     assert url == f"https://huggingface.co/datasets/{HUB_STATS_REPO}/resolve/main/{HUB_STATS_FILE}"
@@ -81,11 +78,11 @@ def test_download_snapshot_pins_revision_and_sets_path(monkeypatch, tmp_path):
     snap = HubStatsSnapshot(HUB_STATS_REPO, SHA, HUB_STATS_FILE, ETAG, 10)
     out = download_snapshot(snap, token="tok", cache_dir=tmp_path)
     assert out.local_path == blob
-    assert out.revision == SHA and out.sha256 == ETAG  # unchanged identity
+    assert out.revision == SHA and out.sha256 == ETAG
     assert seen["repo_id"] == HUB_STATS_REPO
     assert seen["filename"] == HUB_STATS_FILE
     assert seen["repo_type"] == "dataset"
-    assert seen["revision"] == SHA  # pinned, never "main"
+    assert seen["revision"] == SHA
     assert seen["token"] == "tok"
 
 
@@ -111,8 +108,7 @@ def test_hf_source_is_pinned_and_never_the_converter():
 
 
 def test_no_bulk_script_references_the_converter_endpoint():
-    """Nothing in the package, the scripts or the workflows may name the
-    converter endpoint; every reader goes through the pinned snapshot."""
+    """Every reader goes through the pinned snapshot; none names the converter."""
     offenders: list[str] = []
     py_files = list((REPO_ROOT / "scripts").glob("*.py")) + list(
         (REPO_ROOT / "src" / "eval_entity_registry").rglob("*.py")
@@ -140,9 +136,8 @@ class _Recorder:
 
 
 def test_live_client_pins_hf_source_and_uses_huggingface_secret(monkeypatch):
-    """Construction is network-free; first use resolves ONE pinned snapshot,
-    reads `hf://…@<sha>/models.parquet` with a HUGGINGFACE secret, and never
-    names the converter endpoint."""
+    """Construction is network-free; first use resolves one pinned snapshot
+    and reads it through a HUGGINGFACE secret, never the converter."""
     from eval_entity_registry.services import hub_stats as hs
 
     snap = HubStatsSnapshot(HUB_STATS_REPO, SHA, HUB_STATS_FILE, ETAG, 1)
@@ -155,7 +150,7 @@ def test_live_client_pins_hf_source_and_uses_huggingface_secret(monkeypatch):
     monkeypatch.delenv(hs.HUB_STATS_LOCAL_PARQUET_ENV, raising=False)
 
     client = hs.HubStatsClient()
-    assert client.parquet_url is None and calls == []  # nothing resolved yet
+    assert client.parquet_url is None and calls == []
     con = client._ensure_con()
     assert con is rec
     assert calls == ["tok"]
@@ -164,7 +159,6 @@ def test_live_client_pins_hf_source_and_uses_huggingface_secret(monkeypatch):
     assert "LOAD httpfs" in sql
     assert "TYPE HUGGINGFACE" in sql and "TOKEN 'tok'" in sql
     assert "TYPE HTTP" not in sql and "huggingface.co/api" not in sql
-    # Second call reuses the connection; no re-resolve.
     assert client._ensure_con() is rec and calls == ["tok"]
 
 
@@ -181,7 +175,7 @@ def test_live_client_offline_path_skips_network(monkeypatch, tmp_path):
     client = hs.HubStatsClient()
     assert client.parquet_url == str(local)
     client._ensure_con()
-    assert rec.sql == []  # no httpfs, no secret
+    assert rec.sql == []
 
 
 def test_live_client_lookup_degrades_to_none_when_snapshot_unresolvable(monkeypatch):
@@ -190,4 +184,4 @@ def test_live_client_lookup_degrades_to_none_when_snapshot_unresolvable(monkeypa
     monkeypatch.delenv(hs.HUB_STATS_LOCAL_PARQUET_ENV, raising=False)
     monkeypatch.setattr(snapmod, "resolve_snapshot", lambda **_: (_ for _ in ()).throw(RuntimeError("hub down")))
     client = hs.HubStatsClient()
-    assert client.lookup("org/model") is None  # logged, never raised
+    assert client.lookup("org/model") is None

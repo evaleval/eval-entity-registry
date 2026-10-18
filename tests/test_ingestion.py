@@ -1,4 +1,5 @@
-"""Tests for ingestion pipeline: sub-category detection, per-record processing, and eval_results table."""
+"""Ingestion: sub-category detection, per-record row production, eval_results
+upsert, and resolution landing on the seeded canonicals."""
 import pytest
 
 from eval_entity_registry.services.ingestion import (
@@ -22,7 +23,7 @@ def _fresh_store() -> RegistryStore:
 
 
 def _add_entity_with_aliases(store, table, entity_type, entity, extra_aliases=None):
-    """Helper: insert entity + aliases (id, display_name, and extras)."""
+    """Insert an entity with aliases for id, display_name and extras."""
     queries.upsert_entity(store, table, entity)
     alias_strings = {entity["id"], entity.get("display_name", "")}
     if extra_aliases:
@@ -42,10 +43,9 @@ def _add_entity_with_aliases(store, table, entity_type, entity, extra_aliases=No
 
 
 def _seeded_store() -> RegistryStore:
-    """Store pre-populated with seed entities AND aliases, like a real seed --local run."""
+    """Entities plus aliases, as `seed --local` would produce."""
     store = _fresh_store()
 
-    # Benchmarks — mirrors seed/benchmarks.yaml
     benchmarks = [
         {"id": "ifeval", "display_name": "IFEval"},
         {"id": "bbh", "display_name": "BBH"},
@@ -79,7 +79,6 @@ def _seeded_store() -> RegistryStore:
                   "tags": "[]", "metadata": "{}"}
         _add_entity_with_aliases(store, "canonical_benchmarks", "benchmark", entity, extra)
 
-    # Metrics — mirrors seed/metrics.yaml
     metrics = [
         {"id": "accuracy", "display_name": "Accuracy", "_aliases": ["Acc"]},
         {"id": "exact-match", "display_name": "Exact Match", "_aliases": ["EM"]},
@@ -99,7 +98,6 @@ def _seeded_store() -> RegistryStore:
                   "lower_is_better": False, "min_score": 0.0, "max_score": 1.0, "metadata": "{}"}
         _add_entity_with_aliases(store, "canonical_metrics", "metric", entity, extra)
 
-    # Harnesses — mirrors seed/harnesses.yaml
     harnesses = [
         {"id": "lm-evaluation-harness", "display_name": "LM Evaluation Harness"},
         {"id": "helm", "display_name": "HELM"},
@@ -191,7 +189,6 @@ class TestProcessRecord:
         assert row is None
 
     def test_multiple_eval_results_produce_multiple_rows(self):
-        """One EEE record with 3 benchmarks → 3 flat rows."""
         store = _fresh_store()
         svc = ResolutionService(store)
         from eval_entity_registry.store import queries
@@ -213,17 +210,14 @@ class TestProcessRecord:
         rows = process_record(record, "test_config", svc, run_id, rerun=False)
 
         assert len(rows) == 3
-        # All rows share the same model and evaluation_id
         assert all(r["evaluation_id"] == "test/eval-multi" for r in rows)
         assert all(r["model_id"] == rows[0]["model_id"] for r in rows)
-        # Each row has a distinct result_index
         assert [r["result_index"] for r in rows] == [0, 1, 2]
-        # Each row has a distinct benchmark_id
         benchmark_ids = [r["benchmark_id"] for r in rows]
         assert len(set(benchmark_ids)) == 3
 
     def test_score_of_zero_is_preserved(self):
-        """A score of 0 or 0.0 must not be treated as missing."""
+        """A score of 0 is a value, not missing."""
         store = _fresh_store()
         svc = ResolutionService(store)
         from eval_entity_registry.store import queries
@@ -245,7 +239,7 @@ class TestProcessRecord:
         assert rows[1]["score"] == 0.0
 
     def test_skipped_eval_result_preserves_indices(self):
-        """If an eval result has no evaluation_name, it's skipped but indices stay stable."""
+        """result_index is the source array position, so a skipped entry leaves a gap."""
         store = _fresh_store()
         svc = ResolutionService(store)
         from eval_entity_registry.store import queries
@@ -257,7 +251,7 @@ class TestProcessRecord:
             "evaluation_results": [
                 {"evaluation_name": "First", "source_data": {"dataset_name": "First"},
                  "metric_config": {}, "score": 0.1},
-                {"evaluation_name": "", "source_data": {},  # skipped — no name
+                {"evaluation_name": "", "source_data": {},
                  "metric_config": {}, "score": 0.2},
                 {"evaluation_name": "Third", "source_data": {"dataset_name": "Third"},
                  "metric_config": {}, "score": 0.3},
@@ -266,12 +260,11 @@ class TestProcessRecord:
         }
         rows = process_record(record, "test_config", svc, run_id, rerun=False)
         assert len(rows) == 2
-        # Index 1 was skipped, so we get 0 and 2 (source array positions)
         assert rows[0]["result_index"] == 0
         assert rows[1]["result_index"] == 2
 
     def test_empty_eval_results_returns_empty_list(self):
-        """Record with model but no evaluation_results → empty list (not None)."""
+        """No evaluation_results yields [] (None means no model)."""
         store = _fresh_store()
         svc = ResolutionService(store)
         from eval_entity_registry.store import queries
@@ -287,7 +280,7 @@ class TestProcessRecord:
         assert rows == []
 
     def test_deterministic_eval_id_fallback(self):
-        """When evaluation_id is missing, fallback is deterministic (not based on object id)."""
+        """The evaluation_id fallback is deterministic across runs, not object-id based."""
         store1 = _fresh_store()
         svc1 = ResolutionService(store1)
         run_id1 = queries.start_sync_run(store1, "test_config", False)
@@ -299,11 +292,9 @@ class TestProcessRecord:
                 {"evaluation_name": "IFEval", "source_data": {"dataset_name": "IFEval"},
                  "metric_config": {}, "score": 0.5},
             ],
-            # No evaluation_id anywhere
         }
         rows1 = process_record(record, "test_config", svc1, run_id1, rerun=False)
 
-        # Re-process the same record with a fresh store (simulating second run)
         store2 = _fresh_store()
         svc2 = ResolutionService(store2)
         run_id2 = queries.start_sync_run(store2, "test_config", False)
@@ -314,7 +305,7 @@ class TestProcessRecord:
 
 class TestEvalResultsUpsert:
     def test_upsert_inserts_then_updates(self):
-        """First call inserts, second call with same key updates in pending buffer."""
+        """The same key upserts in place: same id, created_at preserved."""
         store = _fresh_store()
         row = {
             "evaluation_id": "eval-001",
@@ -332,22 +323,18 @@ class TestEvalResultsUpsert:
         result1 = queries.upsert_eval_result(store, row)
         row_id = result1["id"]
 
-        # Simulate rerun — benchmark resolved differently
         row2 = {**row, "benchmark_id": "corrected-bench", "metric_id": "corrected-metric"}
         result2 = queries.upsert_eval_result(store, row2)
-        assert result2["id"] == row_id  # same deterministic ID
+        assert result2["id"] == row_id
         assert result2["benchmark_id"] == "corrected-bench"
         assert result2["metric_id"] == "corrected-metric"
-        # created_at should be preserved, updated_at should change
         assert result2["created_at"] == result1["created_at"]
         assert result2["updated_at"] >= result1["updated_at"]
 
-        # After flush, table should have exactly 1 row
         queries.flush_pending(store)
         assert len(store.table("eval_results")) == 1
 
     def test_different_result_index_creates_separate_row(self):
-        """Same evaluation_id but different result_index → different rows."""
         store = _fresh_store()
         base = {
             "evaluation_id": "eval-001",
@@ -370,10 +357,10 @@ class TestEvalResultsUpsert:
 
 
 class TestResolutionCorrectness:
-    """Verify that resolution produces the RIGHT canonical IDs, not just non-null ones."""
+    """Resolution lands on the right canonical ids, not merely non-null ones."""
 
     def _make_eee_record(self, model_id, benchmarks_and_metrics):
-        """Build an EEE-like record from (benchmark_name, metric_desc, score) tuples."""
+        """EEE-like record from (benchmark_name, metric_desc, score) tuples."""
         return {
             "evaluation_id": f"test/{model_id}",
             "model_info": {"id": model_id},
@@ -391,7 +378,6 @@ class TestResolutionCorrectness:
         }
 
     def test_benchmarks_resolve_to_seeded_entities(self):
-        """IFEval, BBH, GPQA, MMLU-PRO all resolve to correct canonical IDs."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -411,7 +397,7 @@ class TestResolutionCorrectness:
         assert "mmlu-pro" in by_bench
 
     def test_metrics_resolve_after_stripping_qualifier(self):
-        """'Accuracy on IFEval' → 'Accuracy' → canonical 'accuracy'."""
+        """The "on <benchmark>" qualifier is stripped before metric resolution."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -428,7 +414,6 @@ class TestResolutionCorrectness:
         assert bbh_row["metric_id"] == "exact-match"
 
     def test_harness_resolves_to_seeded_entity(self):
-        """lm-evaluation-harness resolves to the seeded canonical ID."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -440,7 +425,7 @@ class TestResolutionCorrectness:
         assert rows[0]["harness_id"] == "lm-evaluation-harness"
 
     def test_model_uses_hf_id_directly(self):
-        """Model IDs are HF paths — should become the canonical ID (slugified)."""
+        """An HF model path keeps its org prefix in the canonical id."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -449,11 +434,10 @@ class TestResolutionCorrectness:
             ("IFEval", "Accuracy on IFEval", 0.42),
         ])
         rows = process_record(record, "test", svc, run_id, rerun=False)
-        # HF model IDs should be preserved (slash is kept by _slugify)
         assert "meta-llama" in rows[0]["model_id"].lower()
 
     def test_unknown_benchmark_creates_draft(self):
-        """A benchmark not in seed data should auto-create a draft, not crash."""
+        """An unseeded benchmark auto-creates a draft."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -463,13 +447,11 @@ class TestResolutionCorrectness:
         ])
         rows = process_record(record, "test", svc, run_id, rerun=False)
         assert rows[0]["benchmark_id"] is not None
-        # Should be a draft
         entity = queries.get_entity(store, "canonical_benchmarks", rows[0]["benchmark_id"])
         assert entity is not None
         assert entity["review_status"] == "draft"
 
     def test_em_alias_resolves_to_exact_match(self):
-        """EM (common abbreviation) should resolve to exact-match via seed alias."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -481,7 +463,6 @@ class TestResolutionCorrectness:
         assert rows[0]["metric_id"] == "exact-match"
 
     def test_helm_benchmarks_resolve(self):
-        """HELM config benchmarks: MMLU, NarrativeQA, GSM8K should resolve."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -496,13 +477,12 @@ class TestResolutionCorrectness:
         assert "mmlu" in by_bench
         assert "narrativeqa" in by_bench
         assert "gsm8k" in by_bench
-        # Check metrics too
         assert by_bench["mmlu"]["metric_id"] == "accuracy"
         assert by_bench["narrativeqa"]["metric_id"] == "f1"
         assert by_bench["gsm8k"]["metric_id"] == "exact-match"
 
     def test_rewardbench_subcategories_resolve(self):
-        """RewardBench sub-benchmarks: Chat, Chat Hard, Safety, Reasoning."""
+        """Sub-category names resolve to the per-subset canonicals with the parent set."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -529,12 +509,10 @@ class TestResolutionCorrectness:
         assert "rewardbench-chat-hard" in by_bench
         assert "rewardbench-safety" in by_bench
         assert "rewardbench-reasoning" in by_bench
-        # All should have RewardBench as parent
         for row in rows:
             assert row["parent_benchmark_id"] == "rewardbench"
 
     def test_musr_uppercase_alias_resolves(self):
-        """MUSR (uppercase from EEE data) should resolve to musr via alias."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -546,7 +524,6 @@ class TestResolutionCorrectness:
         assert rows[0]["benchmark_id"] == "musr"
 
     def test_f1_metric_resolves(self):
-        """F1 metric (HELM uses bare 'F1') should resolve to f1."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -558,7 +535,6 @@ class TestResolutionCorrectness:
         assert rows[0]["metric_id"] == "f1"
 
     def test_harness_helm_resolves(self):
-        """HELM harness should resolve to seeded entity."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -577,7 +553,6 @@ class TestResolutionCorrectness:
         assert rows[0]["harness_id"] == "helm"
 
     def test_multiple_models_produce_distinct_results(self):
-        """Two different models on the same benchmark produce rows with different model_ids."""
         store = _seeded_store()
         svc = ResolutionService(store)
         run_id = queries.start_sync_run(store, "test", False)
@@ -588,10 +563,8 @@ class TestResolutionCorrectness:
             ])
             process_record(record, "test", svc, run_id, rerun=False)
 
-        # Flush pending entity writes so they appear in tables
         queries.flush_pending(store)
 
-        # Check model entities were created
         models = store.table("canonical_models")
         model_ids = set(models["id"].tolist())
         assert any("llama" in mid.lower() for mid in model_ids)

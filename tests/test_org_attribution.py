@@ -1,6 +1,6 @@
-"""Seed-time org attribution + cross-spelling merge detection for malformed-org
-draft ids (no '/', org glued by -/.). Standalone drafts get org_id; drafts that
-duplicate a real repo are returned as a merge map for the fold."""
+"""Org attribution for malformed-org draft ids (no '/', org glued by - or .):
+standalone drafts get org_id; drafts duplicating a real repo come back as a
+merge map."""
 from eval_entity_registry.lib.org_attribution import attribute_orgs
 
 HF_TO_DEV = {"cohere": "cohere", "deepseek": "deepseek", "nvidia": "nvidia",
@@ -12,14 +12,14 @@ def _e(id, org_id=None, aliases=None):
 
 
 def test_standalone_draft_gets_org_no_merge():
-    e = _e("cohere-march-2024")  # genuine Cohere model, no real-repo twin
+    e = _e("cohere-march-2024")
     _, merges = attribute_orgs([e], HF_TO_DEV)
     assert e["org_id"] == "cohere" and e["id"] == "cohere-march-2024"
     assert merges == {}
 
 
 def test_deepseek_trap_attributes_org_keeps_id():
-    e = _e("deepseek-coder")  # org IS in the name; no exact twin -> attribute only
+    e = _e("deepseek-coder")  # no exact twin: attribute only, keep the id
     _, merges = attribute_orgs([e], HF_TO_DEV)
     assert e["org_id"] == "deepseek" and e["id"] == "deepseek-coder"
     assert merges == {}
@@ -30,7 +30,7 @@ def test_real_repo_dup_returns_merge():
     real = _e("deepseek-ai/DeepSeek-V2-Lite-Chat", org_id="deepseek")
     _, merges = attribute_orgs([draft, real], HF_TO_DEV)
     assert merges == {"deepseek-v2-lite-chat": "deepseek-ai/DeepSeek-V2-Lite-Chat"}
-    assert draft.get("org_id") is None  # not attributed in isolation — it gets folded
+    assert draft.get("org_id") is None  # folded, not attributed
 
 
 def test_dot_namespace_dup_detected():

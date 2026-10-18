@@ -1,9 +1,5 @@
-"""Tests for AliasStore constructor error visibility.
-
-These tests pin the logging behavior added when we replaced the bare
-`except Exception` in `AliasStore.from_hf` (and the silent missing-file
-branch in `from_parquet`) with specific exception handlers + structured
-log lines.
+"""AliasStore constructor failures fall back to an empty store and are
+logged, never silently swallowed.
 """
 
 from __future__ import annotations
@@ -17,22 +13,18 @@ from eval_entity_resolver import AliasStore
 
 
 def test_from_hf_logs_warning_on_missing_repo(caplog):
-    """When the HF repo doesn't exist, from_hf should fall back to an
-    empty store AND log a warning (not silently swallow the error)."""
+    """A missing HF repo yields an empty store plus a WARNING naming the repo."""
     with caplog.at_level(logging.WARNING, logger="eval_entity_resolver.alias_store"):
         store = AliasStore.from_hf(repo_id="nonexistent-org/nonexistent-repo-xyz-123")
 
-    # Fallback recovery preserved: store constructs, is empty.
     assert store is not None
     assert store.lookup("anything", "model", None) is None
     assert store.to_dataframe().empty
 
-    # The failure is now visible.
     assert any(
         "from_hf" in r.message and r.levelno == logging.WARNING
         for r in caplog.records
     ), f"expected a WARNING with 'from_hf' in the message; got: {[(r.levelname, r.message) for r in caplog.records]}"
-    # And it names the repo so the operator can tell which load failed.
     assert any(
         "nonexistent-org/nonexistent-repo-xyz-123" in r.message
         for r in caplog.records
@@ -40,9 +32,7 @@ def test_from_hf_logs_warning_on_missing_repo(caplog):
 
 
 def test_from_parquet_handles_missing_dir(tmp_path, caplog):
-    """from_parquet on a missing dir should fall back to an empty store
-    and emit a log line (INFO — fresh-store is the legitimate case, but
-    still visible)."""
+    """A missing dir is the legitimate fresh-store case: empty store, INFO log."""
     missing = tmp_path / "does-not-exist"
 
     with caplog.at_level(logging.INFO, logger="eval_entity_resolver.alias_store"):
@@ -57,8 +47,8 @@ def test_from_parquet_handles_missing_dir(tmp_path, caplog):
 
 
 def test_from_parquet_logs_warning_on_corrupt_parquet(tmp_path, caplog):
-    """A corrupt aliases.parquet should log a WARNING and fall back to
-    empty (instead of crashing the whole resolver init)."""
+    """A corrupt aliases.parquet logs a WARNING and yields an empty store
+    rather than failing resolver init."""
     (tmp_path / "aliases.parquet").write_bytes(b"this is not a parquet file")
 
     with caplog.at_level(logging.WARNING, logger="eval_entity_resolver.alias_store"):
@@ -73,8 +63,7 @@ def test_from_parquet_logs_warning_on_corrupt_parquet(tmp_path, caplog):
 
 
 def test_from_parquet_loads_real_file(tmp_path):
-    """Sanity check — a valid aliases.parquet still round-trips without
-    triggering the fallback path."""
+    """A valid aliases.parquet round-trips without the fallback path."""
     df = pd.DataFrame(
         [
             {
