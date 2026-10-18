@@ -111,19 +111,65 @@ def _origin_main_sha() -> Optional[str]:
         return None
 
 
-def _assert_checkout_is_current_main() -> None:
-    """Fail rather than let a delayed older workflow roll dataset HEAD back."""
+def _is_ancestor(local_sha: str, remote_sha: str) -> bool:
+    """True when ``remote_sha`` descends from ``local_sha`` (main moved FORWARD
+    past our checkout). Fails closed (False) when history cannot be fetched.
+
+    CI checkouts are shallow, so first fetch the remote commit with enough
+    depth to reach our checkout; GitHub serves reachable SHAs directly."""
+    try:
+        subprocess.run(
+            ["git", "fetch", "--quiet", "--depth=200", "origin", remote_sha],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        rc = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", local_sha, remote_sha],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        ).returncode
+        return rc == 0
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+def _assert_checkout_is_current_main(skip_if_superseded: bool = False) -> str:
+    """Production freshness guard. Returns ``"current"`` when HEAD is
+    origin/main.
+
+    With ``skip_if_superseded``, returns ``"superseded"`` when origin/main has
+    moved FORWARD past HEAD (our commit is an ancestor of the new head). That
+    is safe to treat as a no-op: every forward move of main is covered by its
+    own publish — a human push triggers publish-registry-data.yml, and a cron
+    push dispatches its correlated seed.yml child — and that newer publish
+    carries a superset of this tree. Any other mismatch (diverged / force-push
+    / unverifiable) raises, so a delayed older workflow can never roll dataset
+    HEAD back."""
     local_sha = _git_sha()
     remote_sha = _origin_main_sha()
     if not local_sha or not remote_sha:
         raise RuntimeError(
             "cannot verify checkout freshness against origin/main; refusing publish"
         )
-    if local_sha != remote_sha:
-        raise RuntimeError(
-            f"stale checkout {local_sha} is not current origin/main {remote_sha}; "
-            "refusing publish"
-        )
+    if local_sha == remote_sha:
+        return "current"
+    if skip_if_superseded and _is_ancestor(local_sha, remote_sha):
+        return "superseded"
+    raise RuntimeError(
+        f"stale checkout {local_sha} is not current origin/main {remote_sha}; "
+        "refusing publish"
+    )
+
+
+def _write_github_output(key: str, value: str) -> None:
+    """Append ``key=value`` to ``$GITHUB_OUTPUT`` when running inside a step."""
+    path = os.environ.get("GITHUB_OUTPUT")
+    if path:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(f"{key}={value}\n")
 
 
 def _assert_checkout_is_expected(expected: str) -> None:
@@ -330,6 +376,21 @@ def main() -> int:
         help="Fail unless checkout HEAD is this exact 40-hex commit (the SHA the "
              "dispatching workflow pushed and asked the child to publish).",
     )
+    parser.add_argument(
+        "--skip-if-superseded",
+        action="store_true",
+        help="With --require-origin-main-head: when origin/main has moved FORWARD "
+             "past the checkout, exit 0 without publishing (the newer head's own "
+             "publish supersedes this one) instead of failing. A diverged or "
+             "unverifiable head still fails.",
+    )
+    parser.add_argument(
+        "--freshness-check-only",
+        action="store_true",
+        help="Run only the head guards (--expected-head / --require-origin-main-head) "
+             "and exit; writes superseded=true|false to $GITHUB_OUTPUT. Lets CI skip "
+             "the seed + test minutes for a run that is already superseded.",
+    )
     args = parser.parse_args()
 
     if args.expected_head is not None:
@@ -337,6 +398,29 @@ def main() -> int:
             parser.error("--expected-head must be a full 40-hex commit sha")
         if not args.require_origin_main_head:
             parser.error("--expected-head requires --require-origin-main-head")
+    if (args.skip_if_superseded or args.freshness_check_only) and not args.require_origin_main_head:
+        parser.error("--skip-if-superseded / --freshness-check-only require --require-origin-main-head")
+
+    if args.freshness_check_only:
+        try:
+            if args.expected_head:
+                _assert_checkout_is_expected(args.expected_head)
+            verdict = _assert_checkout_is_current_main(skip_if_superseded=args.skip_if_superseded)
+        except RuntimeError as exc:
+            print(f"[freshness] [error] {exc}", file=sys.stderr)
+            _write_github_output("superseded", "false")
+            return 1
+        superseded = verdict == "superseded"
+        _write_github_output("superseded", "true" if superseded else "false")
+        if superseded:
+            print(
+                f"[freshness] checkout {_git_sha()} is superseded by origin/main "
+                f"{_origin_main_sha()}; that head's own publish covers this tree — skipping.",
+                file=sys.stderr,
+            )
+        else:
+            print("[freshness] checkout is current origin/main.", file=sys.stderr)
+        return 0
 
     if args.skip_seed:
         print("[1/4] Using pre-seeded fixtures…", file=sys.stderr)
@@ -394,10 +478,19 @@ def main() -> int:
                 return 1
         print("[4/4] Verifying checkout is current origin/main…", file=sys.stderr)
         try:
-            _assert_checkout_is_current_main()
+            verdict = _assert_checkout_is_current_main(
+                skip_if_superseded=args.skip_if_superseded
+            )
         except RuntimeError as exc:
             print(f"  [error] {exc}", file=sys.stderr)
             return 1
+        if verdict == "superseded":
+            print(
+                f"  superseded: origin/main moved forward to {_origin_main_sha()} during "
+                "this run; that head's own publish covers this tree — skipping upload.",
+                file=sys.stderr,
+            )
+            return 0
 
     print("[4/4] Checking remote manifest for idempotency…", file=sys.stderr)
     remote = _read_remote_manifest()

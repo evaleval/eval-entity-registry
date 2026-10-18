@@ -55,9 +55,13 @@ jobs:
       # A dispatch resolves `--ref main` to whatever branch head GitHub sees at
       # that instant, which can predate the caller's just-landed push. When the
       # caller pins expected_sha, check out that commit by SHA instead.
+      # A pinned caller gets exactly its commit. An unpinned manual dispatch gets
+      # the LIVE tip of the branch (github.ref), never github.sha: that sha is
+      # resolved when the run is created and goes stale while the run waits in
+      # the registry-data-publish queue.
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.expected_sha || github.sha }}
+          ref: ${{ inputs.expected_sha || github.ref }}
 
       # Fail before the ~12 minutes of seed + pytest, not in the publish guard
       # at the end. github.sha stays the (possibly stale) branch resolution from
@@ -79,27 +83,43 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
+      # Superseded = main moved FORWARD past this checkout while we queued. The
+      # newer head's own publish (a human push triggers
+      # publish-registry-data.yml; a cron push dispatches its own seed child)
+      # carries a superset of this tree, so skip the seed + test minutes and
+      # finish green. A diverged or unverifiable head still fails here.
+      - name: Skip if superseded
+        id: fresh
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          uv run python scripts/publish_registry_data.py --freshness-check-only \
+            --require-origin-main-head --skip-if-superseded \
+            ${EXPECTED_SHA:+--expected-head "$EXPECTED_SHA"}
+
       # Re-seed from the committed YAML and assert the merge succeeds (catches
       # any alias double-claim / schema breakage a refresh commit introduced
       # before we publish). LOCAL_MODE keeps it offline + credential-free.
       - name: Seed (validate merge)
+        if: steps.fresh.outputs.superseded != 'true'
         run: LOCAL_MODE=true uv run eval-entity-registry seed --local
 
       - name: Run pytest
+        if: steps.fresh.outputs.superseded != 'true'
         run: LOCAL_MODE=true uv run pytest -q
 
       # Publish the exact fixtures just tested. A second seed here would change
-      # generated ids/timestamps and invalidate the evidence from pytest.
+      # generated ids/timestamps and invalidate the evidence from pytest. The
+      # guard re-runs at upload time with the same superseded-means-skip rule
+      # for a head that moved DURING the tests.
       - name: Publish tested registry data
+        if: steps.fresh.outputs.superseded != 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           set -euo pipefail
-          if [ -n "$EXPECTED_SHA" ]; then
-            uv run python scripts/publish_registry_data.py --skip-seed \
-              --require-origin-main-head --expected-head "$EXPECTED_SHA"
-          else
-            uv run python scripts/publish_registry_data.py --skip-seed \
-              --require-origin-main-head
-          fi
+          uv run python scripts/publish_registry_data.py --skip-seed \
+            --require-origin-main-head --skip-if-superseded \
+            ${EXPECTED_SHA:+--expected-head "$EXPECTED_SHA"}

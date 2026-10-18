@@ -115,8 +115,16 @@ jobs:
     # hosted runners, so leave bounded headroom for setup and upload.
     timeout-minutes: 60
     steps:
+      # Publish the LIVE tip of main, not github.sha. The pushed sha is
+      # resolved when the run is created; by the time the registry-data-publish
+      # queue releases us, main may already be ahead (a cron push, or the next
+      # human push). Publishing the current tip is always correct — the data is
+      # a function of main's tree and the newer commit's own run then no-ops on
+      # content_hash — and it stops a queued run from failing the freshness
+      # guard 15 minutes in.
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.ref }}
           fetch-depth: 1
 
       - name: Install uv
@@ -125,16 +133,30 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
+      # Superseded = main moved FORWARD past this checkout. The newer head's own
+      # publish covers a superset of this tree, so finish green without the
+      # seed + test minutes. Diverged / unverifiable still fails.
+      - name: Skip if superseded
+        id: fresh
+        run: >-
+          uv run python scripts/publish_registry_data.py --freshness-check-only
+          --require-origin-main-head --skip-if-superseded
+
       - name: Seed fixtures from the checkout being published
+        if: steps.fresh.outputs.superseded != 'true'
         run: LOCAL_MODE=true uv run eval-entity-registry seed --local
 
       - name: Run pytest before publishing
+        if: steps.fresh.outputs.superseded != 'true'
         run: LOCAL_MODE=true uv run pytest
 
       - name: Publish registry data
+        if: steps.fresh.outputs.superseded != 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         # Do not seed again here: the exact fixture bytes above passed pytest.
+        # The guard re-runs at upload time; a head that moved forward DURING
+        # the tests is again a skip, never a rollback.
         run: >-
           uv run python scripts/publish_registry_data.py --skip-seed
-          --require-origin-main-head
+          --require-origin-main-head --skip-if-superseded

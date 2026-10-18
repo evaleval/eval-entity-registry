@@ -45,7 +45,24 @@ jobs:
     # another live publisher and then consume its own 60-minute budget.
     timeout-minutes: 180
     steps:
+      # Check out the LIVE tip of the branch, not github.sha. GitHub pins
+      # github.sha when the run is CREATED, and the concurrency group above can
+      # hold this run for the whole duration of the other seed writer. The
+      # default checkout would then regenerate against a head that is already
+      # behind main, pass the gate, and have its push rejected ("fetch first")
+      # 30 minutes later — the serialisation worked, the stale checkout defeated
+      # it (observed 2026-09-13, 2026-10-16). A branch ref resolves at fetch time.
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Record base commit
+        run: |
+          head="$(git rev-parse HEAD)"
+          echo "checked-out HEAD=${head} event sha=${{ github.sha }}"
+          if [ "$head" != "${{ github.sha }}" ]; then
+            echo "::notice::run was created for ${{ github.sha }} but main had moved; regenerating against live tip ${head}"
+          fi
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
@@ -141,8 +158,10 @@ jobs:
           fi
           git commit -m "$msg"
           # Never rebase after the gate: that would push a tree we did not test.
-          # A concurrent main update makes this push fail safely; rerun against
-          # the new head instead.
+          # The checkout is the live tip taken AFTER the writer queue released
+          # us, so the only way this push can be rejected is a human push
+          # during the ~10-minute gate window; that fails safely and the next
+          # cron regenerates against the new head.
           git push origin "HEAD:${GITHUB_REF_NAME}"
           echo "pushed_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
