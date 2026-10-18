@@ -6643,7 +6643,7 @@
   params_billions: null
   parents: []
   open_weights: false
-  release_date: '2024-01-01'
+  release_date: '2025-05-14'
   input_modalities: null
   output_modalities: null
   tags: []
@@ -6659,7 +6659,7 @@
   - databricks-claude-sonnet-4
   metadata: '{"alias_platforms": {"anthropic--claude-4-sonnet": "sap-ai-core", "anthropic-claude-4-sonnet": "sap-ai-core", "anthropic-claude-sonnet-4": "digitalocean", "anthropic/claude-4-sonnet": "sap-ai-core",
     "claude-4-sonnet": "sap-ai-core", "claude-sonnet-4": "poe", "claude-sonnet-4@eu": "requesty", "databricks-claude-sonnet-4": "databricks"}, "providers": ["abacus", "amazon-bedrock", "databricks", "digitalocean",
-    "fastrouter", "google-vertex", "google-vertex-anthropic", "helicone", "jiekou", "merge-gateway", "nano-gpt", "opencode", "poe", "requesty", "sap-ai-core", "zenmux"], "underlying_key": "claude-4-sonnet"}'
+    "fastrouter", "google-vertex", "google-vertex-anthropic", "helicone", "jiekou", "merge-gateway", "opencode", "poe", "requesty", "sap-ai-core", "zenmux"], "underlying_key": "claude-4-sonnet"}'
   review_status: draft
   resolution_source: models_dev
 - id: anthropic/claude-sonnet-4-0
@@ -7994,6 +7994,24 @@
   - flux-3-image
   metadata: '{"alias_platforms": {"flux-3-image": "vercel"}, "providers": ["vercel"], "underlying_key": "flux-3-image"}'
   review_status: draft
+  resolution_source: models_dev
+- id: black-forest-labs/flux-3-image-klein
+  display_name: FLUX 3 Image Klein
+  org_id: black-forest-labs
+  family: null
+  architecture: null
+  params_billions: null
+  parents: []
+  open_weights: false
+  release_date: '2026-10-15'
+  input_modalities: null
+  output_modalities: null
+  tags: []
+  aliases:
+  - FLUX 3 Image Klein
+  - flux-3-image-klein
+  metadata: '{"alias_platforms": {"flux-3-image-klein": "vercel"}, "hf_deferred": true, "providers": ["vercel"], "underlying_key": "flux-3-image-klein"}'
+  review_status: reviewed
   resolution_source: models_dev
 - id: black-forest-labs/flux-3-video
   display_name: Flux 3
@@ -10500,7 +10518,7 @@
   params_billions: null
   parents: []
   open_weights: true
-  release_date: '2026-09-10'
+  release_date: '2026-10-17'
   input_modalities: null
   output_modalities: null
   tags:
@@ -10550,7 +10568,7 @@
   review_status: reviewed
   resolution_source: models_dev
 - id: deepseek-ai/DeepSeek-V4.1-Flash
-  display_name: DeepSeek V4.1 Flash
+  display_name: DeepSeek-V4.1-Flash
   org_id: deepseek
   family: null
   architecture: null
@@ -10569,13 +10587,14 @@
   - deepseek-v4-1-flash
   - deepseek-v4.1-flash
   - deepseek-v4.1-flash-free
+  - deepseek-v4.1-flash:1017
   - deepseek-v4.1-flash@eu
   - deepseek/deepseek-flash
   - deepseek/deepseek-v4-1-flash
   - deepseek/deepseek-v4.1-flash
   metadata: '{"alias_platforms": {"TEE/deepseek-v4.1-flash": "nano-gpt", "deepseek-flash": "deepseek", "deepseek-v4-1-flash": "deepinfra", "deepseek-v4.1-flash": "neuralwatt", "deepseek-v4.1-flash-free":
-    "opencode", "deepseek-v4.1-flash@eu": "requesty", "deepseek/deepseek-flash": "deepseek", "deepseek/deepseek-v4-1-flash": "deepinfra", "deepseek/deepseek-v4.1-flash": "openrouter"}, "hf_deferred": true,
-    "providers": ["deepseek"], "underlying_key": "deepseek-flash"}'
+    "opencode", "deepseek-v4.1-flash:1017": "ollama-cloud", "deepseek-v4.1-flash@eu": "requesty", "deepseek/deepseek-flash": "deepseek", "deepseek/deepseek-v4-1-flash": "deepinfra", "deepseek/deepseek-v4.1-flash":
+    "openrouter"}, "hf_deferred": true, "providers": ["deepseek"], "underlying_key": "deepseek-flash"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: deepseek-ai/deepseek-vl2
@@ -11063,16 +11082,18 @@
   params_billions: null
   parents: []
   open_weights: true
-  release_date: '2026-09-08'
+  release_date: '2026-10-17'
   input_modalities: null
   output_modalities: null
   tags:
   - open-weight
   aliases:
   - deepseek-v4-1-flash-1017
+  - deepseek-v4.1-flash-1017
+  - deepseek-v4.1-flash-1017@eu
   - deepseek/deepseek-v4-1-flash-1017
-  metadata: '{"alias_platforms": {"deepseek-v4-1-flash-1017": "nano-gpt", "deepseek/deepseek-v4-1-flash-1017": "nano-gpt"}, "openrouter_adopted": true, "providers": ["kilo", "nano-gpt", "openrouter", "vercel"],
-    "underlying_key": "deepseek-v4-1-flash-1017"}'
+  metadata: '{"alias_platforms": {"deepseek-v4-1-flash-1017": "deepinfra", "deepseek-v4.1-flash-1017": "requesty", "deepseek-v4.1-flash-1017@eu": "requesty", "deepseek/deepseek-v4-1-flash-1017": "deepinfra"},
+    "openrouter_adopted": true, "providers": ["baseten", "cortecs", "deepinfra", "kilo", "llmgateway", "merge-gateway", "nano-gpt", "openrouter", "requesty", "vercel"], "underlying_key": "deepseek-v4-1-flash-1017"}'
   review_status: draft
   resolution_source: models_dev
 - id: deepseek/deepseek-v4p1-flash
@@ -17813,6 +17834,25 @@
   weak:
     release_date: '2024-04-18'
     open_weights: true
+- id: meta-models/Muse-Spark-Open-816B-A42B
+  display_name: Muse-Spark-Open-816B-A42B
+  org_id: meta-models
+  family: null
+  architecture: null
+  params_billions: null
+  parents: []
+  open_weights: true
+  release_date: '2026-10-15'
+  input_modalities: null
+  output_modalities: null
+  tags:
+  - open-weight
+  aliases:
+  - meta-models/muse-spark-open-816b-a42b
+  - muse-spark-open-816b-a42b
+  metadata: '{"alias_platforms": {"meta-models/muse-spark-open-816b-a42b": "togetherai", "muse-spark-open-816b-a42b": "togetherai"}, "hf_deferred": true, "providers": ["togetherai"], "underlying_key": "muse-spark-open-816b-a42b"}'
+  review_status: reviewed
+  resolution_source: models_dev
 - id: meta/cerebras-llama-4-maverick-17b-128e-instruct
   aliases:
   - Cerebras-Llama-4-Maverick-17B-128E-Instruct
@@ -19163,8 +19203,8 @@
   - open-weight
   aliases:
   - muse-spark-open
-  metadata: '{"alias_platforms": {"muse-spark-open": "nano-gpt"}, "openrouter_adopted": true, "providers": ["fireworks-ai", "kilo", "merge-gateway", "nano-gpt", "nebius", "ollama-cloud", "openrouter", "requesty",
-    "venice", "vercel"], "underlying_key": "muse-spark-open"}'
+  metadata: '{"alias_platforms": {"muse-spark-open": "nano-gpt"}, "openrouter_adopted": true, "providers": ["cloudflare-ai-gateway", "fireworks-ai", "kilo", "merge-gateway", "nano-gpt", "nebius", "ollama-cloud",
+    "openrouter", "requesty", "venice", "vercel"], "underlying_key": "muse-spark-open"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: meta/muse-wonder
@@ -23973,10 +24013,13 @@
   - nemotron-3-5-super-vl
   - nemotron-3.5-super-vl
   - nemotron-3.5-super-vl-free
+  - nvidia-nemotron-3-5-super-vl
   - nvidia/nemotron-3-5-super-vl
   - nvidia/nemotron-3.5-super-vl:free
-  metadata: '{"alias_platforms": {"nemotron-3-5-super-vl": "nano-gpt", "nemotron-3.5-super-vl": "digitalocean", "nemotron-3.5-super-vl-free": "opencode", "nvidia/nemotron-3-5-super-vl": "nano-gpt", "nvidia/nemotron-3.5-super-vl:free":
-    "openrouter"}, "openrouter_adopted": true, "providers": ["digitalocean", "kilo", "nano-gpt", "nebius", "opencode", "openrouter", "vercel"], "underlying_key": "nemotron-3-5-super-vl"}'
+  - nvidia/nvidia-nemotron-3-5-super-vl
+  metadata: '{"alias_platforms": {"nemotron-3-5-super-vl": "nano-gpt", "nemotron-3.5-super-vl": "digitalocean", "nemotron-3.5-super-vl-free": "opencode", "nvidia-nemotron-3-5-super-vl": "togetherai", "nvidia/nemotron-3-5-super-vl":
+    "nano-gpt", "nvidia/nemotron-3.5-super-vl:free": "openrouter"}, "openrouter_adopted": true, "providers": ["digitalocean", "kilo", "nano-gpt", "nebius", "opencode", "openrouter", "vercel"], "underlying_key":
+    "nemotron-3-5-super-vl"}'
   review_status: draft
   resolution_source: models_dev
 - id: nvidia/nemotron-lightning-3p5-30b-a3b
@@ -28559,7 +28602,7 @@
   - reflection/beam-1-0-501b-a23b
   - reflection/beam-1.0-501b-a23b
   metadata: '{"alias_platforms": {"beam": "kilo", "beam-1-0": "nano-gpt", "beam-1-0-501b-a23b": "wandb", "beam-free": "opencode-go", "reflection/beam": "kilo", "reflection/beam-1-0": "nano-gpt", "reflection/beam-1-0-501b-a23b":
-    "wandb", "reflection/beam-1.0-501b-a23b": "openrouter"}, "hf_deferred": true, "providers": ["kilo", "opencode", "opencode-go", "vercel"], "underlying_key": "beam"}'
+    "wandb", "reflection/beam-1.0-501b-a23b": "openrouter"}, "hf_deferred": true, "providers": ["kilo", "nebius", "opencode", "opencode-go", "vercel"], "underlying_key": "beam"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: rekaai/reka-edge
@@ -30517,7 +30560,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: unbiased/pareto
-  display_name: Pareto Latest
+  display_name: Pareto 26.10
   org_id: unbiased
   family: pareto
   architecture: null
@@ -30530,8 +30573,9 @@
   tags: []
   aliases:
   - Pareto
+  - Pareto Latest
   - pareto
-  metadata: '{"alias_platforms": {"pareto": "cloudflare-ai-gateway"}, "providers": ["cloudflare-ai-gateway", "kilo", "openrouter"], "underlying_key": "pareto"}'
+  metadata: '{"alias_platforms": {"pareto": "cloudflare-ai-gateway"}, "providers": ["cloudflare-ai-gateway", "kilo", "nano-gpt", "openrouter"], "underlying_key": "pareto"}'
   review_status: draft
   resolution_source: models_dev
 - id: unbiased/pareto-26.10-preview
@@ -30549,7 +30593,8 @@
   aliases:
   - pareto-26-10-preview
   - unbiased/pareto-26-10-preview
-  metadata: '{"alias_platforms": {"pareto-26-10-preview": "nano-gpt", "unbiased/pareto-26-10-preview": "nano-gpt"}, "providers": ["nano-gpt"], "underlying_key": "pareto-26-10-preview"}'
+  metadata: '{"alias_platforms": {"pareto-26-10-preview": "nano-gpt", "unbiased/pareto-26-10-preview": "nano-gpt"}, "providers": ["nano-gpt"], "underlying_key": "pareto-26-10-preview", "upstream_status":
+    "removed"}'
   review_status: draft
   resolution_source: models_dev
 - id: unbiased/pareto-26.9

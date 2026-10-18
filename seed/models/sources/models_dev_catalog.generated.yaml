@@ -3492,6 +3492,14 @@
   weak:
     release_date: '2026-10-05'
     open_weights: false
+- id: black-forest-labs/flux-3-image-klein
+  aliases:
+  - FLUX 3 Image Klein
+  - flux-3-image-klein
+  metadata: '{"alias_platforms": {"flux-3-image-klein": "vercel"}}'
+  weak:
+    release_date: '2026-10-15'
+    open_weights: false
 - id: black-forest-labs/flux-3-video
   aliases:
   - flux-3-video
@@ -4445,7 +4453,7 @@
   - deepseek/deepseek-v4-flash-vision-exp
   metadata: '{"alias_platforms": {"deepseek-v4-flash-vision-exp": "deepinfra", "deepseek/deepseek-v4-flash-vision-exp": "deepinfra"}}'
   weak:
-    release_date: '2026-09-10'
+    release_date: '2026-10-17'
     open_weights: true
     input_modalities:
     - image
@@ -4490,12 +4498,14 @@
   - deepseek-v4-1-flash
   - deepseek-v4.1-flash
   - deepseek-v4.1-flash-free
+  - deepseek-v4.1-flash:1017
   - deepseek-v4.1-flash@eu
   - deepseek/deepseek-flash
   - deepseek/deepseek-v4-1-flash
   - deepseek/deepseek-v4.1-flash
   metadata: '{"alias_platforms": {"TEE/deepseek-v4.1-flash": "nano-gpt", "deepseek-flash": "deepseek", "deepseek-v4-1-flash": "deepinfra", "deepseek-v4.1-flash": "neuralwatt", "deepseek-v4.1-flash-free":
-    "opencode", "deepseek-v4.1-flash@eu": "requesty", "deepseek/deepseek-flash": "deepseek", "deepseek/deepseek-v4-1-flash": "deepinfra", "deepseek/deepseek-v4.1-flash": "openrouter"}}'
+    "opencode", "deepseek-v4.1-flash:1017": "ollama-cloud", "deepseek-v4.1-flash@eu": "requesty", "deepseek/deepseek-flash": "deepseek", "deepseek/deepseek-v4-1-flash": "deepinfra", "deepseek/deepseek-v4.1-flash":
+    "openrouter"}}'
   weak:
     release_date: '2026-09-10'
     open_weights: true
@@ -4631,10 +4641,12 @@
 - id: deepseek/deepseek-v4.1-flash-1017
   aliases:
   - deepseek-v4-1-flash-1017
+  - deepseek-v4.1-flash-1017
+  - deepseek-v4.1-flash-1017@eu
   - deepseek/deepseek-v4-1-flash-1017
-  metadata: '{"alias_platforms": {"deepseek-v4-1-flash-1017": "nano-gpt", "deepseek/deepseek-v4-1-flash-1017": "nano-gpt"}}'
+  metadata: '{"alias_platforms": {"deepseek-v4-1-flash-1017": "deepinfra", "deepseek-v4.1-flash-1017": "requesty", "deepseek-v4.1-flash-1017@eu": "requesty", "deepseek/deepseek-v4-1-flash-1017": "deepinfra"}}'
   weak:
-    release_date: '2026-09-08'
+    release_date: '2026-10-17'
     open_weights: true
 - id: deepseek/deepseek-v4p1-flash
   aliases:
@@ -7122,6 +7134,14 @@
   weak:
     release_date: '2024-10-01'
     open_weights: true
+- id: meta-models/Muse-Spark-Open-816B-A42B
+  aliases:
+  - meta-models/muse-spark-open-816b-a42b
+  - muse-spark-open-816b-a42b
+  metadata: '{"alias_platforms": {"meta-models/muse-spark-open-816b-a42b": "togetherai", "muse-spark-open-816b-a42b": "togetherai"}}'
+  weak:
+    release_date: '2026-10-15'
+    open_weights: true
 - id: meta/esm2-650m
   aliases:
   - esm2-650m
@@ -9292,10 +9312,12 @@
   - nemotron-3-5-super-vl
   - nemotron-3.5-super-vl
   - nemotron-3.5-super-vl-free
+  - nvidia-nemotron-3-5-super-vl
   - nvidia/nemotron-3-5-super-vl
   - nvidia/nemotron-3.5-super-vl:free
-  metadata: '{"alias_platforms": {"nemotron-3-5-super-vl": "nano-gpt", "nemotron-3.5-super-vl": "digitalocean", "nemotron-3.5-super-vl-free": "opencode", "nvidia/nemotron-3-5-super-vl": "nano-gpt", "nvidia/nemotron-3.5-super-vl:free":
-    "openrouter"}}'
+  - nvidia/nvidia-nemotron-3-5-super-vl
+  metadata: '{"alias_platforms": {"nemotron-3-5-super-vl": "nano-gpt", "nemotron-3.5-super-vl": "digitalocean", "nemotron-3.5-super-vl-free": "opencode", "nvidia-nemotron-3-5-super-vl": "togetherai", "nvidia/nemotron-3-5-super-vl":
+    "nano-gpt", "nvidia/nemotron-3.5-super-vl:free": "openrouter"}}'
   weak:
     release_date: '2026-10-15'
     open_weights: true
@@ -11985,14 +12007,6 @@
   weak:
     release_date: '2026-09-17'
     open_weights: false
-- id: unbiased/pareto-26.10-preview
-  aliases:
-  - pareto-26-10-preview
-  - unbiased/pareto-26-10-preview
-  metadata: '{"alias_platforms": {"pareto-26-10-preview": "nano-gpt", "unbiased/pareto-26-10-preview": "nano-gpt"}}'
-  weak:
-    release_date: '2026-10-01'
-    open_weights: false
 - id: unbiased/pareto-26.9
   aliases:
   - pareto-26-9
@@ -13426,6 +13440,14 @@
   weak:
     release_date: '2026-06-16'
     open_weights: true
+- id: unbiased/pareto-26.10-preview
+  aliases:
+  - pareto-26-10-preview
+  - unbiased/pareto-26-10-preview
+  metadata: '{"alias_platforms": {"pareto-26-10-preview": "nano-gpt", "unbiased/pareto-26-10-preview": "nano-gpt"}}'
+  weak:
+    release_date: '2026-10-01'
+    open_weights: false
 - id: Qwen/Qwen3-4B
   aliases:
   - Qwen3 4B

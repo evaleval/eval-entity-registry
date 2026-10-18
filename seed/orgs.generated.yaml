@@ -6357,3 +6357,10 @@
   tags: '[]'
   metadata: '{}'
   review_status: reviewed
+- id: meta-models
+  display_name: meta-models
+  hf_org: meta-models
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
