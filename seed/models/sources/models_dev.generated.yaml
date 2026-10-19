@@ -723,7 +723,7 @@
   - minimax/MiniMax-M2
   - minimax/minimax-m2
   - minimax/minimax.minimax-m2
-  metadata: '{"alias_platforms": {"MiniMax-M2": "minimax-coding-plan", "minimax-m2": "nano-gpt", "minimax.minimax-m2": "amazon-bedrock", "minimax/minimax-m2": "nano-gpt", "minimax/minimax.minimax-m2": "amazon-bedrock"},
+  metadata: '{"alias_platforms": {"MiniMax-M2": "minimax-cn", "minimax-m2": "nano-gpt", "minimax.minimax-m2": "amazon-bedrock", "minimax/minimax-m2": "nano-gpt", "minimax/minimax.minimax-m2": "amazon-bedrock"},
     "hf_deferred": true, "providers": ["minimax"], "underlying_key": "minimax-m2"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -785,8 +785,8 @@
   - minimax/minimax-m2-7
   - minimax/minimax-m2.7
   - minimax/minimax-m27
-  metadata: '{"alias_platforms": {"MiniMax-M2.7": "minimax-coding-plan", "minimax-m2-7": "deepinfra", "minimax-m2.7": "minimax-coding-plan", "minimax-m27": "venice", "minimax/minimax-m2-7": "deepinfra",
-    "minimax/minimax-m2.7": "openrouter", "minimax/minimax-m27": "venice"}, "hf_deferred": true, "providers": ["minimax"], "underlying_key": "minimax-m2-7"}'
+  metadata: '{"alias_platforms": {"MiniMax-M2.7": "moark", "minimax-m2-7": "moark", "minimax-m2.7": "moark", "minimax-m27": "venice", "minimax/minimax-m2-7": "moark", "minimax/minimax-m2.7": "openrouter",
+    "minimax/minimax-m27": "venice"}, "hf_deferred": true, "providers": ["minimax"], "underlying_key": "minimax-m2-7"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: MiniMaxAI/MiniMax-M3
@@ -808,8 +808,8 @@
   - minimax-m3-free
   - minimax-m3@eu
   - minimax/minimax-m3
-  metadata: '{"alias_platforms": {"MiniMax-M3": "minimax-coding-plan", "minimax-m3": "deepinfra", "minimax-m3-free": "opencode", "minimax-m3@eu": "requesty", "minimax/minimax-m3": "deepinfra"}, "hf_deferred":
-    true, "providers": ["minimax"], "underlying_key": "minimax-m3"}'
+  metadata: '{"alias_platforms": {"MiniMax-M3": "minimax-cn", "minimax-m3": "nano-gpt", "minimax-m3-free": "opencode", "minimax-m3@eu": "requesty", "minimax/minimax-m3": "nano-gpt"}, "hf_deferred": true,
+    "providers": ["minimax"], "underlying_key": "minimax-m3"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: MiniMaxAI/MiniMax-Text-01
@@ -1234,7 +1234,7 @@
     release_date: 2024-12
     open_weights: true
 - id: Qwen/Qwen2.5-VL-32B-Instruct
-  display_name: Qwen2.5 VL 32B Instruct
+  display_name: Qwen 2.5 VL 32B Instruct
   org_id: alibaba
   family: null
   architecture: null
@@ -1251,7 +1251,7 @@
   - Qwen2.5 VL 32B Instruct
   - alibaba/qwen2-5-vl-32b-instruct
   - qwen2-5-vl-32b-instruct
-  metadata: '{"alias_platforms": {"alibaba/qwen2-5-vl-32b-instruct": "meganova", "qwen2-5-vl-32b-instruct": "meganova"}, "hf_deferred": true, "providers": ["io-net", "meganova"], "underlying_key": "qwen2-5-vl-32b-instruct"}'
+  metadata: '{"alias_platforms": {"alibaba/qwen2-5-vl-32b-instruct": "io-net", "qwen2-5-vl-32b-instruct": "io-net"}, "hf_deferred": true, "providers": ["io-net", "meganova"], "underlying_key": "qwen2-5-vl-32b-instruct"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: Qwen/Qwen2.5-VL-72B-Instruct
@@ -1288,7 +1288,7 @@
   - alibaba/qwen2.5-vl-7b-instruct
   - qwen2-5-vl-7b-instruct
   - qwen2.5-vl-7b-instruct
-  metadata: '{"alias_platforms": {"alibaba/qwen2-5-vl-7b-instruct": "alibaba", "qwen2-5-vl-7b-instruct": "alibaba", "qwen2.5-vl-7b-instruct": "qiniu-ai"}, "hf_deferred": true, "providers": ["alibaba"],
+  metadata: '{"alias_platforms": {"alibaba/qwen2-5-vl-7b-instruct": "alibaba-cn", "qwen2-5-vl-7b-instruct": "alibaba-cn", "qwen2.5-vl-7b-instruct": "qiniu-ai"}, "hf_deferred": true, "providers": ["alibaba"],
     "underlying_key": "qwen2-5-vl-7b-instruct"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -1531,7 +1531,7 @@
   - Qwen3 Embedding 8B
   - alibaba/qwen3-embedding-8b
   - qwen3-embedding-8b
-  metadata: '{"alias_platforms": {"alibaba/qwen3-embedding-8b": "novita-ai", "qwen3-embedding-8b": "novita-ai"}, "hf_deferred": true, "providers": ["evroc", "huggingface", "nebius", "novita-ai", "regolo-ai",
+  metadata: '{"alias_platforms": {"alibaba/qwen3-embedding-8b": "vercel", "qwen3-embedding-8b": "vercel"}, "hf_deferred": true, "providers": ["evroc", "huggingface", "nebius", "novita-ai", "regolo-ai",
     "scaleway", "vercel"], "underlying_key": "qwen3-embedding-8b"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -1844,9 +1844,9 @@
   - qwen3.8-2.4T-A95B@eu
   - qwen3.8-2.4t-a95b
   - qwen3.8-2.4t-a95b@eu
-  metadata: '{"alias_platforms": {"alibaba/qwen-3-8-2-4t-a95b": "venice", "alibaba/qwen3-8-2-4t-a95b": "deepinfra", "qwen-3-8-2-4t-a95b": "venice", "qwen/qwen3.8-2.4t-a95b": "openrouter", "qwen3-8-2-4t-a95b":
-    "deepinfra", "qwen3.8-2.4T-A95B": "requesty", "qwen3.8-2.4T-A95B@eu": "requesty", "qwen3.8-2.4t-a95b": "aihubmix", "qwen3.8-2.4t-a95b@eu": "requesty"}, "hf_deferred": true, "providers": ["venice"],
-    "underlying_key": "qwen-3-8-2-4t-a95b"}'
+  metadata: '{"alias_platforms": {"alibaba/qwen-3-8-2-4t-a95b": "venice", "alibaba/qwen3-8-2-4t-a95b": "vercel", "qwen-3-8-2-4t-a95b": "venice", "qwen/qwen3.8-2.4t-a95b": "openrouter", "qwen3-8-2-4t-a95b":
+    "vercel", "qwen3.8-2.4T-A95B": "requesty", "qwen3.8-2.4T-A95B@eu": "requesty", "qwen3.8-2.4t-a95b": "requesty", "qwen3.8-2.4t-a95b@eu": "requesty"}, "hf_deferred": true, "providers": ["venice"], "underlying_key":
+    "qwen-3-8-2-4t-a95b"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: Qwen/Qwen3.8-27B
@@ -1876,8 +1876,8 @@
   - qwen3-8-27b
   - qwen3.8-27b
   - qwen3.8-27b:thinking
-  metadata: '{"alias_platforms": {"Qwen3.8-27B": "llmgateway", "TEE/qwen3.8-27b": "nano-gpt", "alibaba/qwen-3-8-27b": "cerebras", "alibaba/qwen3-8-27b": "deepinfra", "qwen-3-8-27b": "cerebras", "qwen-3.8-27b":
-    "cerebras", "qwen/qwen3.8-27b": "openrouter", "qwen/qwen3.8-27b:free": "openrouter", "qwen3-8-27b": "deepinfra", "qwen3.8-27b": "crof", "qwen3.8-27b:thinking": "nano-gpt"}, "hf_deferred": true, "providers":
+  metadata: '{"alias_platforms": {"Qwen3.8-27B": "llmgateway", "TEE/qwen3.8-27b": "nano-gpt", "alibaba/qwen-3-8-27b": "cerebras", "alibaba/qwen3-8-27b": "nano-gpt", "qwen-3-8-27b": "cerebras", "qwen-3.8-27b":
+    "cerebras", "qwen/qwen3.8-27b": "openrouter", "qwen/qwen3.8-27b:free": "openrouter", "qwen3-8-27b": "nano-gpt", "qwen3.8-27b": "scaleway", "qwen3.8-27b:thinking": "nano-gpt"}, "hf_deferred": true, "providers":
     ["cerebras", "neuralwatt", "venice"], "underlying_key": "qwen-3-8-27b"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -1901,8 +1901,8 @@
   - qwen3-8-flash-next
   - qwen3.8-flash-next
   - qwen3.8-flash-next@eu
-  metadata: '{"alias_platforms": {"alibaba/qwen3-8-flash-next": "vultr", "qwen3-8-flash-next": "vultr", "qwen3.8-flash-next": "vultr", "qwen3.8-flash-next@eu": "requesty"}, "hf_deferred": true, "providers":
-    ["cortecs", "requesty", "vultr"], "underlying_key": "qwen3-8-flash-next"}'
+  metadata: '{"alias_platforms": {"alibaba/qwen3-8-flash-next": "requesty", "qwen3-8-flash-next": "requesty", "qwen3.8-flash-next": "requesty", "qwen3.8-flash-next@eu": "requesty"}, "hf_deferred": true,
+    "providers": ["cortecs", "requesty", "vultr"], "underlying_key": "qwen3-8-flash-next"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: Qwen/Qwen3Guard-Gen-8B
@@ -2509,10 +2509,10 @@
   - xiaomi/mimo-v2-5
   - xiaomi/mimo-v2.5
   - xiaomi/xiaomi-mimo-v2-5
-  metadata: '{"alias_platforms": {"mimo-v2-5": "deepinfra", "mimo-v2.5": "xiaomi-token-plan-cn", "mimo-v2.5-free": "opencode", "xiaomi-mimo-v2-5": "venice", "xiaomi-mimo-v2.5": "aihubmix", "xiaomi-mimo-v2.5-free":
-    "aihubmix", "xiaomi/mimo-v2-5": "deepinfra", "xiaomi/mimo-v2.5": "openrouter", "xiaomi/xiaomi-mimo-v2-5": "venice"}, "hf_deferred": true, "providers": ["aihubmix", "ambient", "deepinfra", "huggingface",
-    "kilo", "llmgateway", "nano-gpt", "novita-ai", "opencode", "opencode-go", "openrouter", "requesty", "vercel", "xiaomi", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp", "zenmux"],
-    "underlying_key": "mimo-v2-5"}'
+  metadata: '{"alias_platforms": {"mimo-v2-5": "xiaomi-token-plan-cn", "mimo-v2.5": "xiaomi-token-plan-cn", "mimo-v2.5-free": "opencode", "xiaomi-mimo-v2-5": "venice", "xiaomi-mimo-v2.5": "aihubmix", "xiaomi-mimo-v2.5-free":
+    "aihubmix", "xiaomi/mimo-v2-5": "xiaomi-token-plan-cn", "xiaomi/mimo-v2.5": "openrouter", "xiaomi/xiaomi-mimo-v2-5": "venice"}, "hf_deferred": true, "providers": ["aihubmix", "ambient", "deepinfra",
+    "huggingface", "kilo", "llmgateway", "nano-gpt", "novita-ai", "opencode", "opencode-go", "openrouter", "requesty", "vercel", "xiaomi", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp",
+    "zenmux"], "underlying_key": "mimo-v2-5"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: XiaomiMiMo/MiMo-V2.5-Pro
@@ -2536,9 +2536,9 @@
   - xiaomi-mimo-v2.5-pro-free
   - xiaomi/mimo-v2-5-pro
   - xiaomi/mimo-v2.5-pro
-  metadata: '{"alias_platforms": {"mimo-v2-5-pro": "deepinfra", "mimo-v2.5-pro": "crof", "xiaomi-mimo-v2.5-pro": "aihubmix", "xiaomi-mimo-v2.5-pro-free": "aihubmix", "xiaomi/mimo-v2-5-pro": "deepinfra"},
-    "hf_deferred": true, "providers": ["aihubmix", "crof", "deepinfra", "digitalocean", "huggingface", "kilo", "llmgateway", "nano-gpt", "novita-ai", "opencode-go", "openrouter", "requesty", "vercel", "xiaomi",
-    "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp", "zenmux"], "underlying_key": "mimo-v2-5-pro"}'
+  metadata: '{"alias_platforms": {"mimo-v2-5-pro": "xiaomi-token-plan-cn", "mimo-v2.5-pro": "xiaomi-token-plan-cn", "xiaomi-mimo-v2.5-pro": "aihubmix", "xiaomi-mimo-v2.5-pro-free": "aihubmix", "xiaomi/mimo-v2-5-pro":
+    "deepinfra"}, "hf_deferred": true, "providers": ["aihubmix", "crof", "deepinfra", "digitalocean", "huggingface", "kilo", "llmgateway", "nano-gpt", "novita-ai", "opencode-go", "openrouter", "requesty",
+    "vercel", "xiaomi", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp", "zenmux"], "underlying_key": "mimo-v2-5-pro"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: XiaomiMiMo/MiMo-V2.6-Flash-RL
@@ -2651,7 +2651,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: abliterated-model-large
-  display_name: Abliterated Model Large V2
+  display_name: Abliterated Model Large
   org_id: null
   family: abliterated-model-large
   architecture: null
@@ -3057,7 +3057,7 @@
   review_status: reviewed
   resolution_source: models_dev
 - id: aisingapore/Gemma-SEA-LION-v4-27B-IT
-  display_name: aisingapore/Gemma-SEA-LION-v4-27B-IT
+  display_name: Gemma SEA-LION v4 27B
   org_id: aisingapore
   family: null
   architecture: null
@@ -3070,8 +3070,9 @@
   tags:
   - open-weight
   aliases:
+  - Gemma SEA-LION v4 27B
   - aisingapore/gemma-sea-lion-v4-27b-it
-  metadata: '{"alias_platforms": {"aisingapore/gemma-sea-lion-v4-27b-it": "cloudflare-workers-ai"}, "hf_deferred": true, "providers": ["cloudflare-workers-ai", "nano-gpt"], "underlying_key": "gemma-sea-lion-v4-27b-it"}'
+  metadata: '{"alias_platforms": {"aisingapore/gemma-sea-lion-v4-27b-it": "nano-gpt"}, "hf_deferred": true, "providers": ["cloudflare-workers-ai", "nano-gpt"], "underlying_key": "gemma-sea-lion-v4-27b-it"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: alfredpros/codellama-7b-instruct-solidity
@@ -3267,7 +3268,7 @@
   tags: []
   aliases:
   - qwen-flash
-  metadata: '{"alias_platforms": {"qwen-flash": "alibaba"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-07-28"], "snapshots": ["qwen-flash"]}'
+  metadata: '{"alias_platforms": {"qwen-flash": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-07-28"], "snapshots": ["qwen-flash"]}'
   review_status: reviewed
 - id: alibaba/qwen-long
   display_name: Qwen Long 10M
@@ -3357,7 +3358,7 @@
   tags: []
   aliases:
   - qwen-mt-plus
-  metadata: '{"alias_platforms": {"qwen-mt-plus": "novita-ai"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-01"], "snapshots": ["qwen-mt-plus"]}'
+  metadata: '{"alias_platforms": {"qwen-mt-plus": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-01"], "snapshots": ["qwen-mt-plus"]}'
   review_status: reviewed
 - id: alibaba/qwen-mt-turbo
   display_name: Qwen-MT Turbo
@@ -3376,7 +3377,7 @@
   aliases:
   - Qwen-MT Turbo
   - qwen-mt-turbo
-  metadata: '{"alias_platforms": {"qwen-mt-turbo": "alibaba"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-01"], "snapshots": ["qwen-mt-turbo"]}'
+  metadata: '{"alias_platforms": {"qwen-mt-turbo": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-01"], "snapshots": ["qwen-mt-turbo"]}'
   review_status: reviewed
 - id: alibaba/qwen-omni-turbo
   display_name: Qwen-Omni Turbo
@@ -3399,7 +3400,7 @@
   aliases:
   - Qwen-Omni Turbo
   - qwen-omni-turbo
-  metadata: '{"alias_platforms": {"qwen-omni-turbo": "alibaba"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-01-19"], "snapshots": ["qwen-omni-turbo"]}'
+  metadata: '{"alias_platforms": {"qwen-omni-turbo": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-01-19"], "snapshots": ["qwen-omni-turbo"]}'
   review_status: reviewed
 - id: alibaba/qwen-omni-turbo-realtime
   display_name: Qwen-Omni Turbo Realtime
@@ -3420,7 +3421,7 @@
   tags: []
   aliases:
   - qwen-omni-turbo-realtime
-  metadata: '{"alias_platforms": {"qwen-omni-turbo-realtime": "alibaba"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-05-08"], "snapshots": ["qwen-omni-turbo-realtime"]}'
+  metadata: '{"alias_platforms": {"qwen-omni-turbo-realtime": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-05-08"], "snapshots": ["qwen-omni-turbo-realtime"]}'
   review_status: reviewed
 - id: alibaba/qwen-plus-character
   display_name: Qwen Plus Character
@@ -3493,7 +3494,7 @@
   tags: []
   aliases:
   - qwen-vl-max
-  metadata: '{"alias_platforms": {"qwen-vl-max": "alibaba"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2024-04-08"], "snapshots": ["qwen-vl-max"]}'
+  metadata: '{"alias_platforms": {"qwen-vl-max": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2024-04-08"], "snapshots": ["qwen-vl-max"]}'
   review_status: reviewed
 - id: alibaba/qwen-vl-ocr
   display_name: Qwen-VL OCR
@@ -3512,7 +3513,7 @@
   tags: []
   aliases:
   - qwen-vl-ocr
-  metadata: '{"alias_platforms": {"qwen-vl-ocr": "alibaba"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2024-10-28"], "snapshots": ["qwen-vl-ocr"]}'
+  metadata: '{"alias_platforms": {"qwen-vl-ocr": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2024-10-28"], "snapshots": ["qwen-vl-ocr"]}'
   review_status: reviewed
 - id: alibaba/qwen-vl-plus
   display_name: Qwen-VL Plus
@@ -3531,7 +3532,7 @@
   tags: []
   aliases:
   - qwen-vl-plus
-  metadata: '{"alias_platforms": {"qwen-vl-plus": "alibaba"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2024-01-25"], "snapshots": ["qwen-vl-plus"]}'
+  metadata: '{"alias_platforms": {"qwen-vl-plus": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2024-01-25"], "snapshots": ["qwen-vl-plus"]}'
   review_status: reviewed
 - id: alibaba/qwen2-5-72b-instruct-128k
   display_name: Qwen/Qwen2.5-72B-Instruct-128K
@@ -4344,7 +4345,7 @@
   - qwen3-5-flash
   - qwen3.5-flash
   - qwen3.5-flash:thinking
-  metadata: '{"alias_platforms": {"qwen3-5-flash": "nano-gpt", "qwen3.5-flash": "alibaba", "qwen3.5-flash:thinking": "nano-gpt"}, "release_dates": ["2026-02-23"], "snapshots": ["qwen3.5-flash"]}'
+  metadata: '{"alias_platforms": {"qwen3-5-flash": "nano-gpt", "qwen3.5-flash": "alibaba-cn", "qwen3.5-flash:thinking": "nano-gpt"}, "release_dates": ["2026-02-23"], "snapshots": ["qwen3.5-flash"]}'
   review_status: reviewed
 - id: alibaba/qwen3-5-omni-flash
   aliases:
@@ -4381,7 +4382,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: alibaba/qwen3-6-35b
-  display_name: Qwen3.6 35B
+  display_name: Qwen3.6 35B Fast
   org_id: alibaba
   family: qwen3-6-35b
   architecture: null
@@ -4606,7 +4607,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: alibaba/qwen3-8-27b-obliterated
-  display_name: Qwen 3.8 27B Obliterated Thinking
+  display_name: Qwen 3.8 27B Obliterated
   org_id: alibaba
   family: qwen3-8-27b-obliterated
   architecture: null
@@ -4680,7 +4681,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: alibaba/qwen3-8-27b-uncensored
-  display_name: Qwen 3.8 27B Uncensored Fast by Heabsy
+  display_name: Qwen 3.8 27B Uncensored
   org_id: alibaba
   family: qwen3-8-27b-uncensored
   architecture: null
@@ -4694,6 +4695,7 @@
   - open-weight
   aliases:
   - Qwen 3.8 27B Uncensored
+  - Qwen 3.8 27B Uncensored Fast by Heabsy
   - Qwen3.8 27B Uncensored TEE
   - TEE/qwen3.8-27b-uncensored
   - qwen3-8-27b-uncensored
@@ -4740,7 +4742,7 @@
   - qwen/qwen3.8-omni-flash
   - qwen3-8-omni-flash
   - qwen3.8-omni-flash
-  metadata: '{"alias_platforms": {"qwen3-8-omni-flash": "nano-gpt", "qwen3.8-omni-flash": "alibaba"}, "openrouter_adopted": true, "release_dates": ["2026-09-17"], "snapshots": ["qwen3.8-omni-flash"]}'
+  metadata: '{"alias_platforms": {"qwen3-8-omni-flash": "nano-gpt", "qwen3.8-omni-flash": "alibaba-cn"}, "openrouter_adopted": true, "release_dates": ["2026-09-17"], "snapshots": ["qwen3.8-omni-flash"]}'
   review_status: reviewed
 - id: alibaba/qwen3-asr-flash
   display_name: Qwen3-ASR Flash
@@ -4758,7 +4760,7 @@
   tags: []
   aliases:
   - qwen3-asr-flash
-  metadata: '{"alias_platforms": {"qwen3-asr-flash": "alibaba"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-09-08"], "snapshots": ["qwen3-asr-flash"]}'
+  metadata: '{"alias_platforms": {"qwen3-asr-flash": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-09-08"], "snapshots": ["qwen3-asr-flash"]}'
   review_status: reviewed
 - id: alibaba/qwen3-coder-30b
   display_name: Qwen3 Coder 30B
@@ -4853,7 +4855,7 @@
   tags: []
   aliases:
   - qwen3-max-preview
-  metadata: '{"alias_platforms": {"qwen3-max-preview": "iflowcn"}, "providers": ["iflowcn", "merge-gateway", "qiniu-ai"], "underlying_key": "qwen3-max-preview"}'
+  metadata: '{"alias_platforms": {"qwen3-max-preview": "qiniu-ai"}, "providers": ["iflowcn", "merge-gateway", "qiniu-ai"], "underlying_key": "qwen3-max-preview"}'
   review_status: draft
   resolution_source: models_dev
 - id: alibaba/qwen3-next-80b
@@ -4932,7 +4934,7 @@
   tags: []
   aliases:
   - qwen3-omni-flash
-  metadata: '{"alias_platforms": {"qwen3-omni-flash": "alibaba"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-09-15"], "snapshots": ["qwen3-omni-flash"]}'
+  metadata: '{"alias_platforms": {"qwen3-omni-flash": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-09-15"], "snapshots": ["qwen3-omni-flash"]}'
   review_status: reviewed
 - id: alibaba/qwen3-omni-flash-realtime
   display_name: Qwen3-Omni Flash Realtime
@@ -4954,7 +4956,7 @@
   tags: []
   aliases:
   - qwen3-omni-flash-realtime
-  metadata: '{"alias_platforms": {"qwen3-omni-flash-realtime": "alibaba"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-09-15"], "snapshots": ["qwen3-omni-flash-realtime"]}'
+  metadata: '{"alias_platforms": {"qwen3-omni-flash-realtime": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-09-15"], "snapshots": ["qwen3-omni-flash-realtime"]}'
   review_status: reviewed
 - id: alibaba/qwen3-reranker-0-6b
   display_name: Qwen3 Reranker 0.6B
@@ -5051,7 +5053,7 @@
   - Qwen3-VL 235B-A22B
   - qwen.qwen3-vl-235b-a22b
   - qwen3-vl-235b-a22b
-  metadata: '{"alias_platforms": {"qwen.qwen3-vl-235b-a22b": "amazon-bedrock", "qwen3-vl-235b-a22b": "venice"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2025-04"], "snapshots": ["qwen3-vl-235b-a22b"]}'
+  metadata: '{"alias_platforms": {"qwen.qwen3-vl-235b-a22b": "amazon-bedrock", "qwen3-vl-235b-a22b": "alibaba-cn"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2025-04"], "snapshots": ["qwen3-vl-235b-a22b"]}'
   review_status: reviewed
 - id: alibaba/qwen3-vl-235b-a22b-instruct-original
   display_name: Qwen3 VL 235B A22B Instruct Original
@@ -5088,7 +5090,7 @@
   - open-weight
   aliases:
   - qwen3-vl-30b-a3b
-  metadata: '{"alias_platforms": {"qwen3-vl-30b-a3b": "alibaba"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2025-04"], "snapshots": ["qwen3-vl-30b-a3b"]}'
+  metadata: '{"alias_platforms": {"qwen3-vl-30b-a3b": "alibaba-cn"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2025-04"], "snapshots": ["qwen3-vl-30b-a3b"]}'
   review_status: reviewed
 - id: alibaba/qwen3-vl-flash
   display_name: Qwen3-VL Flash
@@ -5143,7 +5145,7 @@
   tags: []
   aliases:
   - qwen3-vl-plus
-  metadata: '{"alias_platforms": {"qwen3-vl-plus": "iflowcn"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2025-09-23"], "snapshots": ["qwen3-vl-plus"]}'
+  metadata: '{"alias_platforms": {"qwen3-vl-plus": "alibaba-cn"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2025-09-23"], "snapshots": ["qwen3-vl-plus"]}'
   review_status: reviewed
 - id: alibaba/qwen3.5-plus
   display_name: Qwen3.5 Plus
@@ -5166,8 +5168,8 @@
   - alibaba/qwen3-5-plus
   - qwen3-5-plus
   - qwen3.5-plus
-  metadata: '{"alias_platforms": {"alibaba/qwen3-5-plus": "nano-gpt", "qwen3-5-plus": "nano-gpt", "qwen3.5-plus": "alibaba-coding-plan"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2026-02-16"],
-    "snapshots": ["qwen3.5-plus"]}'
+  metadata: '{"alias_platforms": {"alibaba/qwen3-5-plus": "nano-gpt", "qwen3-5-plus": "nano-gpt", "qwen3.5-plus": "alibaba-cn"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2026-02-16"], "snapshots":
+    ["qwen3.5-plus"]}'
   review_status: reviewed
 - id: alibaba/qwen3.6-max
   display_name: Qwen3.6 Max
@@ -5310,7 +5312,7 @@
   tags: []
   aliases:
   - qwq-plus
-  metadata: '{"alias_platforms": {"qwq-plus": "alibaba"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-03-05"], "snapshots": ["qwq-plus"]}'
+  metadata: '{"alias_platforms": {"qwq-plus": "alibaba-cn"}, "knowledge_cutoffs": ["2024-04"], "release_dates": ["2025-03-05"], "snapshots": ["qwq-plus"]}'
   review_status: reviewed
 - id: alibaba/tongyi-deepresearch-30b-a3b
   display_name: Tongyi DeepResearch 30B A3B
@@ -5649,7 +5651,7 @@
   review_status: reviewed
   resolution_source: models_dev
 - id: amazon/nova-lite
-  display_name: Nova Lite 1.0
+  display_name: Nova Lite
   org_id: amazon
   family: nova-lite
   architecture: null
@@ -5662,6 +5664,7 @@
   tags: []
   aliases:
   - Nova Lite
+  - Nova Lite 1.0
   - amazon--nova-lite
   - amazon-nova-lite
   - amazon.nova-lite-v1:0
@@ -5675,7 +5678,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: amazon/nova-micro
-  display_name: Nova Micro 1.0
+  display_name: Nova Micro
   org_id: amazon
   family: nova-micro
   architecture: null
@@ -5688,6 +5691,7 @@
   tags: []
   aliases:
   - Nova Micro
+  - Nova Micro 1.0
   - amazon--nova-micro
   - amazon-nova-micro
   - amazon.nova-micro-v1:0
@@ -5727,7 +5731,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: amazon/nova-pro
-  display_name: Nova Pro 1.0
+  display_name: Nova Pro
   org_id: amazon
   family: nova-pro
   architecture: null
@@ -5900,9 +5904,9 @@
   - claude-fable-5.1@eu
   - global.anthropic.claude-fable-5-1
   - us.anthropic.claude-fable-5-1
-  metadata: '{"alias_platforms": {"anthropic-claude-fable-5.1": "digitalocean", "anthropic.claude-fable-5-1": "amazon-bedrock", "anthropic/claude-fable-5-1": "nano-gpt", "claude-fable-5-1": "nano-gpt",
-    "claude-fable-5-1@default": "google-vertex-anthropic", "claude-fable-5.1": "github-copilot", "claude-fable-5.1@eu": "requesty", "global.anthropic.claude-fable-5-1": "amazon-bedrock", "us.anthropic.claude-fable-5-1":
-    "amazon-bedrock"}, "knowledge_cutoffs": ["2026-06"], "openrouter_adopted": true, "release_dates": ["2026-09-01"], "snapshots": ["claude-fable-5-1"]}'
+  metadata: '{"alias_platforms": {"anthropic-claude-fable-5.1": "digitalocean", "anthropic.claude-fable-5-1": "amazon-bedrock", "anthropic/claude-fable-5-1": "cloudflare-ai-gateway", "claude-fable-5-1":
+    "cloudflare-ai-gateway", "claude-fable-5-1@default": "google-vertex-anthropic", "claude-fable-5.1": "requesty", "claude-fable-5.1@eu": "requesty", "global.anthropic.claude-fable-5-1": "amazon-bedrock",
+    "us.anthropic.claude-fable-5-1": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-06"], "openrouter_adopted": true, "release_dates": ["2026-09-01"], "snapshots": ["claude-fable-5-1"]}'
   review_status: reviewed
 - id: anthropic/claude-fable-latest
   display_name: Claude Fable Latest
@@ -5952,8 +5956,9 @@
   - claude-haiku-4.5
   - databricks-claude-haiku-4-5
   metadata: '{"alias_platforms": {"anthropic--claude-4.5-haiku": "sap-ai-core", "anthropic-claude-4.5-haiku": "sap-ai-core", "anthropic-claude-haiku-4.5": "digitalocean", "anthropic/claude-4-5-haiku": "qiniu-ai",
-    "anthropic/claude-haiku-4-5": "perplexity-agent", "claude-4-5-haiku": "qiniu-ai", "claude-4.5-haiku": "qiniu-ai", "claude-haiku-4-5": "perplexity-agent", "claude-haiku-4-5@eu": "requesty", "claude-haiku-4.5":
-    "github-copilot", "databricks-claude-haiku-4-5": "databricks"}, "knowledge_cutoffs": ["2025-02-28"], "openrouter_adopted": true, "release_dates": ["2025-10-15"], "snapshots": ["claude-haiku-4-5", "claude-haiku-4-5-20251001"]}'
+    "anthropic/claude-haiku-4-5": "cloudflare-ai-gateway", "claude-4-5-haiku": "qiniu-ai", "claude-4.5-haiku": "qiniu-ai", "claude-haiku-4-5": "cloudflare-ai-gateway", "claude-haiku-4-5@eu": "requesty",
+    "claude-haiku-4.5": "github-copilot", "databricks-claude-haiku-4-5": "databricks"}, "knowledge_cutoffs": ["2025-02-28"], "openrouter_adopted": true, "release_dates": ["2025-10-15"], "snapshots": ["claude-haiku-4-5",
+    "claude-haiku-4-5-20251001"]}'
   review_status: reviewed
 - id: anthropic/claude-haiku-4.5-20251001
   display_name: claude-haiku-4.5-20251001
@@ -5985,8 +5990,8 @@
   - global.anthropic.claude-haiku-4-5-20251001-v1:0
   - jp.anthropic.claude-haiku-4-5-20251001-v1:0
   - us.anthropic.claude-haiku-4-5-20251001-v1:0
-  metadata: '{"alias_platforms": {"anthropic.claude-haiku-4-5-20251001-v1:0": "amazon-bedrock", "anthropic/claude-haiku-4-5-20251001": "anthropic", "au.anthropic.claude-haiku-4-5-20251001-v1:0": "amazon-bedrock",
-    "claude-haiku-4-5-20251001": "anthropic", "claude-haiku-4-5@20251001": "google-vertex-anthropic", "eu.anthropic.claude-haiku-4-5-20251001-v1:0": "amazon-bedrock", "global.anthropic.claude-haiku-4-5-20251001-v1:0":
+  metadata: '{"alias_platforms": {"anthropic.claude-haiku-4-5-20251001-v1:0": "amazon-bedrock", "anthropic/claude-haiku-4-5-20251001": "qihang-ai", "au.anthropic.claude-haiku-4-5-20251001-v1:0": "amazon-bedrock",
+    "claude-haiku-4-5-20251001": "qihang-ai", "claude-haiku-4-5@20251001": "google-vertex-anthropic", "eu.anthropic.claude-haiku-4-5-20251001-v1:0": "amazon-bedrock", "global.anthropic.claude-haiku-4-5-20251001-v1:0":
     "amazon-bedrock", "jp.anthropic.claude-haiku-4-5-20251001-v1:0": "amazon-bedrock", "us.anthropic.claude-haiku-4-5-20251001-v1:0": "amazon-bedrock"}}'
   review_status: reviewed
 - id: anthropic/claude-haiku-5.5
@@ -6021,9 +6026,9 @@
   - jp.anthropic.claude-haiku-5-5
   - us.anthropic.claude-haiku-5-5
   metadata: '{"alias_platforms": {"anthropic-claude-5.5-haiku": "digitalocean", "anthropic.claude-haiku-5-5": "amazon-bedrock", "anthropic/claude-5-5-haiku": "digitalocean", "anthropic/claude-haiku-5-5":
-    "nano-gpt", "au.anthropic.claude-haiku-5-5": "amazon-bedrock", "claude-5-5-haiku": "digitalocean", "claude-haiku-5-5": "nano-gpt", "claude-haiku-5-5@default": "google-vertex-anthropic", "claude-haiku-5-5@eu":
-    "requesty", "claude-haiku-5.5": "github-copilot", "eu.anthropic.claude-haiku-5-5": "amazon-bedrock", "global.anthropic.claude-haiku-5-5": "amazon-bedrock", "jp.anthropic.claude-haiku-5-5": "amazon-bedrock",
-    "us.anthropic.claude-haiku-5-5": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-06"], "openrouter_adopted": true, "release_dates": ["2026-10-07"], "snapshots": ["claude-haiku-5-5"]}'
+    "cloudflare-ai-gateway", "au.anthropic.claude-haiku-5-5": "amazon-bedrock", "claude-5-5-haiku": "digitalocean", "claude-haiku-5-5": "cloudflare-ai-gateway", "claude-haiku-5-5@default": "google-vertex-anthropic",
+    "claude-haiku-5-5@eu": "requesty", "claude-haiku-5.5": "cortecs", "eu.anthropic.claude-haiku-5-5": "amazon-bedrock", "global.anthropic.claude-haiku-5-5": "amazon-bedrock", "jp.anthropic.claude-haiku-5-5":
+    "amazon-bedrock", "us.anthropic.claude-haiku-5-5": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-06"], "openrouter_adopted": true, "release_dates": ["2026-10-07"], "snapshots": ["claude-haiku-5-5"]}'
   review_status: reviewed
 - id: anthropic/claude-haiku-latest
   display_name: Claude Haiku Latest
@@ -6063,7 +6068,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: anthropic/claude-opus-3
-  display_name: anthropic--claude-3-opus
+  display_name: Claude 3 Opus
   org_id: anthropic
   family: claude-3-opus
   architecture: null
@@ -6081,7 +6086,7 @@
   - anthropic-claude-3-opus
   - anthropic/claude-3-opus
   - claude-3-opus
-  metadata: '{"alias_platforms": {"anthropic--claude-3-opus": "sap-ai-core", "anthropic-claude-3-opus": "sap-ai-core", "anthropic/claude-3-opus": "digitalocean", "claude-3-opus": "sap-ai-core"}, "providers":
+  metadata: '{"alias_platforms": {"anthropic--claude-3-opus": "sap-ai-core", "anthropic-claude-3-opus": "digitalocean", "anthropic/claude-3-opus": "digitalocean", "claude-3-opus": "digitalocean"}, "providers":
     ["digitalocean", "sap-ai-core"], "underlying_key": "claude-3-opus"}'
   review_status: draft
   resolution_source: models_dev
@@ -6106,7 +6111,7 @@
   - claude-4-opus
   - claude-opus-4
   metadata: '{"alias_platforms": {"anthropic--claude-4-opus": "sap-ai-core", "anthropic-claude-4-opus": "sap-ai-core", "anthropic-claude-opus-4": "digitalocean", "anthropic/claude-4-opus": "sap-ai-core",
-    "claude-4-opus": "sap-ai-core", "claude-opus-4": "poe"}, "providers": ["abacus", "digitalocean", "google-vertex", "google-vertex-anthropic", "helicone", "jiekou", "merge-gateway", "poe", "sap-ai-core",
+    "claude-4-opus": "sap-ai-core", "claude-opus-4": "zenmux"}, "providers": ["abacus", "digitalocean", "google-vertex", "google-vertex-anthropic", "helicone", "jiekou", "merge-gateway", "poe", "sap-ai-core",
     "zenmux"], "underlying_key": "claude-4-opus"}'
   review_status: draft
   resolution_source: models_dev
@@ -6173,8 +6178,8 @@
   - claude-4.1-opus
   - claude-opus-4-1
   - databricks-claude-opus-4-1
-  metadata: '{"alias_platforms": {"anthropic-claude-4.1-opus": "digitalocean", "anthropic/claude-4-1-opus": "qiniu-ai", "anthropic/claude-opus-4-1": "poe", "claude-4-1-opus": "qiniu-ai", "claude-4.1-opus":
-    "qiniu-ai", "claude-opus-4-1": "poe", "databricks-claude-opus-4-1": "databricks"}, "openrouter_adopted": true, "providers": ["302ai", "abacus", "amazon-bedrock", "azure", "azure-cognitive-services",
+  metadata: '{"alias_platforms": {"anthropic-claude-4.1-opus": "digitalocean", "anthropic/claude-4-1-opus": "qiniu-ai", "anthropic/claude-opus-4-1": "nano-gpt", "claude-4-1-opus": "qiniu-ai", "claude-4.1-opus":
+    "qiniu-ai", "claude-opus-4-1": "nano-gpt", "databricks-claude-opus-4-1": "databricks"}, "openrouter_adopted": true, "providers": ["302ai", "abacus", "amazon-bedrock", "azure", "azure-cognitive-services",
     "databricks", "digitalocean", "fastrouter", "google-vertex", "google-vertex-anthropic", "helicone", "jiekou", "kilo", "llmgateway", "merge-gateway", "nano-gpt", "opencode", "openrouter", "poe", "qiniu-ai",
     "requesty", "zenmux"], "underlying_key": "claude-4-1-opus"}'
   review_status: draft
@@ -6238,7 +6243,7 @@
   - claude-opus-4.5
   - databricks-claude-opus-4-5
   metadata: '{"alias_platforms": {"anthropic--claude-4.5-opus": "sap-ai-core", "anthropic-claude-4.5-opus": "sap-ai-core", "anthropic-claude-opus-4.5": "digitalocean", "anthropic/claude-4-5-opus": "qiniu-ai",
-    "anthropic/claude-opus-4-5": "perplexity-agent", "claude-4-5-opus": "qiniu-ai", "claude-4.5-opus": "qiniu-ai", "claude-opus-4-5": "perplexity-agent", "claude-opus-4-5@eu": "requesty", "claude-opus-4.5":
+    "anthropic/claude-opus-4-5": "cloudflare-ai-gateway", "claude-4-5-opus": "qiniu-ai", "claude-4.5-opus": "qiniu-ai", "claude-opus-4-5": "cloudflare-ai-gateway", "claude-opus-4-5@eu": "requesty", "claude-opus-4.5":
     "github-copilot", "databricks-claude-opus-4-5": "databricks"}, "knowledge_cutoffs": ["2025-05"], "openrouter_adopted": true, "release_dates": ["2025-11-24"], "snapshots": ["claude-opus-4-5", "claude-opus-4-5-20251101"]}'
   review_status: reviewed
 - id: anthropic/claude-opus-4.5-20251101
@@ -6270,7 +6275,7 @@
   - eu.anthropic.claude-opus-4-5-20251101-v1:0
   - global.anthropic.claude-opus-4-5-20251101-v1:0
   - us.anthropic.claude-opus-4-5-20251101-v1:0
-  metadata: '{"alias_platforms": {"anthropic.claude-opus-4-5-20251101-v1:0": "amazon-bedrock", "anthropic/claude-opus-4-5-20251101": "anthropic", "claude-opus-4-5-20251101": "anthropic", "claude-opus-4-5-20251101:thinking":
+  metadata: '{"alias_platforms": {"anthropic.claude-opus-4-5-20251101-v1:0": "amazon-bedrock", "anthropic/claude-opus-4-5-20251101": "qihang-ai", "claude-opus-4-5-20251101": "qihang-ai", "claude-opus-4-5-20251101:thinking":
     "nano-gpt", "claude-opus-4-5@20251101": "google-vertex-anthropic", "eu.anthropic.claude-opus-4-5-20251101-v1:0": "amazon-bedrock", "global.anthropic.claude-opus-4-5-20251101-v1:0": "amazon-bedrock",
     "us.anthropic.claude-opus-4-5-20251101-v1:0": "amazon-bedrock"}}'
   review_status: reviewed
@@ -6306,9 +6311,9 @@
   - claude-opus-4.6
   - databricks-claude-opus-4-6
   metadata: '{"alias_platforms": {"anthropic--claude-4.6-opus": "sap-ai-core", "anthropic-claude-4.6-opus": "sap-ai-core", "anthropic-claude-opus-4.6": "digitalocean", "anthropic/claude-4-6-opus": "sap-ai-core",
-    "anthropic/claude-opus-4-6": "perplexity-agent", "anthropic/claude-opus-4.6-fast": "openrouter", "claude-4-6-opus": "sap-ai-core", "claude-opus-4-6": "perplexity-agent", "claude-opus-4-6-fast": "venice",
-    "claude-opus-4-6@default": "google-vertex-anthropic", "claude-opus-4-6@eu": "requesty", "claude-opus-4.6": "github-copilot", "databricks-claude-opus-4-6": "databricks"}, "knowledge_cutoffs": ["2025-05-31"],
-    "openrouter_adopted": true, "release_dates": ["2026-02-04"], "snapshots": ["claude-opus-4-6"]}'
+    "anthropic/claude-opus-4-6": "cloudflare-ai-gateway", "anthropic/claude-opus-4.6-fast": "openrouter", "claude-4-6-opus": "sap-ai-core", "claude-opus-4-6": "cloudflare-ai-gateway", "claude-opus-4-6-fast":
+    "venice", "claude-opus-4-6@default": "google-vertex-anthropic", "claude-opus-4-6@eu": "requesty", "claude-opus-4.6": "github-copilot", "databricks-claude-opus-4-6": "databricks"}, "knowledge_cutoffs":
+    ["2025-05-31"], "openrouter_adopted": true, "release_dates": ["2026-02-04"], "snapshots": ["claude-opus-4-6"]}'
   review_status: reviewed
 - id: anthropic/claude-opus-4.7
   display_name: Claude Opus 4.7
@@ -6348,10 +6353,10 @@
   - jp.anthropic.claude-opus-4-7
   - us.anthropic.claude-opus-4-7
   metadata: '{"alias_platforms": {"anthropic--claude-4.7-opus": "sap-ai-core", "anthropic-claude-4.7-opus": "sap-ai-core", "anthropic-claude-opus-4.7": "digitalocean", "anthropic.claude-opus-4-7": "amazon-bedrock",
-    "anthropic/claude-4-7-opus": "sap-ai-core", "anthropic/claude-opus-4-7": "perplexity-agent", "anthropic/claude-opus-4.7-fast": "openrouter", "au.anthropic.claude-opus-4-7": "amazon-bedrock", "claude-4-7-opus":
-    "sap-ai-core", "claude-opus-4-7": "perplexity-agent", "claude-opus-4-7-fast": "venice", "claude-opus-4-7@default": "google-vertex-anthropic", "claude-opus-4-7@eu": "requesty", "claude-opus-4.7": "github-copilot",
-    "databricks-claude-opus-4-7": "databricks", "eu.anthropic.claude-opus-4-7": "amazon-bedrock", "global.anthropic.claude-opus-4-7": "amazon-bedrock", "jp.anthropic.claude-opus-4-7": "amazon-bedrock",
-    "us.anthropic.claude-opus-4-7": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-01-31"], "openrouter_adopted": true, "release_dates": ["2026-04-14"], "snapshots": ["claude-opus-4-7"]}'
+    "anthropic/claude-4-7-opus": "sap-ai-core", "anthropic/claude-opus-4-7": "cloudflare-ai-gateway", "anthropic/claude-opus-4.7-fast": "openrouter", "au.anthropic.claude-opus-4-7": "amazon-bedrock", "claude-4-7-opus":
+    "sap-ai-core", "claude-opus-4-7": "cloudflare-ai-gateway", "claude-opus-4-7-fast": "venice", "claude-opus-4-7@default": "google-vertex-anthropic", "claude-opus-4-7@eu": "requesty", "claude-opus-4.7":
+    "github-copilot", "databricks-claude-opus-4-7": "databricks", "eu.anthropic.claude-opus-4-7": "amazon-bedrock", "global.anthropic.claude-opus-4-7": "amazon-bedrock", "jp.anthropic.claude-opus-4-7":
+    "amazon-bedrock", "us.anthropic.claude-opus-4-7": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-01-31"], "openrouter_adopted": true, "release_dates": ["2026-04-14"], "snapshots": ["claude-opus-4-7"]}'
   review_status: reviewed
 - id: anthropic/claude-opus-4.8
   display_name: Claude Opus 4.8
@@ -6390,10 +6395,10 @@
   - jp.anthropic.claude-opus-4-8
   - us.anthropic.claude-opus-4-8
   metadata: '{"alias_platforms": {"anthropic--claude-4.8-opus": "sap-ai-core", "anthropic-claude-4.8-opus": "sap-ai-core", "anthropic-claude-opus-4.8": "digitalocean", "anthropic.claude-opus-4-8": "amazon-bedrock",
-    "anthropic/claude-4-8-opus": "sap-ai-core", "anthropic/claude-opus-4-8": "poe", "anthropic/claude-opus-4.8-fast": "openrouter", "au.anthropic.claude-opus-4-8": "amazon-bedrock", "claude-4-8-opus": "sap-ai-core",
-    "claude-opus-4-8": "poe", "claude-opus-4-8-fast": "venice", "claude-opus-4-8@default": "google-vertex-anthropic", "claude-opus-4-8@eu": "requesty", "claude-opus-4.8": "github-copilot", "claude-opus4-8":
-    "cortecs", "eu.anthropic.claude-opus-4-8": "amazon-bedrock", "global.anthropic.claude-opus-4-8": "amazon-bedrock", "jp.anthropic.claude-opus-4-8": "amazon-bedrock", "us.anthropic.claude-opus-4-8": "amazon-bedrock"},
-    "knowledge_cutoffs": ["2026-01"], "openrouter_adopted": true, "release_dates": ["2026-05-28"], "snapshots": ["claude-opus-4-8"]}'
+    "anthropic/claude-4-8-opus": "sap-ai-core", "anthropic/claude-opus-4-8": "cloudflare-ai-gateway", "anthropic/claude-opus-4.8-fast": "openrouter", "au.anthropic.claude-opus-4-8": "amazon-bedrock", "claude-4-8-opus":
+    "sap-ai-core", "claude-opus-4-8": "cloudflare-ai-gateway", "claude-opus-4-8-fast": "venice", "claude-opus-4-8@default": "google-vertex-anthropic", "claude-opus-4-8@eu": "requesty", "claude-opus-4.8":
+    "github-copilot", "claude-opus4-8": "cortecs", "eu.anthropic.claude-opus-4-8": "amazon-bedrock", "global.anthropic.claude-opus-4-8": "amazon-bedrock", "jp.anthropic.claude-opus-4-8": "amazon-bedrock",
+    "us.anthropic.claude-opus-4-8": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-01"], "openrouter_adopted": true, "release_dates": ["2026-05-28"], "snapshots": ["claude-opus-4-8"]}'
   review_status: reviewed
 - id: anthropic/claude-opus-5
   display_name: Claude Opus 5
@@ -6425,9 +6430,9 @@
   - jp.anthropic.claude-opus-5
   - us.anthropic.claude-opus-5
   metadata: '{"alias_platforms": {"anthropic-claude-opus-5": "digitalocean", "anthropic.claude-opus-5": "amazon-bedrock", "anthropic/claude-opus-5-fast": "openrouter", "au.anthropic.claude-opus-5": "amazon-bedrock",
-    "claude-opus-5": "nano-gpt", "claude-opus-5-fast": "venice", "claude-opus-5@default": "google-vertex-anthropic", "claude-opus-5@eu": "requesty", "eu.anthropic.claude-opus-5": "amazon-bedrock", "global.anthropic.claude-opus-5":
-    "amazon-bedrock", "jp.anthropic.claude-opus-5": "amazon-bedrock", "us.anthropic.claude-opus-5": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-05"], "openrouter_adopted": true, "release_dates": ["2026-07-24"],
-    "snapshots": ["claude-opus-5"]}'
+    "claude-opus-5": "cloudflare-ai-gateway", "claude-opus-5-fast": "venice", "claude-opus-5@default": "google-vertex-anthropic", "claude-opus-5@eu": "requesty", "eu.anthropic.claude-opus-5": "amazon-bedrock",
+    "global.anthropic.claude-opus-5": "amazon-bedrock", "jp.anthropic.claude-opus-5": "amazon-bedrock", "us.anthropic.claude-opus-5": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-05"], "openrouter_adopted":
+    true, "release_dates": ["2026-07-24"], "snapshots": ["claude-opus-5"]}'
   review_status: reviewed
 - id: anthropic/claude-opus-5.5
   display_name: Claude Opus 5.5
@@ -6459,10 +6464,10 @@
   - global.anthropic.claude-opus-5-5
   - jp.anthropic.claude-opus-5-5
   - us.anthropic.claude-opus-5-5
-  metadata: '{"alias_platforms": {"anthropic-claude-opus-5.5": "digitalocean", "anthropic.claude-opus-5-5": "amazon-bedrock", "anthropic/claude-opus-5-5": "nano-gpt", "au.anthropic.claude-opus-5-5": "amazon-bedrock",
-    "claude-opus-5-5": "nano-gpt", "claude-opus-5-5-fast": "venice", "claude-opus-5-5@default": "google-vertex-anthropic", "claude-opus-5-5@eu": "requesty", "claude-opus-5.5": "github-copilot", "eu.anthropic.claude-opus-5-5":
-    "amazon-bedrock", "global.anthropic.claude-opus-5-5": "amazon-bedrock", "jp.anthropic.claude-opus-5-5": "amazon-bedrock", "us.anthropic.claude-opus-5-5": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-06"],
-    "openrouter_adopted": true, "release_dates": ["2026-09-22"], "snapshots": ["claude-opus-5-5"]}'
+  metadata: '{"alias_platforms": {"anthropic-claude-opus-5.5": "digitalocean", "anthropic.claude-opus-5-5": "amazon-bedrock", "anthropic/claude-opus-5-5": "cloudflare-ai-gateway", "au.anthropic.claude-opus-5-5":
+    "amazon-bedrock", "claude-opus-5-5": "cloudflare-ai-gateway", "claude-opus-5-5-fast": "venice", "claude-opus-5-5@default": "google-vertex-anthropic", "claude-opus-5-5@eu": "requesty", "claude-opus-5.5":
+    "cortecs", "eu.anthropic.claude-opus-5-5": "amazon-bedrock", "global.anthropic.claude-opus-5-5": "amazon-bedrock", "jp.anthropic.claude-opus-5-5": "amazon-bedrock", "us.anthropic.claude-opus-5-5": "amazon-bedrock"},
+    "knowledge_cutoffs": ["2026-06"], "openrouter_adopted": true, "release_dates": ["2026-09-22"], "snapshots": ["claude-opus-5-5"]}'
   review_status: reviewed
 - id: anthropic/claude-opus-latest
   display_name: Claude Opus Latest
@@ -6630,7 +6635,7 @@
   - claude-3-7-sonnet
   - claude-3.7-sonnet
   - claude-sonnet-3-7
-  metadata: '{"alias_platforms": {"anthropic--claude-3.7-sonnet": "sap-ai-core", "anthropic-claude-3.7-sonnet": "sap-ai-core", "anthropic/claude-3-7-sonnet": "digitalocean", "anthropic/claude-sonnet-3-7":
+  metadata: '{"alias_platforms": {"anthropic--claude-3.7-sonnet": "sap-ai-core", "anthropic-claude-3.7-sonnet": "digitalocean", "anthropic/claude-3-7-sonnet": "digitalocean", "anthropic/claude-sonnet-3-7":
     "poe", "claude-3-7-sonnet": "zenmux", "claude-3.7-sonnet": "qiniu-ai", "claude-sonnet-3-7": "poe"}, "providers": ["abacus", "digitalocean", "helicone", "merge-gateway", "poe", "qiniu-ai", "sap-ai-core",
     "zenmux"], "underlying_key": "claude-3-7-sonnet"}'
   review_status: draft
@@ -6658,8 +6663,8 @@
   - claude-sonnet-4@eu
   - databricks-claude-sonnet-4
   metadata: '{"alias_platforms": {"anthropic--claude-4-sonnet": "sap-ai-core", "anthropic-claude-4-sonnet": "sap-ai-core", "anthropic-claude-sonnet-4": "digitalocean", "anthropic/claude-4-sonnet": "sap-ai-core",
-    "claude-4-sonnet": "sap-ai-core", "claude-sonnet-4": "poe", "claude-sonnet-4@eu": "requesty", "databricks-claude-sonnet-4": "databricks"}, "providers": ["abacus", "amazon-bedrock", "databricks", "digitalocean",
-    "fastrouter", "google-vertex", "google-vertex-anthropic", "helicone", "jiekou", "merge-gateway", "opencode", "poe", "requesty", "sap-ai-core", "zenmux"], "underlying_key": "claude-4-sonnet"}'
+    "claude-4-sonnet": "sap-ai-core", "claude-sonnet-4": "fastrouter", "claude-sonnet-4@eu": "requesty", "databricks-claude-sonnet-4": "databricks"}, "providers": ["abacus", "amazon-bedrock", "databricks",
+    "digitalocean", "fastrouter", "google-vertex", "google-vertex-anthropic", "helicone", "jiekou", "merge-gateway", "opencode", "poe", "requesty", "sap-ai-core", "zenmux"], "underlying_key": "claude-4-sonnet"}'
   review_status: draft
   resolution_source: models_dev
 - id: anthropic/claude-sonnet-4-0
@@ -6732,9 +6737,9 @@
   - claude-sonnet-4-5@eu
   - claude-sonnet-4.5
   - databricks-claude-sonnet-4-5
-  metadata: '{"alias_platforms": {"anthropic--claude-4.5-sonnet": "sap-ai-core", "anthropic-claude-4.5-sonnet": "sap-ai-core", "anthropic/claude-4-5-sonnet": "qiniu-ai", "anthropic/claude-sonnet-4-5": "perplexity-agent",
-    "claude-4-5-sonnet": "qiniu-ai", "claude-4.5-sonnet": "qiniu-ai", "claude-sonnet-4-5": "perplexity-agent", "claude-sonnet-4-5@eu": "requesty", "claude-sonnet-4.5": "github-copilot", "databricks-claude-sonnet-4-5":
-    "databricks"}, "knowledge_cutoffs": ["2025-07-31"], "openrouter_adopted": true, "release_dates": ["2025-09-29"], "snapshots": ["claude-sonnet-4-5", "claude-sonnet-4-5-20250929"]}'
+  metadata: '{"alias_platforms": {"anthropic--claude-4.5-sonnet": "sap-ai-core", "anthropic-claude-4.5-sonnet": "digitalocean", "anthropic/claude-4-5-sonnet": "qiniu-ai", "anthropic/claude-sonnet-4-5":
+    "cloudflare-ai-gateway", "claude-4-5-sonnet": "qiniu-ai", "claude-4.5-sonnet": "qiniu-ai", "claude-sonnet-4-5": "cloudflare-ai-gateway", "claude-sonnet-4-5@eu": "requesty", "claude-sonnet-4.5": "github-copilot",
+    "databricks-claude-sonnet-4-5": "databricks"}, "knowledge_cutoffs": ["2025-07-31"], "openrouter_adopted": true, "release_dates": ["2025-09-29"], "snapshots": ["claude-sonnet-4-5", "claude-sonnet-4-5-20250929"]}'
   review_status: reviewed
 - id: anthropic/claude-sonnet-4.5-20250929
   display_name: claude-sonnet-4.5-20250929
@@ -6766,8 +6771,8 @@
   - global.anthropic.claude-sonnet-4-5-20250929-v1:0
   - jp.anthropic.claude-sonnet-4-5-20250929-v1:0
   - us.anthropic.claude-sonnet-4-5-20250929-v1:0
-  metadata: '{"alias_platforms": {"anthropic.claude-sonnet-4-5-20250929-v1:0": "amazon-bedrock", "anthropic/claude-sonnet-4-5-20250929": "anthropic", "au.anthropic.claude-sonnet-4-5-20250929-v1:0": "amazon-bedrock",
-    "claude-sonnet-4-5-20250929": "anthropic", "claude-sonnet-4-5@20250929": "google-vertex-anthropic", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0": "amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0":
+  metadata: '{"alias_platforms": {"anthropic.claude-sonnet-4-5-20250929-v1:0": "amazon-bedrock", "anthropic/claude-sonnet-4-5-20250929": "qihang-ai", "au.anthropic.claude-sonnet-4-5-20250929-v1:0": "amazon-bedrock",
+    "claude-sonnet-4-5-20250929": "qihang-ai", "claude-sonnet-4-5@20250929": "google-vertex-anthropic", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0": "amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0":
     "amazon-bedrock", "jp.anthropic.claude-sonnet-4-5-20250929-v1:0": "amazon-bedrock", "us.anthropic.claude-sonnet-4-5-20250929-v1:0": "amazon-bedrock"}}'
   review_status: reviewed
 - id: anthropic/claude-sonnet-4.6
@@ -6804,11 +6809,11 @@
   - global.anthropic.claude-sonnet-4-6
   - jp.anthropic.claude-sonnet-4-6
   - us.anthropic.claude-sonnet-4-6
-  metadata: '{"alias_platforms": {"anthropic--claude-4.6-sonnet": "sap-ai-core", "anthropic-claude-4.6-sonnet": "sap-ai-core", "anthropic.claude-sonnet-4-6": "amazon-bedrock", "anthropic/claude-4-6-sonnet":
-    "sap-ai-core", "anthropic/claude-sonnet-4-6": "perplexity-agent", "au.anthropic.claude-sonnet-4-6": "amazon-bedrock", "claude-4-6-sonnet": "sap-ai-core", "claude-sonnet-4-6": "perplexity-agent", "claude-sonnet-4-6@default":
-    "google-vertex-anthropic", "claude-sonnet-4-6@eu": "requesty", "claude-sonnet-4.6": "github-copilot", "databricks-claude-sonnet-4-6": "databricks", "eu.anthropic.claude-sonnet-4-6": "amazon-bedrock",
-    "global.anthropic.claude-sonnet-4-6": "amazon-bedrock", "jp.anthropic.claude-sonnet-4-6": "amazon-bedrock", "us.anthropic.claude-sonnet-4-6": "amazon-bedrock"}, "knowledge_cutoffs": ["2025-08-31"],
-    "openrouter_adopted": true, "release_dates": ["2026-02-17"], "snapshots": ["claude-sonnet-4-6"]}'
+  metadata: '{"alias_platforms": {"anthropic--claude-4.6-sonnet": "sap-ai-core", "anthropic-claude-4.6-sonnet": "digitalocean", "anthropic.claude-sonnet-4-6": "amazon-bedrock", "anthropic/claude-4-6-sonnet":
+    "digitalocean", "anthropic/claude-sonnet-4-6": "cloudflare-ai-gateway", "au.anthropic.claude-sonnet-4-6": "amazon-bedrock", "claude-4-6-sonnet": "digitalocean", "claude-sonnet-4-6": "cloudflare-ai-gateway",
+    "claude-sonnet-4-6@default": "google-vertex-anthropic", "claude-sonnet-4-6@eu": "requesty", "claude-sonnet-4.6": "github-copilot", "databricks-claude-sonnet-4-6": "databricks", "eu.anthropic.claude-sonnet-4-6":
+    "amazon-bedrock", "global.anthropic.claude-sonnet-4-6": "amazon-bedrock", "jp.anthropic.claude-sonnet-4-6": "amazon-bedrock", "us.anthropic.claude-sonnet-4-6": "amazon-bedrock"}, "knowledge_cutoffs":
+    ["2025-08-31"], "openrouter_adopted": true, "release_dates": ["2026-02-17"], "snapshots": ["claude-sonnet-4-6"]}'
   review_status: reviewed
 - id: anthropic/claude-sonnet-5
   display_name: Claude Sonnet 5
@@ -6840,7 +6845,7 @@
   - jp.anthropic.claude-sonnet-5
   - us.anthropic.claude-sonnet-5
   metadata: '{"alias_platforms": {"anthropic-claude-5-sonnet": "digitalocean", "anthropic.claude-sonnet-5": "amazon-bedrock", "anthropic/claude-5-sonnet": "digitalocean", "au.anthropic.claude-sonnet-5":
-    "amazon-bedrock", "claude-5-sonnet": "digitalocean", "claude-sonnet-5": "nano-gpt", "claude-sonnet-5@default": "google-vertex-anthropic", "claude-sonnet-5@eu": "requesty", "eu.anthropic.claude-sonnet-5":
+    "amazon-bedrock", "claude-5-sonnet": "digitalocean", "claude-sonnet-5": "cloudflare-ai-gateway", "claude-sonnet-5@default": "google-vertex-anthropic", "claude-sonnet-5@eu": "requesty", "eu.anthropic.claude-sonnet-5":
     "amazon-bedrock", "global.anthropic.claude-sonnet-5": "amazon-bedrock", "jp.anthropic.claude-sonnet-5": "amazon-bedrock", "us.anthropic.claude-sonnet-5": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-01-31"],
     "openrouter_adopted": true, "release_dates": ["2026-06-29"], "snapshots": ["claude-sonnet-5"]}'
   review_status: reviewed
@@ -6871,9 +6876,10 @@
   - eu.anthropic.claude-sonnet-5-5
   - global.anthropic.claude-sonnet-5-5
   - us.anthropic.claude-sonnet-5-5
-  metadata: '{"alias_platforms": {"anthropic-claude-sonnet-5.5": "digitalocean", "anthropic.claude-sonnet-5-5": "amazon-bedrock", "anthropic/claude-sonnet-5-5": "nano-gpt", "claude-sonnet-5-5": "nano-gpt",
-    "claude-sonnet-5-5@default": "google-vertex-anthropic", "claude-sonnet-5-5@eu": "requesty", "claude-sonnet-5.5": "github-copilot", "eu.anthropic.claude-sonnet-5-5": "amazon-bedrock", "global.anthropic.claude-sonnet-5-5":
-    "amazon-bedrock", "us.anthropic.claude-sonnet-5-5": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-06"], "openrouter_adopted": true, "release_dates": ["2026-09-28"], "snapshots": ["claude-sonnet-5-5"]}'
+  metadata: '{"alias_platforms": {"anthropic-claude-sonnet-5.5": "digitalocean", "anthropic.claude-sonnet-5-5": "amazon-bedrock", "anthropic/claude-sonnet-5-5": "cloudflare-ai-gateway", "claude-sonnet-5-5":
+    "cloudflare-ai-gateway", "claude-sonnet-5-5@default": "google-vertex-anthropic", "claude-sonnet-5-5@eu": "requesty", "claude-sonnet-5.5": "cortecs", "eu.anthropic.claude-sonnet-5-5": "amazon-bedrock",
+    "global.anthropic.claude-sonnet-5-5": "amazon-bedrock", "us.anthropic.claude-sonnet-5-5": "amazon-bedrock"}, "knowledge_cutoffs": ["2026-06"], "openrouter_adopted": true, "release_dates": ["2026-09-28"],
+    "snapshots": ["claude-sonnet-5-5"]}'
   review_status: reviewed
 - id: anthropic/claude-sonnet-latest
   display_name: Claude Sonnet Latest
@@ -7655,7 +7661,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: baidu/ernie-5-1
-  display_name: ERNIE 5.1 Thinking
+  display_name: ERNIE 5.1
   org_id: baidu
   family: ernie-5-1
   architecture: null
@@ -8250,7 +8256,7 @@
   aliases:
   - bytedance/seed-1-6
   - seed-1-6
-  metadata: '{"alias_platforms": {"bytedance/seed-1-6": "kilo", "seed-1-6": "kilo"}, "openrouter_adopted": true, "providers": ["kilo", "llmgateway", "openrouter", "vercel"], "underlying_key": "seed-1-6"}'
+  metadata: '{"alias_platforms": {"bytedance/seed-1-6": "vercel", "seed-1-6": "vercel"}, "openrouter_adopted": true, "providers": ["kilo", "llmgateway", "openrouter", "vercel"], "underlying_key": "seed-1-6"}'
   review_status: draft
   resolution_source: models_dev
 - id: bytedance-seed/seed-1.6-flash
@@ -8291,7 +8297,7 @@
   - bytedance/seed-2-0-code
   - seed-2-0-code
   - seed-2.0-code
-  metadata: '{"alias_platforms": {"bytedance/seed-2-0-code": "deepinfra", "seed-2-0-code": "deepinfra", "seed-2.0-code": "requesty"}, "openrouter_adopted": true, "providers": ["deepinfra", "kilo", "nano-gpt",
+  metadata: '{"alias_platforms": {"bytedance/seed-2-0-code": "nano-gpt", "seed-2-0-code": "nano-gpt", "seed-2.0-code": "requesty"}, "openrouter_adopted": true, "providers": ["deepinfra", "kilo", "nano-gpt",
     "openrouter", "requesty"], "underlying_key": "seed-2-0-code"}'
   review_status: draft
   resolution_source: models_dev
@@ -8334,8 +8340,8 @@
   - bytedance/seed-2-0-mini
   - seed-2-0-mini
   - seed-2.0-mini
-  metadata: '{"alias_platforms": {"bytedance/seed-2-0-mini": "deepinfra", "seed-2-0-mini": "deepinfra", "seed-2.0-mini": "requesty"}, "openrouter_adopted": true, "providers": ["deepinfra", "kilo", "llmgateway",
-    "openrouter", "requesty"], "underlying_key": "seed-2-0-mini"}'
+  metadata: '{"alias_platforms": {"bytedance/seed-2-0-mini": "kilo", "seed-2-0-mini": "kilo", "seed-2.0-mini": "requesty"}, "openrouter_adopted": true, "providers": ["deepinfra", "kilo", "llmgateway", "openrouter",
+    "requesty"], "underlying_key": "seed-2-0-mini"}'
   review_status: draft
   resolution_source: models_dev
 - id: bytedance/dola-seed-2-0-code
@@ -8625,7 +8631,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: bytedance/doubao-seed-1-8
-  display_name: doubao-seed-1-8-251215
+  display_name: Doubao-Seed-1.8
   org_id: bytedance
   family: doubao-seed-1-8
   architecture: null
@@ -8899,7 +8905,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: bytedance/seedance-2-0
-  display_name: Seedance 2.0
+  display_name: Seedance 2.0 Fast
   org_id: bytedance
   family: seedance-2-0
   architecture: null
@@ -8986,7 +8992,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: bytedance/seedance-v1-0-pro
-  display_name: Seedance v1.0 Pro
+  display_name: Seedance v1.0 Pro Fast
   org_id: bytedance
   family: seedance-v1-0-pro
   architecture: null
@@ -9594,7 +9600,7 @@
   - cohere-command-a
   - cohere/cohere-command-a
   - command-a
-  metadata: '{"alias_platforms": {"cohere-command-a": "azure", "command-a": "kilo"}, "openrouter_adopted": true, "providers": ["kilo", "openrouter", "sap-ai-core", "vercel"], "underlying_key": "command-a"}'
+  metadata: '{"alias_platforms": {"cohere-command-a": "azure", "command-a": "vercel"}, "openrouter_adopted": true, "providers": ["kilo", "openrouter", "sap-ai-core", "vercel"], "underlying_key": "command-a"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: cohere/command-a-03-2025
@@ -10200,7 +10206,7 @@
   review_status: reviewed
   resolution_source: models_dev
 - id: deepseek-ai/DeepSeek-OCR
-  display_name: deepseek-ai/DeepSeek-OCR
+  display_name: DeepSeek OCR
   org_id: deepseek
   family: null
   architecture: null
@@ -10217,7 +10223,7 @@
   - DeepSeek-OCR
   - deepseek-ocr
   - deepseek/deepseek-ocr
-  metadata: '{"alias_platforms": {"deepseek-ocr": "siliconflow-cn", "deepseek/deepseek-ocr": "siliconflow-cn"}, "hf_deferred": true, "providers": ["clarifai", "siliconflow-cn"], "underlying_key": "deepseek-ocr"}'
+  metadata: '{"alias_platforms": {"deepseek-ocr": "clarifai", "deepseek/deepseek-ocr": "clarifai"}, "hf_deferred": true, "providers": ["clarifai", "siliconflow-cn"], "underlying_key": "deepseek-ocr"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: deepseek-ai/DeepSeek-OCR-2
@@ -10374,7 +10380,7 @@
   - DeepSeek V3 0324
   - deepseek-v3-0324
   - deepseek/deepseek-v3-0324
-  metadata: '{"alias_platforms": {"deepseek-v3-0324": "deepinfra", "deepseek/deepseek-v3-0324": "deepinfra"}, "hf_deferred": true, "providers": ["alibaba-cn", "deepinfra", "huggingface", "jiekou", "meganova",
+  metadata: '{"alias_platforms": {"deepseek-v3-0324": "nano-gpt", "deepseek/deepseek-v3-0324": "nano-gpt"}, "hf_deferred": true, "providers": ["alibaba-cn", "deepinfra", "huggingface", "jiekou", "meganova",
     "nano-gpt", "qiniu-ai", "submodel"], "underlying_key": "deepseek-v3-0324"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -10479,9 +10485,8 @@
   - deepseek-v4-flash:0731
   - deepseek/deepseek-4-flash
   - deepseek/deepseek-v4-flash
-  metadata: '{"alias_platforms": {"DeepSeek-V4-Flash": "moark", "TEE/deepseek-v4-flash": "nano-gpt", "deepseek-4-flash": "digitalocean", "deepseek-v4-flash": "deepinfra", "deepseek-v4-flash-free": "opencode",
-    "deepseek-v4-flash:0731": "ollama-cloud", "deepseek/deepseek-4-flash": "digitalocean", "deepseek/deepseek-v4-flash": "deepinfra"}, "hf_deferred": true, "providers": ["digitalocean"], "underlying_key":
-    "deepseek-4-flash"}'
+  metadata: '{"alias_platforms": {"DeepSeek-V4-Flash": "moark", "TEE/deepseek-v4-flash": "nano-gpt", "deepseek-4-flash": "digitalocean", "deepseek-v4-flash": "moark", "deepseek-v4-flash-free": "opencode",
+    "deepseek-v4-flash:0731": "ollama-cloud", "deepseek/deepseek-4-flash": "digitalocean", "deepseek/deepseek-v4-flash": "moark"}, "hf_deferred": true, "providers": ["digitalocean"], "underlying_key": "deepseek-4-flash"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: deepseek-ai/DeepSeek-V4-Flash-0731
@@ -10504,10 +10509,10 @@
   - deepseek-v4-flash-0731@eu
   - deepseek/deepseek-v4-flash-0731
   - deepseek/deepseek-v4-flash-0731:free
-  metadata: '{"alias_platforms": {"deepseek-v4-flash-0731": "deepinfra", "deepseek-v4-flash-0731-fast": "venice", "deepseek-v4-flash-0731@eu": "requesty", "deepseek/deepseek-v4-flash-0731": "deepinfra",
-    "deepseek/deepseek-v4-flash-0731:free": "openrouter"}, "hf_deferred": true, "providers": ["aihubmix", "alibaba", "ambient", "baseten", "chutes", "cloudflare-workers-ai", "cortecs", "crof", "deepinfra",
-    "digitalocean", "huggingface", "inceptron", "kilo", "merge-gateway", "moark", "nano-gpt", "nebius", "novita-ai", "nvidia", "openrouter", "orcarouter", "perplexity-agent", "requesty", "scaleway", "siliconflow",
-    "togetherai", "venice", "vercel", "vultr", "wandb"], "underlying_key": "deepseek-v4-flash-0731"}'
+  metadata: '{"alias_platforms": {"deepseek-v4-flash-0731": "moark", "deepseek-v4-flash-0731-fast": "venice", "deepseek-v4-flash-0731@eu": "requesty", "deepseek/deepseek-v4-flash-0731": "moark", "deepseek/deepseek-v4-flash-0731:free":
+    "openrouter"}, "hf_deferred": true, "providers": ["aihubmix", "alibaba", "ambient", "baseten", "chutes", "cloudflare-workers-ai", "cortecs", "crof", "deepinfra", "digitalocean", "huggingface", "inceptron",
+    "kilo", "merge-gateway", "moark", "nano-gpt", "nebius", "novita-ai", "nvidia", "openrouter", "orcarouter", "perplexity-agent", "requesty", "scaleway", "siliconflow", "togetherai", "venice", "vercel",
+    "vultr", "wandb"], "underlying_key": "deepseek-v4-flash-0731"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: deepseek-ai/DeepSeek-V4-Flash-Vision-Exp
@@ -10527,7 +10532,7 @@
   - DeepSeek V4 Flash Vision Exp
   - deepseek-v4-flash-vision-exp
   - deepseek/deepseek-v4-flash-vision-exp
-  metadata: '{"alias_platforms": {"deepseek-v4-flash-vision-exp": "deepinfra", "deepseek/deepseek-v4-flash-vision-exp": "deepinfra"}, "hf_deferred": true, "providers": ["deepseek"], "underlying_key": "deepseek-v4-flash-vision-exp"}'
+  metadata: '{"alias_platforms": {"deepseek-v4-flash-vision-exp": "nano-gpt", "deepseek/deepseek-v4-flash-vision-exp": "nano-gpt"}, "hf_deferred": true, "providers": ["deepseek"], "underlying_key": "deepseek-v4-flash-vision-exp"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: deepseek-ai/DeepSeek-V4-Pro
@@ -10562,7 +10567,7 @@
   - deepseek-v4-pro-0813
   - deepseek-v4-pro-0813@eu
   - deepseek/deepseek-v4-pro-0813
-  metadata: '{"alias_platforms": {"deepseek-v4-pro-0813": "deepinfra", "deepseek-v4-pro-0813@eu": "requesty", "deepseek/deepseek-v4-pro-0813": "deepinfra"}, "hf_deferred": true, "providers": ["aihubmix",
+  metadata: '{"alias_platforms": {"deepseek-v4-pro-0813": "nano-gpt", "deepseek-v4-pro-0813@eu": "requesty", "deepseek/deepseek-v4-pro-0813": "nano-gpt"}, "hf_deferred": true, "providers": ["aihubmix",
     "baseten", "cloudflare-workers-ai", "cortecs", "crof", "deepinfra", "digitalocean", "huggingface", "kilo", "merge-gateway", "nano-gpt", "nebius", "novita-ai", "nvidia", "openrouter", "orcarouter", "requesty",
     "siliconflow", "togetherai", "venice", "vercel", "vivgrid", "wandb"], "underlying_key": "deepseek-v4-pro-0813"}'
   review_status: reviewed
@@ -10592,9 +10597,34 @@
   - deepseek/deepseek-flash
   - deepseek/deepseek-v4-1-flash
   - deepseek/deepseek-v4.1-flash
-  metadata: '{"alias_platforms": {"TEE/deepseek-v4.1-flash": "nano-gpt", "deepseek-flash": "deepseek", "deepseek-v4-1-flash": "deepinfra", "deepseek-v4.1-flash": "neuralwatt", "deepseek-v4.1-flash-free":
-    "opencode", "deepseek-v4.1-flash:1017": "ollama-cloud", "deepseek-v4.1-flash@eu": "requesty", "deepseek/deepseek-flash": "deepseek", "deepseek/deepseek-v4-1-flash": "deepinfra", "deepseek/deepseek-v4.1-flash":
-    "openrouter"}, "hf_deferred": true, "providers": ["deepseek"], "underlying_key": "deepseek-flash"}'
+  metadata: '{"alias_platforms": {"TEE/deepseek-v4.1-flash": "nano-gpt", "deepseek-flash": "302ai", "deepseek-v4-1-flash": "nano-gpt", "deepseek-v4.1-flash": "alibaba-cn", "deepseek-v4.1-flash-free": "opencode",
+    "deepseek-v4.1-flash:1017": "ollama-cloud", "deepseek-v4.1-flash@eu": "requesty", "deepseek/deepseek-flash": "302ai", "deepseek/deepseek-v4-1-flash": "nano-gpt", "deepseek/deepseek-v4.1-flash": "openrouter"},
+    "hf_deferred": true, "providers": ["deepseek"], "underlying_key": "deepseek-flash"}'
+  review_status: reviewed
+  resolution_source: models_dev
+- id: deepseek-ai/DeepSeek-V4.1-Flash-1017
+  display_name: DeepSeek V4.1 Flash 1017
+  org_id: deepseek
+  family: null
+  architecture: null
+  params_billions: null
+  parents: []
+  open_weights: true
+  release_date: '2026-10-17'
+  input_modalities: null
+  output_modalities: null
+  tags:
+  - open-weight
+  aliases:
+  - DeepSeek V4.1 Flash 1017
+  - deepseek-v4-1-flash-1017
+  - deepseek-v4.1-flash-1017
+  - deepseek-v4.1-flash-1017@eu
+  - deepseek/deepseek-v4-1-flash-1017
+  - deepseek/deepseek-v4.1-flash-1017
+  metadata: '{"alias_platforms": {"deepseek-v4-1-flash-1017": "nano-gpt", "deepseek-v4.1-flash-1017": "requesty", "deepseek-v4.1-flash-1017@eu": "requesty", "deepseek/deepseek-v4-1-flash-1017": "nano-gpt",
+    "deepseek/deepseek-v4.1-flash-1017": "openrouter"}, "hf_deferred": true, "providers": ["baseten", "cortecs", "deepinfra", "huggingface", "kilo", "llmgateway", "merge-gateway", "nano-gpt", "nearai",
+    "novita-ai", "openrouter", "requesty", "venice", "vercel"], "underlying_key": "deepseek-v4-1-flash-1017"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: deepseek-ai/deepseek-vl2
@@ -11074,28 +11104,6 @@
   metadata: '{"alias_platforms": {"deepseek-v4-pro-lightning": "crof"}, "providers": ["crof"], "underlying_key": "deepseek-v4-pro-lightning", "upstream_status": "removed"}'
   review_status: draft
   resolution_source: models_dev
-- id: deepseek/deepseek-v4.1-flash-1017
-  display_name: DeepSeek V4.1 Flash 1017
-  org_id: deepseek
-  family: deepseek-v4-1-flash-1017
-  architecture: null
-  params_billions: null
-  parents: []
-  open_weights: true
-  release_date: '2026-10-17'
-  input_modalities: null
-  output_modalities: null
-  tags:
-  - open-weight
-  aliases:
-  - deepseek-v4-1-flash-1017
-  - deepseek-v4.1-flash-1017
-  - deepseek-v4.1-flash-1017@eu
-  - deepseek/deepseek-v4-1-flash-1017
-  metadata: '{"alias_platforms": {"deepseek-v4-1-flash-1017": "deepinfra", "deepseek-v4.1-flash-1017": "requesty", "deepseek-v4.1-flash-1017@eu": "requesty", "deepseek/deepseek-v4-1-flash-1017": "deepinfra"},
-    "openrouter_adopted": true, "providers": ["baseten", "cortecs", "deepinfra", "kilo", "llmgateway", "merge-gateway", "nano-gpt", "openrouter", "requesty", "vercel"], "underlying_key": "deepseek-v4-1-flash-1017"}'
-  review_status: draft
-  resolution_source: models_dev
 - id: deepseek/deepseek-v4p1-flash
   display_name: deepseek-v4p1-flash
   org_id: deepseek
@@ -11112,6 +11120,24 @@
   aliases:
   - deepseek-v4p1-flash
   metadata: '{"alias_platforms": {"deepseek-v4p1-flash": "fireworks-ai"}, "providers": ["fireworks-ai"], "underlying_key": "deepseek-v4p1-flash"}'
+  review_status: draft
+  resolution_source: models_dev
+- id: deepseek/deepseek-v4p1-flash-1017
+  display_name: deepseek-v4p1-flash-1017
+  org_id: deepseek
+  family: deepseek-v4p1-flash-1017
+  architecture: null
+  params_billions: null
+  parents: []
+  open_weights: true
+  release_date: '2026-10-17'
+  input_modalities: null
+  output_modalities: null
+  tags:
+  - open-weight
+  aliases:
+  - deepseek-v4p1-flash-1017
+  metadata: '{"alias_platforms": {"deepseek-v4p1-flash-1017": "fireworks-ai"}, "providers": ["fireworks-ai"], "underlying_key": "deepseek-v4p1-flash-1017"}'
   review_status: draft
   resolution_source: models_dev
 - id: deepseek/umans-deepseek-v4-1-flash
@@ -12051,7 +12077,7 @@
   tags: []
   aliases:
   - ember-1
-  metadata: '{"alias_platforms": {"ember-1": "nano-gpt"}, "openrouter_adopted": true, "providers": ["cloudflare-ai-gateway", "fireworks-ai", "kilo", "nano-gpt", "openrouter", "vercel"], "underlying_key":
+  metadata: '{"alias_platforms": {"ember-1": "cloudflare-ai-gateway"}, "openrouter_adopted": true, "providers": ["cloudflare-ai-gateway", "fireworks-ai", "kilo", "nano-gpt", "openrouter", "vercel"], "underlying_key":
     "ember-1"}'
   review_status: draft
   resolution_source: models_dev
@@ -12525,7 +12551,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: glyph-cluster
-  display_name: 'Stealth: Glyph Cluster (free)'
+  display_name: Glyph Cluster
   org_id: null
   family: glyph-cluster
   architecture: null
@@ -12539,6 +12565,7 @@
   - org-unknown
   aliases:
   - Glyph Cluster
+  - 'Stealth: Glyph Cluster (free)'
   metadata: '{"providers": ["kilo", "vercel"], "underlying_key": "glyph-cluster"}'
   review_status: draft
   resolution_source: models_dev
@@ -12825,7 +12852,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: google/gemini-2-5-flash-preview-04-17
-  display_name: Gemini 2.5 Flash 0520
+  display_name: gemini-2-5-flash-preview-04-17
   org_id: google
   family: gemini-2-5-flash-preview-04-17
   architecture: null
@@ -12847,7 +12874,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: google/gemini-2-5-flash-preview-09-2025
-  display_name: Gemini 2.5 Flash Preview (09/2025)
+  display_name: gemini-2-5-flash-preview-09-2025
   org_id: google
   family: gemini-2-5-flash-preview-09-2025
   architecture: null
@@ -12921,7 +12948,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: google/gemini-2.0-flash
-  display_name: Gemini-2.0-Flash
+  display_name: Gemini 2.0 Flash
   org_id: google
   family: gemini-2-0-flash
   architecture: null
@@ -12938,11 +12965,11 @@
   - gemini-2-0-flash
   - gemini-2.0-flash
   - google/gemini-2-0-flash
-  metadata: '{"alias_platforms": {"gemini-2-0-flash": "poe", "gemini-2.0-flash": "qiniu-ai", "google/gemini-2-0-flash": "google-vertex"}, "providers": ["poe", "qiniu-ai"], "underlying_key": "gemini-2-0-flash"}'
+  metadata: '{"alias_platforms": {"gemini-2-0-flash": "qiniu-ai", "gemini-2.0-flash": "qiniu-ai", "google/gemini-2-0-flash": "google-vertex"}, "providers": ["poe", "qiniu-ai"], "underlying_key": "gemini-2-0-flash"}'
   review_status: draft
   resolution_source: models_dev
 - id: google/gemini-2.0-flash-lite
-  display_name: Gemini-2.0-Flash-Lite
+  display_name: Gemini 2.0 Flash Lite
   org_id: google
   family: gemini-2-0-flash-lite
   architecture: null
@@ -12960,7 +12987,7 @@
   - gemini-2-0-flash-lite
   - gemini-2.0-flash-lite
   - google/gemini-2-0-flash-lite
-  metadata: '{"alias_platforms": {"gemini-2-0-flash-lite": "poe", "gemini-2.0-flash-lite": "302ai", "google/gemini-2-0-flash-lite": "302ai"}, "providers": ["302ai", "poe", "qiniu-ai"], "underlying_key":
+  metadata: '{"alias_platforms": {"gemini-2-0-flash-lite": "qiniu-ai", "gemini-2.0-flash-lite": "qiniu-ai", "google/gemini-2-0-flash-lite": "302ai"}, "providers": ["302ai", "poe", "qiniu-ai"], "underlying_key":
     "gemini-2-0-flash-lite"}'
   review_status: draft
   resolution_source: models_dev
@@ -12983,8 +13010,8 @@
   - gemini-2-5-computer-use-preview-10-2025
   - gemini-2.5-computer-use-preview-10-2025
   - google/gemini-2-5-computer-use-preview-10-2025
-  metadata: '{"alias_platforms": {"gemini-2-5-computer-use-preview-10-2025": "google", "gemini-2.5-computer-use-preview-10-2025": "google", "google/gemini-2-5-computer-use-preview-10-2025": "google"}, "knowledge_cutoffs":
-    ["2025-01"], "release_dates": ["2025-10-07"], "snapshots": ["gemini-2.5-computer-use-preview-10-2025"]}'
+  metadata: '{"alias_platforms": {"gemini-2-5-computer-use-preview-10-2025": "merge-gateway", "gemini-2.5-computer-use-preview-10-2025": "google", "google/gemini-2-5-computer-use-preview-10-2025": "merge-gateway"},
+    "knowledge_cutoffs": ["2025-01"], "release_dates": ["2025-10-07"], "snapshots": ["gemini-2.5-computer-use-preview-10-2025"]}'
   review_status: reviewed
 - id: google/gemini-2.5-flash
   display_name: Gemini 2.5 Flash
@@ -13011,8 +13038,8 @@
   - gemini-2.5-flash
   - gemini-2.5-flash@eu
   - google/gemini-2-5-flash
-  metadata: '{"alias_platforms": {"databricks-gemini-2-5-flash": "databricks", "gemini-2-5-flash": "perplexity-agent", "gemini-2.5-flash": "nano-gpt", "gemini-2.5-flash@eu": "requesty", "google/gemini-2-5-flash":
-    "perplexity-agent"}, "knowledge_cutoffs": ["2025-01"], "openrouter_adopted": true, "release_dates": ["2025-06-17"], "snapshots": ["gemini-2.5-flash"]}'
+  metadata: '{"alias_platforms": {"databricks-gemini-2-5-flash": "databricks", "gemini-2-5-flash": "nano-gpt", "gemini-2.5-flash": "nano-gpt", "gemini-2.5-flash@eu": "requesty", "google/gemini-2-5-flash":
+    "nano-gpt"}, "knowledge_cutoffs": ["2025-01"], "openrouter_adopted": true, "release_dates": ["2025-06-17"], "snapshots": ["gemini-2.5-flash"]}'
   review_status: reviewed
 - id: google/gemini-2.5-flash-lite
   display_name: Gemini 2.5 Flash-Lite
@@ -13038,7 +13065,7 @@
   - gemini-2.5-flash-lite
   - gemini-2.5-flash-lite@eu
   - google/gemini-2-5-flash-lite
-  metadata: '{"alias_platforms": {"gemini-2-5-flash-lite": "poe", "gemini-2.5-flash-lite": "nano-gpt", "gemini-2.5-flash-lite@eu": "requesty", "google/gemini-2-5-flash-lite": "poe"}, "knowledge_cutoffs":
+  metadata: '{"alias_platforms": {"gemini-2-5-flash-lite": "nano-gpt", "gemini-2.5-flash-lite": "nano-gpt", "gemini-2.5-flash-lite@eu": "requesty", "google/gemini-2-5-flash-lite": "nano-gpt"}, "knowledge_cutoffs":
     ["2025-01"], "openrouter_adopted": true, "release_dates": ["2025-06-17"], "snapshots": ["gemini-2.5-flash-lite"]}'
   review_status: reviewed
 - id: google/gemini-2.5-flash-lite-preview-09-2025
@@ -13107,8 +13134,8 @@
   - gemini-2.5-pro
   - gemini-2.5-pro@eu
   - google/gemini-2-5-pro
-  metadata: '{"alias_platforms": {"databricks-gemini-2-5-pro": "databricks", "gemini-2-5-pro": "perplexity-agent", "gemini-2.5-pro": "nano-gpt", "gemini-2.5-pro@eu": "requesty", "google/gemini-2-5-pro":
-    "perplexity-agent"}, "knowledge_cutoffs": ["2025-01"], "openrouter_adopted": true, "release_dates": ["2025-06-17"], "snapshots": ["gemini-2.5-pro"]}'
+  metadata: '{"alias_platforms": {"databricks-gemini-2-5-pro": "databricks", "gemini-2-5-pro": "nano-gpt", "gemini-2.5-pro": "nano-gpt", "gemini-2.5-pro@eu": "requesty", "google/gemini-2-5-pro": "nano-gpt"},
+    "knowledge_cutoffs": ["2025-01"], "openrouter_adopted": true, "release_dates": ["2025-06-17"], "snapshots": ["gemini-2.5-pro"]}'
   review_status: reviewed
 - id: google/gemini-2.5-pro-preview
   display_name: gemini-2.5-pro-preview
@@ -13358,7 +13385,7 @@
   aliases:
   - databricks-gemini-3-flash
   - gemini-3-flash
-  metadata: '{"alias_platforms": {"databricks-gemini-3-flash": "databricks", "gemini-3-flash": "poe"}, "providers": ["databricks", "opencode", "poe", "vercel"], "underlying_key": "gemini-3-flash"}'
+  metadata: '{"alias_platforms": {"databricks-gemini-3-flash": "databricks", "gemini-3-flash": "vercel"}, "providers": ["databricks", "opencode", "poe", "vercel"], "underlying_key": "gemini-3-flash"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: google/gemini-3-flash-preview
@@ -13384,10 +13411,10 @@
   tags: []
   aliases:
   - gemini-3-flash-preview
-  metadata: '{"alias_platforms": {"gemini-3-flash-preview": "perplexity-agent"}, "openrouter_adopted": true}'
+  metadata: '{"alias_platforms": {"gemini-3-flash-preview": "nano-gpt"}, "openrouter_adopted": true}'
   review_status: reviewed
 - id: google/gemini-3-pro
-  display_name: Gemini-3-Pro
+  display_name: gemini-3-pro
   org_id: google
   family: gemini-3-pro
   architecture: null
@@ -13399,9 +13426,10 @@
   output_modalities: null
   tags: []
   aliases:
+  - Gemini-3-Pro
   - databricks-gemini-3-pro
   - gemini-3-pro
-  metadata: '{"alias_platforms": {"databricks-gemini-3-pro": "databricks", "gemini-3-pro": "poe"}, "providers": ["databricks", "opencode", "poe"], "underlying_key": "gemini-3-pro"}'
+  metadata: '{"alias_platforms": {"databricks-gemini-3-pro": "databricks", "gemini-3-pro": "databricks"}, "providers": ["databricks", "opencode", "poe"], "underlying_key": "gemini-3-pro"}'
   review_status: draft
   resolution_source: models_dev
 - id: google/gemini-3-pro-image
@@ -13440,7 +13468,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: google/gemini-3-pro-preview
-  display_name: gemini-3-pro-preview
+  display_name: Gemini 3 Pro Preview
   org_id: google
   family: gemini-3-pro-preview
   architecture: null
@@ -13454,7 +13482,7 @@
   aliases:
   - Gemini 3 Pro Preview
   - gemini-3-pro-preview
-  metadata: '{"alias_platforms": {"gemini-3-pro-preview": "302ai"}, "providers": ["302ai", "helicone", "jiekou", "merge-gateway", "qihang-ai"], "underlying_key": "gemini-3-pro-preview"}'
+  metadata: '{"alias_platforms": {"gemini-3-pro-preview": "qihang-ai"}, "providers": ["302ai", "helicone", "jiekou", "merge-gateway", "qihang-ai"], "underlying_key": "gemini-3-pro-preview"}'
   review_status: draft
   resolution_source: models_dev
 - id: google/gemini-3.1-flash-image
@@ -13489,8 +13517,8 @@
   - gemini-3.1-flash-lite
   - gemini-3.1-flash-lite@eu
   - google/gemini-3-1-flash-lite
-  metadata: '{"alias_platforms": {"databricks-gemini-3-1-flash-lite": "databricks", "gemini-3-1-flash-lite": "poe", "gemini-3.1-flash-lite": "abacus", "gemini-3.1-flash-lite@eu": "requesty", "google/gemini-3-1-flash-lite":
-    "poe"}, "knowledge_cutoffs": ["2025-01"], "openrouter_adopted": true, "release_dates": ["2026-05-07"], "snapshots": ["gemini-3.1-flash-lite"]}'
+  metadata: '{"alias_platforms": {"databricks-gemini-3-1-flash-lite": "databricks", "gemini-3-1-flash-lite": "nano-gpt", "gemini-3.1-flash-lite": "302ai", "gemini-3.1-flash-lite@eu": "requesty", "google/gemini-3-1-flash-lite":
+    "nano-gpt"}, "knowledge_cutoffs": ["2025-01"], "openrouter_adopted": true, "release_dates": ["2026-05-07"], "snapshots": ["gemini-3.1-flash-lite"]}'
   review_status: reviewed
 - id: google/gemini-3.1-flash-live
   display_name: Gemini 3.1 Flash Live
@@ -13554,8 +13582,8 @@
   - gemini-3-1-pro
   - gemini-3.1-pro
   - google/gemini-3-1-pro
-  metadata: '{"alias_platforms": {"databricks-gemini-3-1-pro": "databricks", "gemini-3-1-pro": "poe", "gemini-3.1-pro": "snowflake-cortex"}, "knowledge_cutoffs": ["2025-01"], "release_dates": ["2026-02-19"],
-    "snapshots": ["gemini-3.1-pro-preview"]}'
+  metadata: '{"alias_platforms": {"databricks-gemini-3-1-pro": "databricks", "gemini-3-1-pro": "snowflake-cortex", "gemini-3.1-pro": "snowflake-cortex"}, "knowledge_cutoffs": ["2025-01"], "release_dates":
+    ["2026-02-19"], "snapshots": ["gemini-3.1-pro-preview"]}'
   review_status: reviewed
 - id: google/gemini-3.1-pro-preview-custom-tools
   display_name: Gemini 3.1 Pro Preview Custom Tools
@@ -13603,8 +13631,8 @@
   - gemini-3.5-flash
   - gemini-3.5-flash@eu
   - google/gemini-3-5-flash
-  metadata: '{"alias_platforms": {"databricks-gemini-3-5-flash": "databricks", "gemini-3-5-flash": "poe", "gemini-3.5-flash": "abacus", "gemini-3.5-flash@eu": "requesty", "google/gemini-3-5-flash": "poe"},
-    "knowledge_cutoffs": ["2025-01"], "openrouter_adopted": true, "release_dates": ["2026-05-19"], "snapshots": ["gemini-3.5-flash"]}'
+  metadata: '{"alias_platforms": {"databricks-gemini-3-5-flash": "databricks", "gemini-3-5-flash": "nano-gpt", "gemini-3.5-flash": "302ai", "gemini-3.5-flash@eu": "requesty", "google/gemini-3-5-flash":
+    "nano-gpt"}, "knowledge_cutoffs": ["2025-01"], "openrouter_adopted": true, "release_dates": ["2026-05-19"], "snapshots": ["gemini-3.5-flash"]}'
   review_status: reviewed
 - id: google/gemini-3.5-flash-lite
   display_name: Gemini 3.5 Flash Lite
@@ -13629,7 +13657,7 @@
   - gemini-3.5-flash-lite
   - gemini-3.5-flash-lite@eu
   - google/gemini-3-5-flash-lite
-  metadata: '{"alias_platforms": {"gemini-3-5-flash-lite": "poe", "gemini-3.5-flash-lite": "abacus", "gemini-3.5-flash-lite@eu": "requesty", "google/gemini-3-5-flash-lite": "poe"}, "knowledge_cutoffs":
+  metadata: '{"alias_platforms": {"gemini-3-5-flash-lite": "nano-gpt", "gemini-3.5-flash-lite": "302ai", "gemini-3.5-flash-lite@eu": "requesty", "google/gemini-3-5-flash-lite": "nano-gpt"}, "knowledge_cutoffs":
     ["2026-03"], "openrouter_adopted": true, "release_dates": ["2026-07-21"], "snapshots": ["gemini-3.5-flash-lite"]}'
   review_status: reviewed
 - id: google/gemini-3.5-live-translate
@@ -13672,7 +13700,7 @@
   - gemini-3-6-flash
   - gemini-3.6-flash
   - google/gemini-3-6-flash
-  metadata: '{"alias_platforms": {"gemini-3-6-flash": "poe", "gemini-3.6-flash": "abacus", "google/gemini-3-6-flash": "poe"}, "knowledge_cutoffs": ["2026-03"], "openrouter_adopted": true, "release_dates":
+  metadata: '{"alias_platforms": {"gemini-3-6-flash": "nano-gpt", "gemini-3.6-flash": "302ai", "google/gemini-3-6-flash": "nano-gpt"}, "knowledge_cutoffs": ["2026-03"], "openrouter_adopted": true, "release_dates":
     ["2026-07-21"], "snapshots": ["gemini-3.6-flash"]}'
   review_status: reviewed
 - id: google/gemini-3.7-flash
@@ -13698,8 +13726,8 @@
   - gemini-3.7-flash
   - gemini-3.7-flash@eu
   - google/gemini-3-7-flash
-  metadata: '{"alias_platforms": {"gemini-3-7-flash": "poe", "gemini-3.7-flash": "abacus", "gemini-3.7-flash@eu": "requesty", "google/gemini-3-7-flash": "poe"}, "knowledge_cutoffs": ["2026-03"], "openrouter_adopted":
-    true, "release_dates": ["2026-08-13"], "snapshots": ["gemini-3.7-flash"]}'
+  metadata: '{"alias_platforms": {"gemini-3-7-flash": "nano-gpt", "gemini-3.7-flash": "302ai", "gemini-3.7-flash@eu": "requesty", "google/gemini-3-7-flash": "nano-gpt"}, "knowledge_cutoffs": ["2026-03"],
+    "openrouter_adopted": true, "release_dates": ["2026-08-13"], "snapshots": ["gemini-3.7-flash"]}'
   review_status: reviewed
 - id: google/gemini-3.8-flash
   display_name: Gemini 3.8 Flash
@@ -13724,7 +13752,7 @@
   - gemini-3.8-flash
   - gemini-3.8-flash@eu
   - google/gemini-3-8-flash
-  metadata: '{"alias_platforms": {"gemini-3-8-flash": "poe", "gemini-3.8-flash": "302ai", "gemini-3.8-flash@eu": "requesty", "google/gemini-3-8-flash": "poe"}, "openrouter_adopted": true, "release_dates":
+  metadata: '{"alias_platforms": {"gemini-3-8-flash": "nano-gpt", "gemini-3.8-flash": "302ai", "gemini-3.8-flash@eu": "requesty", "google/gemini-3-8-flash": "nano-gpt"}, "openrouter_adopted": true, "release_dates":
     ["2026-09-02"], "snapshots": ["gemini-3.8-flash"]}'
   review_status: reviewed
 - id: google/gemini-4-argon
@@ -13748,8 +13776,8 @@
   aliases:
   - gemini-4-argon
   - gemini-4-argon@eu
-  metadata: '{"alias_platforms": {"gemini-4-argon": "nano-gpt", "gemini-4-argon@eu": "requesty"}, "knowledge_cutoffs": ["2026-03"], "openrouter_adopted": true, "release_dates": ["2026-10-13"], "snapshots":
-    ["gemini-4-argon"]}'
+  metadata: '{"alias_platforms": {"gemini-4-argon": "cloudflare-ai-gateway", "gemini-4-argon@eu": "requesty"}, "knowledge_cutoffs": ["2026-03"], "openrouter_adopted": true, "release_dates": ["2026-10-13"],
+    "snapshots": ["gemini-4-argon"]}'
   review_status: reviewed
 - id: google/gemini-4-argon-contributor
   display_name: Gemini 4 Argon Contributor
@@ -13818,7 +13846,7 @@
   tags: []
   aliases:
   - gemini-embedding-001
-  metadata: '{"alias_platforms": {"gemini-embedding-001": "google"}, "knowledge_cutoffs": ["2025-05"], "release_dates": ["2025-05-20"], "snapshots": ["gemini-embedding-001"]}'
+  metadata: '{"alias_platforms": {"gemini-embedding-001": "vercel"}, "knowledge_cutoffs": ["2025-05"], "release_dates": ["2025-05-20"], "snapshots": ["gemini-embedding-001"]}'
   review_status: reviewed
 - id: google/gemini-embedding-2
   display_name: Gemini Embedding 2
@@ -13840,7 +13868,7 @@
   tags: []
   aliases:
   - gemini-embedding-2
-  metadata: '{"alias_platforms": {"gemini-embedding-2": "google"}, "knowledge_cutoffs": ["2025-11"], "release_dates": ["2026-04-22"], "snapshots": ["gemini-embedding-2"]}'
+  metadata: '{"alias_platforms": {"gemini-embedding-2": "vercel"}, "knowledge_cutoffs": ["2025-11"], "release_dates": ["2026-04-22"], "snapshots": ["gemini-embedding-2"]}'
   review_status: reviewed
 - id: google/gemini-exp-1206
   display_name: Gemini 2.0 Pro 1206
@@ -13986,7 +14014,7 @@
   - gemini-nano-banana-2-1
   - gemini-nano-banana-2.1
   - google/gemini-nano-banana-2-1
-  metadata: '{"alias_platforms": {"gemini-nano-banana-2-1": "kilo", "gemini-nano-banana-2.1": "google-vertex", "google/gemini-nano-banana-2-1": "kilo"}, "openrouter_adopted": true, "providers": ["google-vertex",
+  metadata: '{"alias_platforms": {"gemini-nano-banana-2-1": "vercel", "gemini-nano-banana-2.1": "google-vertex", "google/gemini-nano-banana-2-1": "vercel"}, "openrouter_adopted": true, "providers": ["google-vertex",
     "kilo", "openrouter", "vercel"], "underlying_key": "gemini-nano-banana-2-1"}'
   review_status: draft
   resolution_source: models_dev
@@ -14047,7 +14075,7 @@
   tags: []
   aliases:
   - gemini-omni-flash-preview
-  metadata: '{"alias_platforms": {"gemini-omni-flash-preview": "google"}}'
+  metadata: '{"alias_platforms": {"gemini-omni-flash-preview": "vercel"}}'
   review_status: reviewed
 - id: google/gemini-pro-latest
   display_name: Gemini Pro Latest
@@ -14433,7 +14461,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: google/gemma-4-26b-a4b-meromero
-  display_name: Gemma 4 26B A4B MeroMero Thinking
+  display_name: Gemma 4 26B A4B MeroMero
   org_id: google
   family: gemma-4-26b-a4b-meromero
   architecture: null
@@ -14487,6 +14515,7 @@
   - TEE/gemma4-31b
   - TEE/gemma4-31b:thinking
   - gemma 4 31B turbo TEE
+  - gemma-4-31B
   - gemma-4-31b
   - gemma4-31b
   - gemma4:31b
@@ -15775,7 +15804,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: holo3-35b-a3b
-  display_name: Holo3-35B-A3B Thinking
+  display_name: Holo3-35B-A3B
   org_id: null
   family: holo3-35b-a3b
   architecture: null
@@ -15936,7 +15965,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: ibm-granite/granite-4.0-h-micro
-  display_name: Granite 4.0 H Micro
+  display_name: 'IBM: Granite 4.0 Micro'
   org_id: ibm
   family: null
   architecture: null
@@ -15953,8 +15982,8 @@
   - 'IBM: Granite 4.0 Micro'
   - granite-4-0-h-micro
   - ibm/granite-4-0-h-micro
-  metadata: '{"alias_platforms": {"granite-4-0-h-micro": "cloudflare-workers-ai", "ibm/granite-4-0-h-micro": "cloudflare-workers-ai"}, "hf_deferred": true, "providers": ["cloudflare-workers-ai", "kilo",
-    "openrouter"], "underlying_key": "granite-4-0-h-micro"}'
+  metadata: '{"alias_platforms": {"granite-4-0-h-micro": "kilo", "ibm/granite-4-0-h-micro": "kilo"}, "hf_deferred": true, "providers": ["cloudflare-workers-ai", "kilo", "openrouter"], "underlying_key":
+    "granite-4-0-h-micro"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: ibm-granite/granite-4.1-8b
@@ -16001,7 +16030,7 @@
   review_status: reviewed
   resolution_source: models_dev
 - id: ideogramai/ideogram
-  display_name: Ideogram-v2
+  display_name: Ideogram
   org_id: ideogramai
   family: ideogram
   architecture: null
@@ -16014,12 +16043,13 @@
   tags: []
   aliases:
   - Ideogram
+  - Ideogram-v2
   - ideogram
   metadata: '{"alias_platforms": {"ideogram": "poe"}, "providers": ["poe"], "underlying_key": "ideogram"}'
   review_status: draft
   resolution_source: models_dev
 - id: ideogramai/ideogram-v2a
-  display_name: Ideogram-v2a-Turbo
+  display_name: Ideogram-v2a
   org_id: ideogramai
   family: ideogram-v2a
   architecture: null
@@ -16073,8 +16103,8 @@
   - inception/mercury-2-5
   - mercury-2-5
   - mercury-2.5
-  metadata: '{"alias_platforms": {"inception/mercury-2-5": "kilo", "mercury-2-5": "kilo", "mercury-2.5": "inception"}, "knowledge_cutoffs": ["2025-11-01"], "openrouter_adopted": true, "release_dates": ["2026-09-08"],
-    "snapshots": ["mercury-2.5"]}'
+  metadata: '{"alias_platforms": {"inception/mercury-2-5": "vercel", "mercury-2-5": "vercel", "mercury-2.5": "inception"}, "knowledge_cutoffs": ["2025-11-01"], "openrouter_adopted": true, "release_dates":
+    ["2026-09-08"], "snapshots": ["mercury-2.5"]}'
   review_status: reviewed
 - id: inception/mercury-2.5-preview
   display_name: Mercury 2.5 Preview
@@ -16227,8 +16257,8 @@
   - inclusionai/ling-3.0-flash-fin:free
   - ling-3-0-flash-fin
   - ling-3.0-flash-fin-free
-  metadata: '{"alias_platforms": {"inclusionai/ling-3-0-flash-fin": "novita-ai", "inclusionai/ling-3.0-flash-fin": "openrouter", "inclusionai/ling-3.0-flash-fin:free": "openrouter", "ling-3-0-flash-fin":
-    "novita-ai", "ling-3.0-flash-fin-free": "opencode"}, "hf_deferred": true, "providers": ["novita-ai", "opencode", "vercel"], "underlying_key": "ling-3-0-flash-fin"}'
+  metadata: '{"alias_platforms": {"inclusionai/ling-3-0-flash-fin": "vercel", "inclusionai/ling-3.0-flash-fin": "openrouter", "inclusionai/ling-3.0-flash-fin:free": "openrouter", "ling-3-0-flash-fin": "vercel",
+    "ling-3.0-flash-fin-free": "opencode"}, "hf_deferred": true, "providers": ["novita-ai", "opencode", "vercel"], "underlying_key": "ling-3-0-flash-fin"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: inclusionAI/Ling-3.0-flash-VL
@@ -16398,7 +16428,7 @@
   - inclusionai/ling-3-0-flash-sante
   - inclusionai/ling-3.0-flash-sante:free
   - ling-3-0-flash-sante
-  metadata: '{"alias_platforms": {"inclusionai/ling-3-0-flash-sante": "kilo", "inclusionai/ling-3.0-flash-sante:free": "openrouter", "ling-3-0-flash-sante": "novita-ai"}, "providers": ["novita-ai", "vercel"],
+  metadata: '{"alias_platforms": {"inclusionai/ling-3-0-flash-sante": "kilo", "inclusionai/ling-3.0-flash-sante:free": "openrouter", "ling-3-0-flash-sante": "vercel"}, "providers": ["novita-ai", "vercel"],
     "underlying_key": "ling-3-0-flash-sante"}'
   review_status: draft
   resolution_source: models_dev
@@ -16935,7 +16965,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: leanstral-1-5
-  display_name: leanstral-1-5@eu
+  display_name: leanstral-1-5
   org_id: null
   family: leanstral-1-5
   architecture: null
@@ -17042,7 +17072,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: ling-3-0-tiny
-  display_name: ling-3-0-tiny
+  display_name: ling-3.0-tiny
   org_id: null
   family: ling-3-0-tiny
   architecture: null
@@ -17595,8 +17625,8 @@
   - meta-llama/llama-3.2-11b-vision-instruct
   - meta/llama-3-2-11b-vision-instruct
   - meta/llama-3.2-11b-vision-instruct
-  metadata: '{"alias_platforms": {"llama-3-2-11b-vision-instruct": "cloudflare-workers-ai", "llama-3.2-11b-vision-instruct": "azure-cognitive-services", "meta/llama-3-2-11b-vision-instruct": "cloudflare-workers-ai"},
-    "hf_deferred": true, "providers": ["cloudflare-workers-ai", "inference", "nvidia"], "underlying_key": "llama-3-2-11b-vision-instruct"}'
+  metadata: '{"alias_platforms": {"llama-3-2-11b-vision-instruct": "nvidia", "llama-3.2-11b-vision-instruct": "azure-cognitive-services", "meta/llama-3-2-11b-vision-instruct": "nvidia"}, "hf_deferred":
+    true, "providers": ["cloudflare-workers-ai", "inference", "nvidia"], "underlying_key": "llama-3-2-11b-vision-instruct"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: meta-llama/Llama-3.2-1B
@@ -17624,8 +17654,8 @@
   - meta-llama/llama-3.2-1b-instruct
   - meta/llama-3-2-1b-instruct
   - meta/llama-3.2-1b-instruct
-  metadata: '{"alias_platforms": {"meta-llama/llama-3.2-1b-instruct": "openrouter", "meta/llama-3-2-1b-instruct": "cloudflare-workers-ai"}, "hf_deferred": true, "providers": ["cloudflare-workers-ai", "inference",
-    "kilo", "novita-ai", "nvidia", "openrouter"], "underlying_key": "llama-3-2-1b-instruct"}'
+  metadata: '{"alias_platforms": {"meta-llama/llama-3.2-1b-instruct": "openrouter", "meta/llama-3-2-1b-instruct": "kilo"}, "hf_deferred": true, "providers": ["cloudflare-workers-ai", "inference", "kilo",
+    "novita-ai", "nvidia", "openrouter"], "underlying_key": "llama-3-2-1b-instruct"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: meta-llama/Llama-3.2-3B
@@ -18990,7 +19020,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: meta/llama4-scout-17b-instruct
-  display_name: llama4-scout-17b-instruct
+  display_name: Llama 4 Scout 17B Instruct (US)
   org_id: meta
   family: llama4-scout-17b-instruct
   architecture: null
@@ -19123,8 +19153,8 @@
   - meta/muse-spark-1-1
   - muse-spark-1-1
   - muse-spark-1.1
-  metadata: '{"alias_platforms": {"meta/muse-spark-1-1": "nano-gpt", "muse-spark-1-1": "nano-gpt", "muse-spark-1.1": "abacus"}, "openrouter_adopted": true, "providers": ["abacus", "aihubmix", "cloudflare-ai-gateway",
-    "kilo", "llmgateway", "merge-gateway", "nano-gpt", "openrouter", "orcarouter", "vercel"], "underlying_key": "muse-spark-1-1"}'
+  metadata: '{"alias_platforms": {"meta/muse-spark-1-1": "cloudflare-ai-gateway", "muse-spark-1-1": "cloudflare-ai-gateway", "muse-spark-1.1": "aihubmix"}, "openrouter_adopted": true, "providers": ["abacus",
+    "aihubmix", "cloudflare-ai-gateway", "kilo", "llmgateway", "merge-gateway", "nano-gpt", "openrouter", "orcarouter", "vercel"], "underlying_key": "muse-spark-1-1"}'
   review_status: draft
   resolution_source: models_dev
 - id: meta/muse-spark-1.2
@@ -19143,8 +19173,8 @@
   - meta/muse-spark-1-2
   - muse-spark-1-2
   - muse-spark-1.2
-  metadata: '{"alias_platforms": {"meta/muse-spark-1-2": "nano-gpt", "muse-spark-1-2": "nano-gpt", "muse-spark-1.2": "abacus"}, "openrouter_adopted": true, "providers": ["abacus", "aihubmix", "cloudflare-ai-gateway",
-    "kilo", "llmgateway", "merge-gateway", "nano-gpt", "opencode", "openrouter", "orcarouter", "vercel"], "underlying_key": "muse-spark-1-2"}'
+  metadata: '{"alias_platforms": {"meta/muse-spark-1-2": "cloudflare-ai-gateway", "muse-spark-1-2": "cloudflare-ai-gateway", "muse-spark-1.2": "aihubmix"}, "openrouter_adopted": true, "providers": ["abacus",
+    "aihubmix", "cloudflare-ai-gateway", "kilo", "llmgateway", "merge-gateway", "nano-gpt", "opencode", "openrouter", "orcarouter", "vercel"], "underlying_key": "muse-spark-1-2"}'
   review_status: draft
   resolution_source: models_dev
 - id: meta/muse-spark-1.3
@@ -19163,8 +19193,8 @@
   - meta/muse-spark-1-3
   - muse-spark-1-3
   - muse-spark-1.3
-  metadata: '{"alias_platforms": {"meta/muse-spark-1-3": "nano-gpt", "muse-spark-1-3": "nano-gpt", "muse-spark-1.3": "aihubmix"}, "openrouter_adopted": true, "providers": ["aihubmix", "cloudflare-ai-gateway",
-    "kilo", "llmgateway", "nano-gpt", "opencode", "openrouter", "requesty", "vercel"], "underlying_key": "muse-spark-1-3"}'
+  metadata: '{"alias_platforms": {"meta/muse-spark-1-3": "cloudflare-ai-gateway", "muse-spark-1-3": "cloudflare-ai-gateway", "muse-spark-1.3": "requesty"}, "openrouter_adopted": true, "providers": ["aihubmix",
+    "cloudflare-ai-gateway", "kilo", "llmgateway", "nano-gpt", "opencode", "openrouter", "requesty", "vercel"], "underlying_key": "muse-spark-1-3"}'
   review_status: draft
   resolution_source: models_dev
 - id: meta/muse-spark-1.3-contributor
@@ -19203,8 +19233,8 @@
   - open-weight
   aliases:
   - muse-spark-open
-  metadata: '{"alias_platforms": {"muse-spark-open": "nano-gpt"}, "openrouter_adopted": true, "providers": ["cloudflare-ai-gateway", "fireworks-ai", "kilo", "merge-gateway", "nano-gpt", "nebius", "ollama-cloud",
-    "openrouter", "requesty", "venice", "vercel"], "underlying_key": "muse-spark-open"}'
+  metadata: '{"alias_platforms": {"muse-spark-open": "cloudflare-ai-gateway"}, "openrouter_adopted": true, "providers": ["cloudflare-ai-gateway", "fireworks-ai", "kilo", "merge-gateway", "nano-gpt", "nebius",
+    "ollama-cloud", "openrouter", "requesty", "venice", "vercel"], "underlying_key": "muse-spark-open"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: meta/muse-wonder
@@ -19754,8 +19784,8 @@
   - minimax-m2-5-highspeed
   - minimax-m2.5-highspeed
   - minimax/minimax-m2-5-highspeed
-  metadata: '{"alias_platforms": {"MiniMax-M2.5-highspeed": "minimax-coding-plan", "minimax-m2-5-highspeed": "minimax-coding-plan", "minimax-m2.5-highspeed": "minimax-coding-plan", "minimax/minimax-m2-5-highspeed":
-    "minimax-coding-plan"}, "release_dates": ["2026-02-13"], "snapshots": ["minimax-m2.5-highspeed"]}'
+  metadata: '{"alias_platforms": {"MiniMax-M2.5-highspeed": "minimax-cn", "minimax-m2-5-highspeed": "vercel", "minimax-m2.5-highspeed": "minimax-cn", "minimax/minimax-m2-5-highspeed": "vercel"}, "release_dates":
+    ["2026-02-13"], "snapshots": ["minimax-m2.5-highspeed"]}'
   review_status: reviewed
 - id: minimax/minimax-m2.7-highspeed
   display_name: MiniMax-M2.7-highspeed
@@ -19777,8 +19807,8 @@
   - minimax-m2-7-highspeed
   - minimax-m2.7-highspeed
   - minimax/minimax-m2-7-highspeed
-  metadata: '{"alias_platforms": {"MiniMax-M2.7-highspeed": "minimax-coding-plan", "minimax-m2-7-highspeed": "minimax-coding-plan", "minimax-m2.7-highspeed": "minimax-coding-plan", "minimax/minimax-m2-7-highspeed":
-    "minimax-coding-plan"}, "release_dates": ["2026-03-18"], "snapshots": ["minimax-m2.7-highspeed"]}'
+  metadata: '{"alias_platforms": {"MiniMax-M2.7-highspeed": "minimax-cn", "minimax-m2-7-highspeed": "vercel", "minimax-m2.7-highspeed": "minimax-cn", "minimax/minimax-m2-7-highspeed": "vercel"}, "release_dates":
+    ["2026-03-18"], "snapshots": ["minimax-m2.7-highspeed"]}'
   review_status: reviewed
 - id: minimax/minimax-m2p7
   display_name: minimax-m2p7
@@ -19836,6 +19866,33 @@
   metadata: '{"alias_platforms": {"minimax-m3-preview": "venice"}, "providers": ["venice"], "underlying_key": "minimax-m3-preview"}'
   review_status: draft
   resolution_source: models_dev
+- id: minimax/minimax-m3.1-flash
+  display_name: MiniMax-M3.1-Flash
+  org_id: minimax
+  family: minimax-m3.1-flash
+  architecture: null
+  params_billions: null
+  parents: []
+  open_weights: true
+  release_date: '2026-10-19'
+  input_modalities:
+  - image
+  - text
+  - video
+  output_modalities:
+  - text
+  tags:
+  - open-weight
+  aliases:
+  - MiniMax-M3.1-Flash
+  - minimax-m3-1-flash
+  - minimax-m3.1-flash
+  - minimax-m3.1-flash-free
+  - minimax/minimax-m3-1-flash
+  - minimax/minimax-m3.1-flash:free
+  metadata: '{"alias_platforms": {"MiniMax-M3.1-Flash": "minimax-cn", "minimax-m3-1-flash": "vercel", "minimax-m3.1-flash": "ollama-cloud", "minimax-m3.1-flash-free": "opencode-go", "minimax/minimax-m3-1-flash":
+    "vercel", "minimax/minimax-m3.1-flash:free": "openrouter"}, "openrouter_adopted": true, "release_dates": ["2026-10-19"], "snapshots": ["minimax-m3.1-flash"]}'
+  review_status: reviewed
 - id: miromind-ai/mirothinker-v1-5-235b
   display_name: MiroThinker v1.5 235B
   org_id: miromind-ai
@@ -20225,6 +20282,7 @@
 - id: mistralai/Mistral-Small-4-119B-2603
   aliases:
   - Mistral Small 4 119B Thinking
+  - Mistral-Small-4-119B-2603
   - mistral-small-4-119b-2603
   - mistralai/mistral-small-4-119b-2603
   weak:
@@ -20737,7 +20795,7 @@
   - open-weight
   aliases:
   - ministral-3b
-  metadata: '{"alias_platforms": {"ministral-3b": "azure"}, "knowledge_cutoffs": ["2024-10"], "release_dates": ["2024-10-01"], "snapshots": ["ministral-3b-latest"]}'
+  metadata: '{"alias_platforms": {"ministral-3b": "vercel"}, "knowledge_cutoffs": ["2024-10"], "release_dates": ["2024-10-01"], "snapshots": ["ministral-3b-latest"]}'
   review_status: reviewed
 - id: mistralai/ministral-3b-latest
   display_name: Ministral 3B (latest)
@@ -21253,7 +21311,7 @@
   aliases:
   - Mistral Nemo
   - mistral-nemo
-  metadata: '{"alias_platforms": {"mistral-nemo": "kilo"}, "knowledge_cutoffs": ["2024-07"], "openrouter_adopted": true, "release_dates": ["2024-07-01"], "snapshots": ["mistral-nemo"]}'
+  metadata: '{"alias_platforms": {"mistral-nemo": "vercel"}, "knowledge_cutoffs": ["2024-07"], "openrouter_adopted": true, "release_dates": ["2024-07-01"], "snapshots": ["mistral-nemo"]}'
   review_status: reviewed
 - id: mistralai/mistral-nemo-12b-instruct
   display_name: Mistral Nemo 12B Instruct
@@ -22016,8 +22074,9 @@
   - kimi-k2.7-code@eu
   - moonshotai/kimi-k2-7-code
   - moonshotai/kimi-k2.7-code
-  metadata: '{"alias_platforms": {"TEE/kimi-k2.7-code": "nano-gpt", "databricks-kimi-k2-7-code": "databricks", "kimi-k2-7-code": "deepinfra", "kimi-k2.7-code": "crof", "kimi-k2.7-code-fast": "neuralwatt",
-    "kimi-k2.7-code@eu": "requesty", "moonshotai/kimi-k2-7-code": "deepinfra", "moonshotai/kimi-k2.7-code": "openrouter"}, "hf_deferred": true, "providers": ["moonshotai"], "underlying_key": "kimi-k2-7-code"}'
+  metadata: '{"alias_platforms": {"TEE/kimi-k2.7-code": "nano-gpt", "databricks-kimi-k2-7-code": "databricks", "kimi-k2-7-code": "moonshotai-cn", "kimi-k2.7-code": "moonshotai-cn", "kimi-k2.7-code-fast":
+    "neuralwatt", "kimi-k2.7-code@eu": "requesty", "moonshotai/kimi-k2-7-code": "moonshotai-cn", "moonshotai/kimi-k2.7-code": "openrouter"}, "hf_deferred": true, "providers": ["moonshotai"], "underlying_key":
+    "kimi-k2-7-code"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: moonshotai/Kimi-K3
@@ -22048,9 +22107,9 @@
   - moonshotai/kimi-k3
   - moonshotai/moonshotai.kimi-k3
   - us.moonshotai.kimi-k3
-  metadata: '{"alias_platforms": {"TEE/kimi-k3": "nano-gpt", "global.moonshotai.kimi-k3": "amazon-bedrock", "k3": "kimi-for-coding", "kimi-k3": "deepinfra", "kimi-k3-fast": "neuralwatt", "kimi-k3@eu": "requesty",
-    "moonshotai.kimi-k3": "amazon-bedrock", "moonshotai/kimi-k3": "deepinfra", "moonshotai/moonshotai.kimi-k3": "amazon-bedrock", "us.moonshotai.kimi-k3": "amazon-bedrock"}, "hf_deferred": true, "providers":
-    ["moonshotai"], "underlying_key": "kimi-k3"}'
+  metadata: '{"alias_platforms": {"TEE/kimi-k3": "nano-gpt", "global.moonshotai.kimi-k3": "amazon-bedrock", "k3": "kimi-for-coding", "kimi-k3": "cloudflare-ai-gateway", "kimi-k3-fast": "neuralwatt", "kimi-k3@eu":
+    "requesty", "moonshotai.kimi-k3": "amazon-bedrock", "moonshotai/kimi-k3": "cloudflare-ai-gateway", "moonshotai/moonshotai.kimi-k3": "amazon-bedrock", "us.moonshotai.kimi-k3": "amazon-bedrock"}, "hf_deferred":
+    true, "providers": ["moonshotai"], "underlying_key": "kimi-k3"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: moonshotai/k2p7
@@ -22517,8 +22576,8 @@
   - kimi-k2-7-code-highspeed
   - kimi-k2.7-code-highspeed
   - moonshotai/kimi-k2-7-code-highspeed
-  metadata: '{"alias_platforms": {"kimi-k2-7-code-highspeed": "nano-gpt", "kimi-k2.7-code-highspeed": "moonshotai-cn", "moonshotai/kimi-k2-7-code-highspeed": "nano-gpt"}, "knowledge_cutoffs": ["2025-01"],
-    "release_dates": ["2026-06-12"], "snapshots": ["kimi-k2.7-code-highspeed"]}'
+  metadata: '{"alias_platforms": {"kimi-k2-7-code-highspeed": "moonshotai-cn", "kimi-k2.7-code-highspeed": "moonshotai-cn", "moonshotai/kimi-k2-7-code-highspeed": "moonshotai-cn"}, "knowledge_cutoffs":
+    ["2025-01"], "release_dates": ["2026-06-12"], "snapshots": ["kimi-k2.7-code-highspeed"]}'
   review_status: reviewed
 - id: moonshotai/kimi-k2p6
   display_name: kimi-k2p6
@@ -22705,7 +22764,7 @@
   - morph-v3
   - morph-v3-fast
   - morph/morph-v3-fast
-  metadata: '{"alias_platforms": {"morph-v3": "kilo", "morph-v3-fast": "morph", "morph/morph-v3-fast": "openrouter"}, "openrouter_adopted": true, "providers": ["kilo", "morph", "openrouter", "vercel"],
+  metadata: '{"alias_platforms": {"morph-v3": "morph", "morph-v3-fast": "morph", "morph/morph-v3-fast": "openrouter"}, "openrouter_adopted": true, "providers": ["kilo", "morph", "openrouter", "vercel"],
     "underlying_key": "morph"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -22723,7 +22782,7 @@
   tags: []
   aliases:
   - morph-v3-large
-  metadata: '{"alias_platforms": {"morph-v3-large": "kilo"}, "openrouter_adopted": true, "providers": ["kilo", "morph", "openrouter", "vercel"], "underlying_key": "morph-v3-large"}'
+  metadata: '{"alias_platforms": {"morph-v3-large": "morph"}, "openrouter_adopted": true, "providers": ["kilo", "morph", "openrouter", "vercel"], "underlying_key": "morph-v3-large"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: multi-qa-mpnet-base-dot-v1
@@ -22796,7 +22855,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: nanogpt/coding-router
-  display_name: Coding Router Low
+  display_name: Coding Router
   org_id: nanogpt
   family: coding-router
   architecture: null
@@ -22808,6 +22867,7 @@
   output_modalities: null
   tags: []
   aliases:
+  - Coding Router Low
   - Coding Router Max
   - coding-router
   metadata: '{"alias_platforms": {"coding-router": "nano-gpt"}, "providers": ["nano-gpt"], "underlying_key": "coding-router"}'
@@ -23268,7 +23328,7 @@
   - llama-3-3-nemotron-super-49b-v1-5
   - nvidia/llama-3-3-nemotron-super-49b-v1-5
   - nvidia/llama-3.3-nemotron-super-49b-v1.5
-  metadata: '{"alias_platforms": {"llama-3-3-nemotron-super-49b-v1-5": "deepinfra", "nvidia/llama-3-3-nemotron-super-49b-v1-5": "deepinfra"}, "hf_deferred": true, "providers": ["deepinfra", "nvidia"], "underlying_key":
+  metadata: '{"alias_platforms": {"llama-3-3-nemotron-super-49b-v1-5": "nvidia", "nvidia/llama-3-3-nemotron-super-49b-v1-5": "nvidia"}, "hf_deferred": true, "providers": ["deepinfra", "nvidia"], "underlying_key":
     "llama-3-3-nemotron-super-49b-v1-5"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -23415,7 +23475,7 @@
   - nvidia/nemotron-3-5-content-safety
   - nvidia/nemotron-3.5-content-safety
   - nvidia/nemotron-3.5-content-safety:free
-  metadata: '{"alias_platforms": {"nemotron-3-5-content-safety": "nano-gpt", "nemotron-3.5-content-safety": "vultr", "nemotron-3.5-content-safety-free": "aihubmix", "nvidia/nemotron-3-5-content-safety":
+  metadata: '{"alias_platforms": {"nemotron-3-5-content-safety": "nano-gpt", "nemotron-3.5-content-safety": "requesty", "nemotron-3.5-content-safety-free": "aihubmix", "nvidia/nemotron-3-5-content-safety":
     "nano-gpt", "nvidia/nemotron-3.5-content-safety": "openrouter", "nvidia/nemotron-3.5-content-safety:free": "openrouter"}, "hf_deferred": true, "providers": ["aihubmix", "kilo", "nano-gpt", "nvidia",
     "openrouter", "requesty", "vultr"], "underlying_key": "nemotron-3-5-content-safety"}'
   review_status: reviewed
@@ -23768,7 +23828,7 @@
   - nemotron-3-5-super-vl-120b-a12b
   - nvidia-nemotron-3-5-super-vl-120b-a12b
   - nvidia/nvidia-nemotron-3-5-super-vl-120b-a12b
-  metadata: '{"alias_platforms": {"nemotron-3-5-super-vl-120b-a12b": "nvidia", "nvidia-nemotron-3-5-super-vl-120b-a12b": "wandb"}, "providers": ["nvidia"], "underlying_key": "nemotron-3-5-super-vl-120b-a12b"}'
+  metadata: '{"alias_platforms": {"nemotron-3-5-super-vl-120b-a12b": "nvidia", "nvidia-nemotron-3-5-super-vl-120b-a12b": "venice"}, "providers": ["nvidia"], "underlying_key": "nemotron-3-5-super-vl-120b-a12b"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: nvidia/nemotron-3-nano-30b
@@ -23808,12 +23868,12 @@
   - nvidia-nemotron-3-nano-30b-a3b
   - nvidia/nemotron-3-nano-30b-a3b:free
   - nvidia/nvidia-nemotron-3-nano-30b-a3b
-  metadata: '{"alias_platforms": {"nemotron-3-nano-30b-a3b": "deepinfra", "nvidia-nemotron-3-nano-30b-a3b": "cortecs", "nvidia/nemotron-3-nano-30b-a3b:free": "openrouter"}, "openrouter_adopted": true, "providers":
+  metadata: '{"alias_platforms": {"nemotron-3-nano-30b-a3b": "nano-gpt", "nvidia-nemotron-3-nano-30b-a3b": "cortecs", "nvidia/nemotron-3-nano-30b-a3b:free": "openrouter"}, "openrouter_adopted": true, "providers":
     ["deepinfra", "kilo", "merge-gateway", "nano-gpt", "novita-ai", "nvidia", "openrouter", "vercel"], "underlying_key": "nemotron-3-nano-30b-a3b"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: nvidia/nemotron-3-nano-omni
-  display_name: nemotron-3-nano-omni@eu
+  display_name: nemotron-3-nano-omni
   org_id: nvidia
   family: nemotron-3-nano-omni
   architecture: null
@@ -23909,7 +23969,7 @@
   - nemotron-3-ultra
   - nemotron-3-ultra-free
   - nvidia-nemotron-3-ultra
-  metadata: '{"alias_platforms": {"nemotron-3-ultra": "routing-run", "nemotron-3-ultra-free": "opencode"}, "providers": ["ollama-cloud", "opencode", "routing-run"], "underlying_key": "nemotron-3-ultra"}'
+  metadata: '{"alias_platforms": {"nemotron-3-ultra": "ollama-cloud", "nemotron-3-ultra-free": "opencode"}, "providers": ["ollama-cloud", "opencode", "routing-run"], "underlying_key": "nemotron-3-ultra"}'
   review_status: draft
   resolution_source: models_dev
 - id: nvidia/nemotron-3-ultra-550b
@@ -23927,7 +23987,7 @@
   - open-weight
   aliases:
   - nemotron-3-ultra-550b
-  metadata: '{"alias_platforms": {"nemotron-3-ultra-550b": "llmgateway"}, "providers": ["digitalocean", "llmgateway"], "underlying_key": "nemotron-3-ultra-550b"}'
+  metadata: '{"alias_platforms": {"nemotron-3-ultra-550b": "digitalocean"}, "providers": ["digitalocean", "llmgateway"], "underlying_key": "nemotron-3-ultra-550b"}'
   review_status: draft
   resolution_source: models_dev
 - id: nvidia/nemotron-3-ultra-550b-a55b
@@ -24478,7 +24538,7 @@
   - gpt-3-5-turbo
   - gpt-3.5-turbo
   - openai/gpt-3-5-turbo
-  metadata: '{"alias_platforms": {"gpt-3-5-turbo": "poe", "gpt-3.5-turbo": "llmgateway", "openai/gpt-3-5-turbo": "poe"}, "knowledge_cutoffs": ["2021-09-01"], "openrouter_adopted": true, "release_dates":
+  metadata: '{"alias_platforms": {"gpt-3-5-turbo": "nano-gpt", "gpt-3.5-turbo": "openai", "openai/gpt-3-5-turbo": "nano-gpt"}, "knowledge_cutoffs": ["2021-09-01"], "openrouter_adopted": true, "release_dates":
     ["2023-03-01"], "snapshots": ["gpt-3.5-turbo"]}'
   review_status: reviewed
 - id: openai/gpt-3.5-turbo-0613
@@ -24539,7 +24599,7 @@
   - gpt-3-5-turbo-instruct
   - gpt-3.5-turbo-instruct
   - openai/gpt-3-5-turbo-instruct
-  metadata: '{"alias_platforms": {"gpt-3-5-turbo-instruct": "poe", "gpt-3.5-turbo-instruct": "azure", "openai/gpt-3-5-turbo-instruct": "poe"}, "openrouter_adopted": true, "providers": ["azure", "azure-cognitive-services",
+  metadata: '{"alias_platforms": {"gpt-3-5-turbo-instruct": "kilo", "gpt-3.5-turbo-instruct": "azure", "openai/gpt-3-5-turbo-instruct": "kilo"}, "openrouter_adopted": true, "providers": ["azure", "azure-cognitive-services",
     "kilo", "openrouter", "poe"], "underlying_key": "gpt-3-5-turbo-instruct"}'
   review_status: draft
   resolution_source: models_dev
@@ -24664,7 +24724,7 @@
   tags: []
   aliases:
   - gpt-4-turbo
-  metadata: '{"alias_platforms": {"gpt-4-turbo": "poe"}, "knowledge_cutoffs": ["2023-12"], "openrouter_adopted": true, "release_dates": ["2023-11-06"], "snapshots": ["gpt-4-turbo"]}'
+  metadata: '{"alias_platforms": {"gpt-4-turbo": "nano-gpt"}, "knowledge_cutoffs": ["2023-12"], "openrouter_adopted": true, "release_dates": ["2023-11-06"], "snapshots": ["gpt-4-turbo"]}'
   review_status: reviewed
 - id: openai/gpt-4-turbo-preview
   display_name: 'OpenAI: GPT-4 Turbo Preview ($$$$)'
@@ -24723,8 +24783,8 @@
   - gpt-4.1@eu
   - openai-gpt-4.1
   - openai/gpt-4-1
-  metadata: '{"alias_platforms": {"gpt-4-1": "poe", "gpt-4.1": "abacus", "gpt-4.1@eu": "requesty", "openai-gpt-4.1": "snowflake-cortex", "openai/gpt-4-1": "poe"}, "knowledge_cutoffs": ["2024-04"], "openrouter_adopted":
-    true, "release_dates": ["2025-04-14"], "snapshots": ["gpt-4.1"]}'
+  metadata: '{"alias_platforms": {"gpt-4-1": "cloudflare-ai-gateway", "gpt-4.1": "azure", "gpt-4.1@eu": "requesty", "openai-gpt-4.1": "snowflake-cortex", "openai/gpt-4-1": "cloudflare-ai-gateway"}, "knowledge_cutoffs":
+    ["2024-04"], "openrouter_adopted": true, "release_dates": ["2025-04-14"], "snapshots": ["gpt-4.1"]}'
   review_status: reviewed
 - id: openai/gpt-4.1-mini
   display_name: GPT-4.1 mini
@@ -24747,8 +24807,8 @@
   - gpt-4.1-mini
   - gpt-4.1-mini@eu
   - openai/gpt-4-1-mini
-  metadata: '{"alias_platforms": {"gpt-4-1-mini": "poe", "gpt-4.1-mini": "abacus", "gpt-4.1-mini@eu": "requesty", "openai/gpt-4-1-mini": "poe"}, "knowledge_cutoffs": ["2024-04"], "openrouter_adopted": true,
-    "release_dates": ["2025-04-14"], "snapshots": ["gpt-4.1-mini"]}'
+  metadata: '{"alias_platforms": {"gpt-4-1-mini": "cloudflare-ai-gateway", "gpt-4.1-mini": "azure", "gpt-4.1-mini@eu": "requesty", "openai/gpt-4-1-mini": "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2024-04"],
+    "openrouter_adopted": true, "release_dates": ["2025-04-14"], "snapshots": ["gpt-4.1-mini"]}'
   review_status: reviewed
 - id: openai/gpt-4.1-nano
   display_name: GPT-4.1 nano
@@ -24770,8 +24830,8 @@
   - gpt-4.1-nano
   - gpt-4.1-nano@eu
   - openai/gpt-4-1-nano
-  metadata: '{"alias_platforms": {"gpt-4-1-nano": "poe", "gpt-4.1-nano": "abacus", "gpt-4.1-nano@eu": "requesty", "openai/gpt-4-1-nano": "poe"}, "knowledge_cutoffs": ["2024-04"], "openrouter_adopted": true,
-    "release_dates": ["2025-04-14"], "snapshots": ["gpt-4.1-nano"]}'
+  metadata: '{"alias_platforms": {"gpt-4-1-nano": "cloudflare-ai-gateway", "gpt-4.1-nano": "azure", "gpt-4.1-nano@eu": "requesty", "openai/gpt-4-1-nano": "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2024-04"],
+    "openrouter_adopted": true, "release_dates": ["2025-04-14"], "snapshots": ["gpt-4.1-nano"]}'
   review_status: reviewed
 - id: openai/gpt-4o
   display_name: GPT-4o
@@ -24794,8 +24854,8 @@
   - azure-gpt-4o
   - gpt-4o
   - openai-gpt-4o
-  metadata: '{"alias_platforms": {"azure-gpt-4o": "nano-gpt", "gpt-4o": "poe", "openai-gpt-4o": "digitalocean"}, "knowledge_cutoffs": ["2023-09"], "openrouter_adopted": true, "release_dates": ["2024-05-13",
-    "2024-08-06", "2024-11-20"], "snapshots": ["gpt-4o", "gpt-4o-2024-05-13", "gpt-4o-2024-08-06", "gpt-4o-2024-11-20"]}'
+  metadata: '{"alias_platforms": {"azure-gpt-4o": "nano-gpt", "gpt-4o": "cloudflare-ai-gateway", "openai-gpt-4o": "digitalocean"}, "knowledge_cutoffs": ["2023-09"], "openrouter_adopted": true, "release_dates":
+    ["2024-05-13", "2024-08-06", "2024-11-20"], "snapshots": ["gpt-4o", "gpt-4o-2024-05-13", "gpt-4o-2024-08-06", "gpt-4o-2024-11-20"]}'
   review_status: reviewed
 - id: openai/gpt-4o-2024-05-13
   display_name: GPT-4o (2024-05-13)
@@ -24919,8 +24979,8 @@
   - gpt-4o-mini
   - gpt-4o-mini@eu
   - openai-gpt-4o-mini
-  metadata: '{"alias_platforms": {"azure-gpt-4o-mini": "nano-gpt", "gpt-4o-mini": "poe", "gpt-4o-mini@eu": "requesty", "openai-gpt-4o-mini": "digitalocean"}, "knowledge_cutoffs": ["2023-09"], "openrouter_adopted":
-    true, "release_dates": ["2024-07-18"], "snapshots": ["gpt-4o-mini"]}'
+  metadata: '{"alias_platforms": {"azure-gpt-4o-mini": "nano-gpt", "gpt-4o-mini": "cloudflare-ai-gateway", "gpt-4o-mini@eu": "requesty", "openai-gpt-4o-mini": "digitalocean"}, "knowledge_cutoffs": ["2023-09"],
+    "openrouter_adopted": true, "release_dates": ["2024-07-18"], "snapshots": ["gpt-4o-mini"]}'
   review_status: reviewed
 - id: openai/gpt-4o-mini-search
   display_name: GPT-4o-mini-Search
@@ -25047,7 +25107,7 @@
   - gpt-5
   - gpt-5@eu
   - openai-gpt-5
-  metadata: '{"alias_platforms": {"databricks-gpt-5": "databricks", "gpt-5": "poe", "gpt-5@eu": "requesty", "openai-gpt-5": "snowflake-cortex"}, "knowledge_cutoffs": ["2024-09-30"], "openrouter_adopted":
+  metadata: '{"alias_platforms": {"databricks-gpt-5": "databricks", "gpt-5": "cloudflare-ai-gateway", "gpt-5@eu": "requesty", "openai-gpt-5": "snowflake-cortex"}, "knowledge_cutoffs": ["2024-09-30"], "openrouter_adopted":
     true, "release_dates": ["2025-08-07"], "snapshots": ["gpt-5"]}'
   review_status: reviewed
 - id: openai/gpt-5-1-instant
@@ -25156,7 +25216,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: openai/gpt-5-chat
-  display_name: GPT-5-Chat
+  display_name: gpt-5-chat
   org_id: openai
   family: gpt-5-chat
   architecture: null
@@ -25210,7 +25270,7 @@
   tags: []
   aliases:
   - gpt-5-codex
-  metadata: '{"alias_platforms": {"gpt-5-codex": "poe"}, "providers": ["abacus", "azure", "azure-cognitive-services", "helicone", "jiekou", "opencode", "poe", "vercel", "zenmux"], "underlying_key": "gpt-5-codex"}'
+  metadata: '{"alias_platforms": {"gpt-5-codex": "vercel"}, "providers": ["abacus", "azure", "azure-cognitive-services", "helicone", "jiekou", "opencode", "poe", "vercel", "zenmux"], "underlying_key": "gpt-5-codex"}'
   review_status: draft
   resolution_source: models_dev
 - id: openai/gpt-5-image
@@ -25272,8 +25332,8 @@
   - gpt-5-mini
   - gpt-5-mini@eu
   - openai-gpt-5-mini
-  metadata: '{"alias_platforms": {"databricks-gpt-5-mini": "databricks", "gpt-5-mini": "perplexity-agent", "gpt-5-mini@eu": "requesty", "openai-gpt-5-mini": "snowflake-cortex"}, "knowledge_cutoffs": ["2024-05-30"],
-    "openrouter_adopted": true, "release_dates": ["2025-08-07"], "snapshots": ["gpt-5-mini"]}'
+  metadata: '{"alias_platforms": {"databricks-gpt-5-mini": "databricks", "gpt-5-mini": "cloudflare-ai-gateway", "gpt-5-mini@eu": "requesty", "openai-gpt-5-mini": "snowflake-cortex"}, "knowledge_cutoffs":
+    ["2024-05-30"], "openrouter_adopted": true, "release_dates": ["2025-08-07"], "snapshots": ["gpt-5-mini"]}'
   review_status: reviewed
 - id: openai/gpt-5-nano
   display_name: GPT-5 Nano
@@ -25295,8 +25355,8 @@
   - gpt-5-nano
   - gpt-5-nano@eu
   - openai-gpt-5-nano
-  metadata: '{"alias_platforms": {"databricks-gpt-5-nano": "databricks", "gpt-5-nano": "poe", "gpt-5-nano@eu": "requesty", "openai-gpt-5-nano": "snowflake-cortex"}, "knowledge_cutoffs": ["2024-05-30"],
-    "openrouter_adopted": true, "release_dates": ["2025-08-07"], "snapshots": ["gpt-5-nano"]}'
+  metadata: '{"alias_platforms": {"databricks-gpt-5-nano": "databricks", "gpt-5-nano": "cloudflare-ai-gateway", "gpt-5-nano@eu": "requesty", "openai-gpt-5-nano": "snowflake-cortex"}, "knowledge_cutoffs":
+    ["2024-05-30"], "openrouter_adopted": true, "release_dates": ["2025-08-07"], "snapshots": ["gpt-5-nano"]}'
   review_status: reviewed
 - id: openai/gpt-5-pro
   display_name: GPT-5 Pro
@@ -25315,7 +25375,7 @@
   tags: []
   aliases:
   - gpt-5-pro
-  metadata: '{"alias_platforms": {"gpt-5-pro": "poe"}, "knowledge_cutoffs": ["2024-09-30"], "openrouter_adopted": true, "release_dates": ["2025-10-06"], "snapshots": ["gpt-5-pro"]}'
+  metadata: '{"alias_platforms": {"gpt-5-pro": "nano-gpt"}, "knowledge_cutoffs": ["2024-09-30"], "openrouter_adopted": true, "release_dates": ["2025-10-06"], "snapshots": ["gpt-5-pro"]}'
   review_status: reviewed
 - id: openai/gpt-5.1
   display_name: GPT-5.1
@@ -25344,8 +25404,8 @@
   - openai-gpt-5.1
   - openai/gpt-5-1
   - openai/gpt-5-1-chat
-  metadata: '{"alias_platforms": {"databricks-gpt-5-1": "databricks", "gpt-5-1": "perplexity-agent", "gpt-5.1": "abacus", "gpt-5.1@eu": "requesty", "openai-gpt-5.1": "snowflake-cortex", "openai/gpt-5-1":
-    "perplexity-agent"}, "knowledge_cutoffs": ["2024-09-30"], "openrouter_adopted": true, "release_dates": ["2025-11-13"], "snapshots": ["gpt-5.1"]}'
+  metadata: '{"alias_platforms": {"databricks-gpt-5-1": "databricks", "gpt-5-1": "cloudflare-ai-gateway", "gpt-5.1": "azure", "gpt-5.1@eu": "requesty", "openai-gpt-5.1": "snowflake-cortex", "openai/gpt-5-1":
+    "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2024-09-30"], "openrouter_adopted": true, "release_dates": ["2025-11-13"], "snapshots": ["gpt-5.1"]}'
   review_status: reviewed
 - id: openai/gpt-5.1-codex
   display_name: GPT-5.1 Codex
@@ -25363,7 +25423,7 @@
   - gpt-5-1-codex
   - gpt-5.1-codex
   - openai/gpt-5-1-codex
-  metadata: '{"alias_platforms": {"gpt-5-1-codex": "poe", "gpt-5.1-codex": "abacus", "openai/gpt-5-1-codex": "poe"}, "openrouter_adopted": true, "providers": ["abacus", "aihubmix", "azure", "azure-cognitive-services",
+  metadata: '{"alias_platforms": {"gpt-5-1-codex": "nano-gpt", "gpt-5.1-codex": "azure", "openai/gpt-5-1-codex": "nano-gpt"}, "openrouter_adopted": true, "providers": ["abacus", "aihubmix", "azure", "azure-cognitive-services",
     "helicone", "jiekou", "kilo", "llmgateway", "nano-gpt", "opencode", "openrouter", "orcarouter", "poe", "vercel", "vivgrid", "zenmux"], "underlying_key": "gpt-5-1-codex"}'
   review_status: draft
   resolution_source: models_dev
@@ -25384,8 +25444,8 @@
   - gpt-5.1-codex-max
   - openai-gpt-5.1-codex-max
   - openai/gpt-5-1-codex-max
-  metadata: '{"alias_platforms": {"gpt-5-1-codex-max": "poe", "gpt-5.1-codex-max": "abacus", "openai-gpt-5.1-codex-max": "digitalocean", "openai/gpt-5-1-codex-max": "poe"}, "openrouter_adopted": true, "providers":
-    ["abacus", "azure", "azure-cognitive-services", "digitalocean", "jiekou", "kilo", "nano-gpt", "opencode", "openrouter", "poe", "vercel", "vivgrid"], "underlying_key": "gpt-5-1-codex-max"}'
+  metadata: '{"alias_platforms": {"gpt-5-1-codex-max": "nano-gpt", "gpt-5.1-codex-max": "azure", "openai-gpt-5.1-codex-max": "digitalocean", "openai/gpt-5-1-codex-max": "nano-gpt"}, "openrouter_adopted":
+    true, "providers": ["abacus", "azure", "azure-cognitive-services", "digitalocean", "jiekou", "kilo", "nano-gpt", "opencode", "openrouter", "poe", "vercel", "vivgrid"], "underlying_key": "gpt-5-1-codex-max"}'
   review_status: draft
   resolution_source: models_dev
 - id: openai/gpt-5.1-codex-mini
@@ -25404,8 +25464,8 @@
   - gpt-5-1-codex-mini
   - gpt-5.1-codex-mini
   - openai/gpt-5-1-codex-mini
-  metadata: '{"alias_platforms": {"gpt-5-1-codex-mini": "poe", "gpt-5.1-codex-mini": "azure", "openai/gpt-5-1-codex-mini": "poe"}, "openrouter_adopted": true, "providers": ["aihubmix", "azure", "azure-cognitive-services",
-    "helicone", "jiekou", "kilo", "llmgateway", "nano-gpt", "opencode", "openrouter", "orcarouter", "poe", "vercel", "zenmux"], "underlying_key": "gpt-5-1-codex-mini"}'
+  metadata: '{"alias_platforms": {"gpt-5-1-codex-mini": "nano-gpt", "gpt-5.1-codex-mini": "azure", "openai/gpt-5-1-codex-mini": "nano-gpt"}, "openrouter_adopted": true, "providers": ["aihubmix", "azure",
+    "azure-cognitive-services", "helicone", "jiekou", "kilo", "llmgateway", "nano-gpt", "opencode", "openrouter", "orcarouter", "poe", "vercel", "zenmux"], "underlying_key": "gpt-5-1-codex-mini"}'
   review_status: draft
   resolution_source: models_dev
 - id: openai/gpt-5.2
@@ -25430,7 +25490,7 @@
   - gpt-5.2
   - openai-gpt-5.2
   - openai/gpt-5-2
-  metadata: '{"alias_platforms": {"databricks-gpt-5-2": "databricks", "gpt-5-2": "perplexity-agent", "gpt-5.2": "abacus", "openai-gpt-5.2": "snowflake-cortex", "openai/gpt-5-2": "perplexity-agent"}, "knowledge_cutoffs":
+  metadata: '{"alias_platforms": {"databricks-gpt-5-2": "databricks", "gpt-5-2": "nano-gpt", "gpt-5.2": "qihang-ai", "openai-gpt-5.2": "snowflake-cortex", "openai/gpt-5-2": "nano-gpt"}, "knowledge_cutoffs":
     ["2025-08-31"], "openrouter_adopted": true, "release_dates": ["2025-12-11"], "snapshots": ["gpt-5.2"]}'
   review_status: reviewed
 - id: openai/gpt-5.2-pro
@@ -25453,7 +25513,7 @@
   - gpt-5.2-pro
   - openai-gpt-5.2-pro
   - openai/gpt-5-2-pro
-  metadata: '{"alias_platforms": {"gpt-5-2-pro": "poe", "gpt-5.2-pro": "jiekou", "openai-gpt-5.2-pro": "digitalocean", "openai/gpt-5-2-pro": "poe"}, "knowledge_cutoffs": ["2025-08-31"], "openrouter_adopted":
+  metadata: '{"alias_platforms": {"gpt-5-2-pro": "vercel", "gpt-5.2-pro": "openai", "openai-gpt-5.2-pro": "digitalocean", "openai/gpt-5-2-pro": "vercel"}, "knowledge_cutoffs": ["2025-08-31"], "openrouter_adopted":
     true, "release_dates": ["2025-12-11"], "snapshots": ["gpt-5.2-pro"]}'
   review_status: reviewed
 - id: openai/gpt-5.3
@@ -25496,8 +25556,8 @@
   - gpt-5.3-codex
   - openai-gpt-5.3-codex
   - openai/gpt-5-3-codex
-  metadata: '{"alias_platforms": {"gpt-5-3-codex": "poe", "gpt-5.3-codex": "abacus", "openai-gpt-5.3-codex": "digitalocean", "openai/gpt-5-3-codex": "poe"}, "knowledge_cutoffs": ["2025-08-31"], "openrouter_adopted":
-    true, "release_dates": ["2026-02-05"], "snapshots": ["gpt-5.3-codex"]}'
+  metadata: '{"alias_platforms": {"gpt-5-3-codex": "nano-gpt", "gpt-5.3-codex": "azure", "openai-gpt-5.3-codex": "digitalocean", "openai/gpt-5-3-codex": "nano-gpt"}, "knowledge_cutoffs": ["2025-08-31"],
+    "openrouter_adopted": true, "release_dates": ["2026-02-05"], "snapshots": ["gpt-5.3-codex"]}'
   review_status: reviewed
 - id: openai/gpt-5.3-codex-spark
   display_name: GPT-5.3 Codex Spark
@@ -25519,7 +25579,7 @@
   - gpt-5-3-codex-spark
   - gpt-5.3-codex-spark
   - openai/gpt-5-3-codex-spark
-  metadata: '{"alias_platforms": {"gpt-5-3-codex-spark": "poe", "gpt-5.3-codex-spark": "opencode", "openai/gpt-5-3-codex-spark": "poe"}, "knowledge_cutoffs": ["2025-08-31"], "release_dates": ["2026-02-05"],
+  metadata: '{"alias_platforms": {"gpt-5-3-codex-spark": "poe", "gpt-5.3-codex-spark": "openai", "openai/gpt-5-3-codex-spark": "poe"}, "knowledge_cutoffs": ["2025-08-31"], "release_dates": ["2026-02-05"],
     "snapshots": ["gpt-5.3-codex-spark"]}'
   review_status: reviewed
 - id: openai/gpt-5.4
@@ -25545,8 +25605,8 @@
   - gpt-5.4@eu
   - openai-gpt-5.4
   - openai/gpt-5-4
-  metadata: '{"alias_platforms": {"databricks-gpt-5-4": "databricks", "gpt-5-4": "perplexity-agent", "gpt-5.4": "abacus", "gpt-5.4@eu": "requesty", "openai-gpt-5.4": "snowflake-cortex", "openai/gpt-5-4":
-    "perplexity-agent"}, "knowledge_cutoffs": ["2025-08-31"], "openrouter_adopted": true, "release_dates": ["2026-03-05"], "snapshots": ["gpt-5.4"]}'
+  metadata: '{"alias_platforms": {"databricks-gpt-5-4": "databricks", "gpt-5-4": "cloudflare-ai-gateway", "gpt-5.4": "azure", "gpt-5.4@eu": "requesty", "openai-gpt-5.4": "snowflake-cortex", "openai/gpt-5-4":
+    "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2025-08-31"], "openrouter_adopted": true, "release_dates": ["2026-03-05"], "snapshots": ["gpt-5.4"]}'
   review_status: reviewed
 - id: openai/gpt-5.4-image-2
   display_name: GPT-5.4 Image 2
@@ -25589,8 +25649,8 @@
   - gpt-5.4-mini
   - openai-gpt-5.4-mini
   - openai/gpt-5-4-mini
-  metadata: '{"alias_platforms": {"databricks-gpt-5-4-mini": "databricks", "gpt-5-4-mini": "poe", "gpt-5.4-mini": "abacus", "openai-gpt-5.4-mini": "digitalocean", "openai/gpt-5-4-mini": "poe"}, "knowledge_cutoffs":
-    ["2025-08-31"], "openrouter_adopted": true, "release_dates": ["2026-03-17"], "snapshots": ["gpt-5.4-mini"]}'
+  metadata: '{"alias_platforms": {"databricks-gpt-5-4-mini": "databricks", "gpt-5-4-mini": "cloudflare-ai-gateway", "gpt-5.4-mini": "azure", "openai-gpt-5.4-mini": "digitalocean", "openai/gpt-5-4-mini":
+    "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2025-08-31"], "openrouter_adopted": true, "release_dates": ["2026-03-17"], "snapshots": ["gpt-5.4-mini"]}'
   review_status: reviewed
 - id: openai/gpt-5.4-nano
   display_name: GPT-5.4 nano
@@ -25613,8 +25673,8 @@
   - gpt-5.4-nano
   - openai-gpt-5.4-nano
   - openai/gpt-5-4-nano
-  metadata: '{"alias_platforms": {"databricks-gpt-5-4-nano": "databricks", "gpt-5-4-nano": "poe", "gpt-5.4-nano": "abacus", "openai-gpt-5.4-nano": "digitalocean", "openai/gpt-5-4-nano": "poe"}, "knowledge_cutoffs":
-    ["2025-08-31"], "openrouter_adopted": true, "release_dates": ["2026-03-17"], "snapshots": ["gpt-5.4-nano"]}'
+  metadata: '{"alias_platforms": {"databricks-gpt-5-4-nano": "databricks", "gpt-5-4-nano": "cloudflare-ai-gateway", "gpt-5.4-nano": "azure", "openai-gpt-5.4-nano": "digitalocean", "openai/gpt-5-4-nano":
+    "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2025-08-31"], "openrouter_adopted": true, "release_dates": ["2026-03-17"], "snapshots": ["gpt-5.4-nano"]}'
   review_status: reviewed
 - id: openai/gpt-5.4-pro
   display_name: GPT-5.4 Pro
@@ -25636,8 +25696,8 @@
   - gpt-5.4-pro
   - openai-gpt-5.4-pro
   - openai/gpt-5-4-pro
-  metadata: '{"alias_platforms": {"gpt-5-4-pro": "poe", "gpt-5.4-pro": "azure", "openai-gpt-5.4-pro": "digitalocean", "openai/gpt-5-4-pro": "poe"}, "knowledge_cutoffs": ["2025-08-31"], "openrouter_adopted":
-    true, "release_dates": ["2026-03-05"], "snapshots": ["gpt-5.4-pro"]}'
+  metadata: '{"alias_platforms": {"gpt-5-4-pro": "cloudflare-ai-gateway", "gpt-5.4-pro": "azure", "openai-gpt-5.4-pro": "digitalocean", "openai/gpt-5-4-pro": "cloudflare-ai-gateway"}, "knowledge_cutoffs":
+    ["2025-08-31"], "openrouter_adopted": true, "release_dates": ["2026-03-05"], "snapshots": ["gpt-5.4-pro"]}'
   review_status: reviewed
 - id: openai/gpt-5.5
   display_name: GPT-5.5
@@ -25662,8 +25722,8 @@
   - gpt-5.5@eu
   - openai-gpt-5.5
   - openai/gpt-5-5
-  metadata: '{"alias_platforms": {"databricks-gpt-5-5": "databricks", "gpt-5-5": "perplexity-agent", "gpt-5.5": "abacus", "gpt-5.5@eu": "requesty", "openai-gpt-5.5": "snowflake-cortex", "openai/gpt-5-5":
-    "perplexity-agent"}, "knowledge_cutoffs": ["2025-12-01"], "openrouter_adopted": true, "release_dates": ["2026-04-23"], "snapshots": ["gpt-5.5"]}'
+  metadata: '{"alias_platforms": {"databricks-gpt-5-5": "databricks", "gpt-5-5": "cloudflare-ai-gateway", "gpt-5.5": "azure", "gpt-5.5@eu": "requesty", "openai-gpt-5.5": "snowflake-cortex", "openai/gpt-5-5":
+    "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2025-12-01"], "openrouter_adopted": true, "release_dates": ["2026-04-23"], "snapshots": ["gpt-5.5"]}'
   review_status: reviewed
 - id: openai/gpt-5.5-pro
   display_name: GPT-5.5 Pro
@@ -25685,8 +25745,8 @@
   - gpt-5-5-pro
   - gpt-5.5-pro
   - openai/gpt-5-5-pro
-  metadata: '{"alias_platforms": {"gpt-5-5-pro": "poe", "gpt-5.5-pro": "aihubmix", "openai/gpt-5-5-pro": "poe"}, "knowledge_cutoffs": ["2025-12-01"], "openrouter_adopted": true, "release_dates": ["2026-04-23"],
-    "snapshots": ["gpt-5.5-pro"]}'
+  metadata: '{"alias_platforms": {"gpt-5-5-pro": "cloudflare-ai-gateway", "gpt-5.5-pro": "requesty", "openai/gpt-5-5-pro": "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2025-12-01"], "openrouter_adopted":
+    true, "release_dates": ["2026-04-23"], "snapshots": ["gpt-5.5-pro"]}'
   review_status: reviewed
 - id: openai/gpt-5.6
   display_name: GPT-5.6
@@ -25708,7 +25768,7 @@
   - gpt-5-6
   - gpt-5.6
   - openai/gpt-5-6
-  metadata: '{"alias_platforms": {"gpt-5-6": "xpersona", "gpt-5.6": "xpersona", "openai/gpt-5-6": "xpersona"}, "knowledge_cutoffs": ["2026-02-16"], "release_dates": ["2026-07-09"], "snapshots": ["gpt-5.6"]}'
+  metadata: '{"alias_platforms": {"gpt-5-6": "openai", "gpt-5.6": "openai", "openai/gpt-5-6": "openai"}, "knowledge_cutoffs": ["2026-02-16"], "release_dates": ["2026-07-09"], "snapshots": ["gpt-5.6"]}'
   review_status: reviewed
 - id: openai/gpt-5.6-luna
   display_name: GPT-5.6 Luna
@@ -25733,8 +25793,8 @@
   - gpt-5.6-luna@eu
   - openai-gpt-5.6-luna
   - openai/gpt-5-6-luna
-  metadata: '{"alias_platforms": {"databricks-gpt-5-6-luna": "databricks", "gpt-5-6-luna": "nano-gpt", "gpt-5.6-luna": "abacus", "gpt-5.6-luna@eu": "requesty", "openai-gpt-5.6-luna": "snowflake-cortex",
-    "openai/gpt-5-6-luna": "nano-gpt"}, "knowledge_cutoffs": ["2026-02-16"], "openrouter_adopted": true, "release_dates": ["2026-07-09"], "snapshots": ["gpt-5.6-luna"]}'
+  metadata: '{"alias_platforms": {"databricks-gpt-5-6-luna": "databricks", "gpt-5-6-luna": "cloudflare-ai-gateway", "gpt-5.6-luna": "azure", "gpt-5.6-luna@eu": "requesty", "openai-gpt-5.6-luna": "snowflake-cortex",
+    "openai/gpt-5-6-luna": "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2026-02-16"], "openrouter_adopted": true, "release_dates": ["2026-07-09"], "snapshots": ["gpt-5.6-luna"]}'
   review_status: reviewed
 - id: openai/gpt-5.6-luna-pro
   display_name: GPT 5.6 Luna Pro
@@ -25779,8 +25839,8 @@
   - gpt-5.6-sol@eu
   - openai-gpt-5.6-sol
   - openai/gpt-5-6-sol
-  metadata: '{"alias_platforms": {"databricks-gpt-5-6-sol": "databricks", "gpt-5-6-sol": "nano-gpt", "gpt-5.6-sol": "abacus", "gpt-5.6-sol@eu": "requesty", "openai-gpt-5.6-sol": "snowflake-cortex", "openai/gpt-5-6-sol":
-    "nano-gpt"}, "knowledge_cutoffs": ["2026-02-16"], "openrouter_adopted": true, "release_dates": ["2026-07-09"], "snapshots": ["gpt-5.6-sol"]}'
+  metadata: '{"alias_platforms": {"databricks-gpt-5-6-sol": "databricks", "gpt-5-6-sol": "cloudflare-ai-gateway", "gpt-5.6-sol": "azure", "gpt-5.6-sol@eu": "requesty", "openai-gpt-5.6-sol": "snowflake-cortex",
+    "openai/gpt-5-6-sol": "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2026-02-16"], "openrouter_adopted": true, "release_dates": ["2026-07-09"], "snapshots": ["gpt-5.6-sol"]}'
   review_status: reviewed
 - id: openai/gpt-5.6-sol-pro
   display_name: GPT 5.6 Sol Pro
@@ -25825,8 +25885,8 @@
   - gpt-5.6-terra@eu
   - openai-gpt-5.6-terra
   - openai/gpt-5-6-terra
-  metadata: '{"alias_platforms": {"databricks-gpt-5-6-terra": "databricks", "gpt-5-6-terra": "nano-gpt", "gpt-5.6-terra": "abacus", "gpt-5.6-terra@eu": "requesty", "openai-gpt-5.6-terra": "snowflake-cortex",
-    "openai/gpt-5-6-terra": "nano-gpt"}, "knowledge_cutoffs": ["2026-02-16"], "openrouter_adopted": true, "release_dates": ["2026-07-09"], "snapshots": ["gpt-5.6-terra"]}'
+  metadata: '{"alias_platforms": {"databricks-gpt-5-6-terra": "databricks", "gpt-5-6-terra": "cloudflare-ai-gateway", "gpt-5.6-terra": "azure", "gpt-5.6-terra@eu": "requesty", "openai-gpt-5.6-terra": "snowflake-cortex",
+    "openai/gpt-5-6-terra": "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2026-02-16"], "openrouter_adopted": true, "release_dates": ["2026-07-09"], "snapshots": ["gpt-5.6-terra"]}'
   review_status: reviewed
 - id: openai/gpt-5.6-terra-pro
   display_name: GPT 5.6 Terra Pro
@@ -25885,8 +25945,8 @@
   - openai-gpt-52-codex
   - openai/gpt-5-2-codex
   - openai/gpt-5.2-codex
-  metadata: '{"alias_platforms": {"gpt-5-2-codex": "poe", "gpt-5.2-codex": "abacus", "gpt-52-codex": "venice", "openai-gpt-52-codex": "venice", "openai/gpt-5-2-codex": "poe"}, "openrouter_adopted": true,
-    "providers": ["abacus", "aihubmix", "azure", "azure-cognitive-services", "jiekou", "kilo", "llmgateway", "nano-gpt", "opencode", "openrouter", "orcarouter", "poe", "qihang-ai", "vercel", "vivgrid",
+  metadata: '{"alias_platforms": {"gpt-5-2-codex": "nano-gpt", "gpt-5.2-codex": "qihang-ai", "gpt-52-codex": "venice", "openai-gpt-52-codex": "venice", "openai/gpt-5-2-codex": "nano-gpt"}, "openrouter_adopted":
+    true, "providers": ["abacus", "aihubmix", "azure", "azure-cognitive-services", "jiekou", "kilo", "llmgateway", "nano-gpt", "opencode", "openrouter", "orcarouter", "poe", "qihang-ai", "vercel", "vivgrid",
     "zenmux"], "underlying_key": "gpt-5-2-codex"}'
   review_status: draft
   resolution_source: models_dev
@@ -26125,8 +26185,8 @@
   aliases:
   - gpt-6-astra
   - openai-gpt-6-astra
-  metadata: '{"alias_platforms": {"gpt-6-astra": "nano-gpt", "openai-gpt-6-astra": "venice"}, "knowledge_cutoffs": ["2026-04-30"], "openrouter_adopted": true, "release_dates": ["2026-09-04"], "snapshots":
-    ["gpt-6-astra"]}'
+  metadata: '{"alias_platforms": {"gpt-6-astra": "cloudflare-ai-gateway", "openai-gpt-6-astra": "digitalocean"}, "knowledge_cutoffs": ["2026-04-30"], "openrouter_adopted": true, "release_dates": ["2026-09-04"],
+    "snapshots": ["gpt-6-astra"]}'
   review_status: reviewed
 - id: openai/gpt-6-astra-pro
   display_name: GPT-6 Astra Pro
@@ -26167,8 +26227,8 @@
   - gpt-6-luna
   - gpt-6-luna@eu
   - openai-gpt-6-luna
-  metadata: '{"alias_platforms": {"gpt-6-luna": "nano-gpt", "gpt-6-luna@eu": "requesty", "openai-gpt-6-luna": "venice"}, "knowledge_cutoffs": ["2026-05-18"], "openrouter_adopted": true, "release_dates":
-    ["2026-09-22"], "snapshots": ["gpt-6-luna"]}'
+  metadata: '{"alias_platforms": {"gpt-6-luna": "cloudflare-ai-gateway", "gpt-6-luna@eu": "requesty", "openai-gpt-6-luna": "digitalocean"}, "knowledge_cutoffs": ["2026-05-18"], "openrouter_adopted": true,
+    "release_dates": ["2026-09-22"], "snapshots": ["gpt-6-luna"]}'
   review_status: reviewed
 - id: openai/gpt-6-luna-pro
   display_name: GPT 6 Luna Pro
@@ -26207,8 +26267,8 @@
   - gpt-6-sol
   - gpt-6-sol@eu
   - openai-gpt-6-sol
-  metadata: '{"alias_platforms": {"gpt-6-sol": "nano-gpt", "gpt-6-sol@eu": "requesty", "openai-gpt-6-sol": "venice"}, "knowledge_cutoffs": ["2026-04-20"], "openrouter_adopted": true, "release_dates": ["2026-09-22"],
-    "snapshots": ["gpt-6-sol"]}'
+  metadata: '{"alias_platforms": {"gpt-6-sol": "cloudflare-ai-gateway", "gpt-6-sol@eu": "requesty", "openai-gpt-6-sol": "digitalocean"}, "knowledge_cutoffs": ["2026-04-20"], "openrouter_adopted": true,
+    "release_dates": ["2026-09-22"], "snapshots": ["gpt-6-sol"]}'
   review_status: reviewed
 - id: openai/gpt-6-sol-pro
   display_name: GPT 6 Sol Pro
@@ -26249,8 +26309,8 @@
   - gpt-6.1-sol@eu
   - openai-gpt-6-1-sol
   - openai/gpt-6-1-sol
-  metadata: '{"alias_platforms": {"gpt-6-1-sol": "nano-gpt", "gpt-6.1-sol": "302ai", "gpt-6.1-sol@eu": "requesty", "openai-gpt-6-1-sol": "digitalocean", "openai/gpt-6-1-sol": "nano-gpt"}, "knowledge_cutoffs":
-    ["2026-04-30"], "openrouter_adopted": true, "release_dates": ["2026-09-29"], "snapshots": ["gpt-6.1-sol"]}'
+  metadata: '{"alias_platforms": {"gpt-6-1-sol": "cloudflare-ai-gateway", "gpt-6.1-sol": "azure", "gpt-6.1-sol@eu": "requesty", "openai-gpt-6-1-sol": "digitalocean", "openai/gpt-6-1-sol": "cloudflare-ai-gateway"},
+    "knowledge_cutoffs": ["2026-04-30"], "openrouter_adopted": true, "release_dates": ["2026-09-29"], "snapshots": ["gpt-6.1-sol"]}'
   review_status: reviewed
 - id: openai/gpt-6.1-sol-pro
   display_name: GPT 6.1 Sol Pro
@@ -26399,7 +26459,7 @@
   aliases:
   - gpt-image-1
   - openai-gpt-image-1
-  metadata: '{"alias_platforms": {"gpt-image-1": "poe", "openai-gpt-image-1": "digitalocean"}, "release_dates": ["2025-04-24"], "snapshots": ["gpt-image-1"]}'
+  metadata: '{"alias_platforms": {"gpt-image-1": "vercel", "openai-gpt-image-1": "digitalocean"}, "release_dates": ["2025-04-24"], "snapshots": ["gpt-image-1"]}'
   review_status: reviewed
 - id: openai/gpt-image-1-mini
   display_name: gpt-image-1-mini
@@ -26419,7 +26479,7 @@
   tags: []
   aliases:
   - gpt-image-1-mini
-  metadata: '{"alias_platforms": {"gpt-image-1-mini": "poe"}, "release_dates": ["2025-09-26"], "snapshots": ["gpt-image-1-mini"]}'
+  metadata: '{"alias_platforms": {"gpt-image-1-mini": "vercel"}, "release_dates": ["2025-09-26"], "snapshots": ["gpt-image-1-mini"]}'
   review_status: reviewed
 - id: openai/gpt-image-1.5
   display_name: gpt-image-1.5
@@ -26442,7 +26502,7 @@
   - gpt-image-1.5
   - openai-gpt-image-1.5
   - openai/gpt-image-1-5
-  metadata: '{"alias_platforms": {"gpt-image-1-5": "poe", "gpt-image-1.5": "azure", "openai-gpt-image-1.5": "digitalocean", "openai/gpt-image-1-5": "poe"}, "release_dates": ["2025-11-25"], "snapshots":
+  metadata: '{"alias_platforms": {"gpt-image-1-5": "vercel", "gpt-image-1.5": "azure", "openai-gpt-image-1.5": "digitalocean", "openai/gpt-image-1-5": "vercel"}, "release_dates": ["2025-11-25"], "snapshots":
     ["gpt-image-1.5"]}'
   review_status: reviewed
 - id: openai/gpt-image-2
@@ -26464,7 +26524,7 @@
   - GPT Image 2
   - gpt-image-2
   - openai-gpt-image-2
-  metadata: '{"alias_platforms": {"gpt-image-2": "poe", "openai-gpt-image-2": "digitalocean"}, "release_dates": ["2026-04-21"], "snapshots": ["gpt-image-2"]}'
+  metadata: '{"alias_platforms": {"gpt-image-2": "vercel", "openai-gpt-image-2": "digitalocean"}, "release_dates": ["2026-04-21"], "snapshots": ["gpt-image-2"]}'
   review_status: reviewed
 - id: openai/gpt-image-2-5-flare
   display_name: GPT Image 2.5 Flare
@@ -26481,7 +26541,7 @@
   aliases:
   - gpt-image-2-5-flare
   - gpt-image-2.5-flare
-  metadata: '{"alias_platforms": {"gpt-image-2-5-flare": "azure", "gpt-image-2.5-flare": "azure"}, "providers": ["aihubmix", "azure", "azure-cognitive-services", "vercel"], "underlying_key": "gpt-image-2-5-flare"}'
+  metadata: '{"alias_platforms": {"gpt-image-2-5-flare": "vercel", "gpt-image-2.5-flare": "azure"}, "providers": ["aihubmix", "azure", "azure-cognitive-services", "vercel"], "underlying_key": "gpt-image-2-5-flare"}'
   review_status: draft
   resolution_source: models_dev
 - id: openai/gpt-image-2-5-sunburst
@@ -26499,7 +26559,7 @@
   aliases:
   - gpt-image-2-5-sunburst
   - gpt-image-2.5-sunburst
-  metadata: '{"alias_platforms": {"gpt-image-2-5-sunburst": "azure", "gpt-image-2.5-sunburst": "azure"}, "providers": ["aihubmix", "azure", "azure-cognitive-services", "vercel"], "underlying_key": "gpt-image-2-5-sunburst"}'
+  metadata: '{"alias_platforms": {"gpt-image-2-5-sunburst": "vercel", "gpt-image-2.5-sunburst": "azure"}, "providers": ["aihubmix", "azure", "azure-cognitive-services", "vercel"], "underlying_key": "gpt-image-2-5-sunburst"}'
   review_status: draft
   resolution_source: models_dev
 - id: openai/gpt-latest
@@ -26686,7 +26746,7 @@
   - gpt-oss-safeguard-20b
   - openai.gpt-oss-safeguard-20b
   - openai/openai.gpt-oss-safeguard-20b
-  metadata: '{"alias_platforms": {"gpt-oss-safeguard-20b": "groq", "openai.gpt-oss-safeguard-20b": "amazon-bedrock", "openai/openai.gpt-oss-safeguard-20b": "amazon-bedrock"}, "hf_deferred": true, "providers":
+  metadata: '{"alias_platforms": {"gpt-oss-safeguard-20b": "nano-gpt", "openai.gpt-oss-safeguard-20b": "amazon-bedrock", "openai/openai.gpt-oss-safeguard-20b": "amazon-bedrock"}, "hf_deferred": true, "providers":
     ["groq", "kilo", "merge-gateway", "nano-gpt", "openrouter", "vercel"], "underlying_key": "gpt-oss-safeguard-20b"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -26875,7 +26935,7 @@
   - azure-o1
   - o1
   - openai-o1
-  metadata: '{"alias_platforms": {"azure-o1": "nano-gpt", "o1": "poe", "openai-o1": "digitalocean"}, "knowledge_cutoffs": ["2023-09"], "openrouter_adopted": true, "release_dates": ["2024-12-05"], "snapshots":
+  metadata: '{"alias_platforms": {"azure-o1": "nano-gpt", "o1": "nano-gpt", "openai-o1": "digitalocean"}, "knowledge_cutoffs": ["2023-09"], "openrouter_adopted": true, "release_dates": ["2024-12-05"], "snapshots":
     ["o1"]}'
   review_status: reviewed
 - id: openai/o1-mini
@@ -26930,7 +26990,7 @@
   tags: []
   aliases:
   - o1-pro
-  metadata: '{"alias_platforms": {"o1-pro": "poe"}, "knowledge_cutoffs": ["2023-09"], "openrouter_adopted": true, "release_dates": ["2025-03-19"], "snapshots": ["o1-pro"]}'
+  metadata: '{"alias_platforms": {"o1-pro": "nano-gpt"}, "knowledge_cutoffs": ["2023-09"], "openrouter_adopted": true, "release_dates": ["2025-03-19"], "snapshots": ["o1-pro"]}'
   review_status: reviewed
 - id: openai/o3
   display_name: o3
@@ -26951,7 +27011,8 @@
   aliases:
   - o3
   - openai-o3
-  metadata: '{"alias_platforms": {"o3": "poe", "openai-o3": "digitalocean"}, "knowledge_cutoffs": ["2024-05"], "openrouter_adopted": true, "release_dates": ["2025-04-16"], "snapshots": ["o3"]}'
+  metadata: '{"alias_platforms": {"o3": "cloudflare-ai-gateway", "openai-o3": "digitalocean"}, "knowledge_cutoffs": ["2024-05"], "openrouter_adopted": true, "release_dates": ["2025-04-16"], "snapshots":
+    ["o3"]}'
   review_status: reviewed
 - id: openai/o3-deep-research
   display_name: o3-deep-research
@@ -26988,11 +27049,11 @@
   - azure-o3-mini
   - o3-mini
   - openai-o3-mini
-  metadata: '{"alias_platforms": {"azure-o3-mini": "nano-gpt", "o3-mini": "poe", "openai-o3-mini": "digitalocean"}, "knowledge_cutoffs": ["2024-05"], "openrouter_adopted": true, "release_dates": ["2024-12-20"],
-    "snapshots": ["o3-mini"]}'
+  metadata: '{"alias_platforms": {"azure-o3-mini": "nano-gpt", "o3-mini": "cloudflare-ai-gateway", "openai-o3-mini": "digitalocean"}, "knowledge_cutoffs": ["2024-05"], "openrouter_adopted": true, "release_dates":
+    ["2024-12-20"], "snapshots": ["o3-mini"]}'
   review_status: reviewed
 - id: openai/o3-mini-high
-  display_name: o3-mini-high
+  display_name: OpenAI o3-mini (High)
   org_id: openai
   family: o3-mini-high
   architecture: null
@@ -27006,7 +27067,7 @@
   aliases:
   - OpenAI o3-mini (High)
   - o3-mini-high
-  metadata: '{"alias_platforms": {"o3-mini-high": "poe"}, "openrouter_adopted": true, "providers": ["kilo", "nano-gpt", "openrouter", "poe"], "underlying_key": "o3-mini-high"}'
+  metadata: '{"alias_platforms": {"o3-mini-high": "nano-gpt"}, "openrouter_adopted": true, "providers": ["kilo", "nano-gpt", "openrouter", "poe"], "underlying_key": "o3-mini-high"}'
   review_status: draft
   resolution_source: models_dev
 - id: openai/o3-mini-low
@@ -27043,7 +27104,7 @@
   tags: []
   aliases:
   - o3-pro
-  metadata: '{"alias_platforms": {"o3-pro": "poe"}, "knowledge_cutoffs": ["2024-05"], "openrouter_adopted": true, "release_dates": ["2025-06-10"], "snapshots": ["o3-pro"]}'
+  metadata: '{"alias_platforms": {"o3-pro": "vercel"}, "knowledge_cutoffs": ["2024-05"], "openrouter_adopted": true, "release_dates": ["2025-06-10"], "snapshots": ["o3-pro"]}'
   review_status: reviewed
 - id: openai/o4-mini
   display_name: o4-mini
@@ -27063,7 +27124,8 @@
   aliases:
   - o4-mini
   - o4-mini@eu
-  metadata: '{"alias_platforms": {"o4-mini": "poe", "o4-mini@eu": "requesty"}, "knowledge_cutoffs": ["2024-05"], "openrouter_adopted": true, "release_dates": ["2025-04-16"], "snapshots": ["o4-mini"]}'
+  metadata: '{"alias_platforms": {"o4-mini": "cloudflare-ai-gateway", "o4-mini@eu": "requesty"}, "knowledge_cutoffs": ["2024-05"], "openrouter_adopted": true, "release_dates": ["2025-04-16"], "snapshots":
+    ["o4-mini"]}'
   review_status: reviewed
 - id: openai/o4-mini-deep-research
   display_name: o4-mini-deep-research
@@ -27183,7 +27245,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: openai/openai.gpt-5-6-terra
-  display_name: GPT-5.6 Terra (US)
+  display_name: GPT-5.6 Terra (Global)
   org_id: openai
   family: openai.gpt-5-6-terra
   architecture: null
@@ -27195,6 +27257,7 @@
   output_modalities: null
   tags: []
   aliases:
+  - GPT-5.6 Terra (US)
   - global.openai.gpt-5.6-terra
   - openai.gpt-5-6-terra
   - openai.gpt-5.6-terra
@@ -27204,7 +27267,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: openai/openai.gpt-6-1-sol
-  display_name: GPT-6.1 Sol (US)
+  display_name: GPT-6.1 Sol (Global)
   org_id: openai
   family: openai.gpt-6-1-sol
   architecture: null
@@ -27216,6 +27279,7 @@
   output_modalities: null
   tags: []
   aliases:
+  - GPT-6.1 Sol (US)
   - global.openai.gpt-6.1-sol
   - openai.gpt-6-1-sol
   - openai.gpt-6.1-sol
@@ -27336,7 +27400,7 @@
   tags: []
   aliases:
   - text-embedding-3-large
-  metadata: '{"alias_platforms": {"text-embedding-3-large": "azure"}, "knowledge_cutoffs": ["2024-01"], "release_dates": ["2024-01-25"], "snapshots": ["text-embedding-3-large"]}'
+  metadata: '{"alias_platforms": {"text-embedding-3-large": "vercel"}, "knowledge_cutoffs": ["2024-01"], "release_dates": ["2024-01-25"], "snapshots": ["text-embedding-3-large"]}'
   review_status: reviewed
 - id: openai/text-embedding-3-small
   display_name: text-embedding-3-small
@@ -27354,7 +27418,7 @@
   tags: []
   aliases:
   - text-embedding-3-small
-  metadata: '{"alias_platforms": {"text-embedding-3-small": "azure"}, "knowledge_cutoffs": ["2024-01"], "release_dates": ["2024-01-25"], "snapshots": ["text-embedding-3-small"]}'
+  metadata: '{"alias_platforms": {"text-embedding-3-small": "vercel"}, "knowledge_cutoffs": ["2024-01"], "release_dates": ["2024-01-25"], "snapshots": ["text-embedding-3-small"]}'
   review_status: reviewed
 - id: openai/text-embedding-ada-002
   display_name: text-embedding-ada-002
@@ -27372,7 +27436,7 @@
   tags: []
   aliases:
   - text-embedding-ada-002
-  metadata: '{"alias_platforms": {"text-embedding-ada-002": "azure"}, "knowledge_cutoffs": ["2022-12"], "release_dates": ["2022-12-15"], "snapshots": ["text-embedding-ada-002"]}'
+  metadata: '{"alias_platforms": {"text-embedding-ada-002": "vercel"}, "knowledge_cutoffs": ["2022-12"], "release_dates": ["2022-12-15"], "snapshots": ["text-embedding-ada-002"]}'
   review_status: reviewed
 - id: openai/tts-1
   display_name: TTS-1
@@ -27508,7 +27572,7 @@
     release_date: '2026-06-02'
     open_weights: false
 - id: ornith-ai/Ornith-1.5-35B-A3B
-  display_name: Ornith 1.5 35B
+  display_name: Ornith 1.5 35B Thinking
   org_id: ornith-ai
   family: null
   architecture: null
@@ -27522,6 +27586,7 @@
   - open-weight
   aliases:
   - Ornith 1.5 35B
+  - Ornith 1.5 35B Thinking
   - ornith-1-5-35b-a3b
   - ornith-ai/ornith-1-5-35b-a3b
   metadata: '{"alias_platforms": {"ornith-1-5-35b-a3b": "nano-gpt", "ornith-ai/ornith-1-5-35b-a3b": "nano-gpt"}, "hf_deferred": true, "providers": ["nano-gpt"], "underlying_key": "ornith-1-5-35b-a3b"}'
@@ -27762,7 +27827,7 @@
   tags: []
   aliases:
   - sonar
-  metadata: '{"alias_platforms": {"sonar": "perplexity-agent"}, "knowledge_cutoffs": ["2025-09-01"], "openrouter_adopted": true, "release_dates": ["2024-01-01"], "snapshots": ["sonar"]}'
+  metadata: '{"alias_platforms": {"sonar": "vercel"}, "knowledge_cutoffs": ["2025-09-01"], "openrouter_adopted": true, "release_dates": ["2024-01-01"], "snapshots": ["sonar"]}'
   review_status: reviewed
 - id: perplexity/sonar-deep-research
   display_name: Perplexity Sonar Deep Research
@@ -28047,7 +28112,7 @@
   - open-weight
   aliases:
   - minimax-m25
-  metadata: '{"alias_platforms": {"minimax-m25": "venice"}, "providers": ["drun", "venice"], "underlying_key": "minimax-m25"}'
+  metadata: '{"alias_platforms": {"minimax-m25": "drun"}, "providers": ["drun", "venice"], "underlying_key": "minimax-m25"}'
   review_status: draft
   resolution_source: models_dev
 - id: quiverai/arrow-1-1
@@ -28158,7 +28223,7 @@
   aliases:
   - alibaba/qwen3-coder-plus
   - qwen3-coder-plus
-  metadata: '{"alias_platforms": {"alibaba/qwen3-coder-plus": "nano-gpt", "qwen3-coder-plus": "alibaba-coding-plan"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2025-07-23"], "snapshots": ["qwen3-coder-plus"]}'
+  metadata: '{"alias_platforms": {"alibaba/qwen3-coder-plus": "nano-gpt", "qwen3-coder-plus": "alibaba-cn"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2025-07-23"], "snapshots": ["qwen3-coder-plus"]}'
   review_status: reviewed
 - id: qwen/qwen3-max
   display_name: Qwen3 Max
@@ -28177,7 +28242,7 @@
   aliases:
   - alibaba/qwen3-max
   - qwen3-max
-  metadata: '{"alias_platforms": {"alibaba/qwen3-max": "deepinfra", "qwen3-max": "deepinfra"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2025-09-23"], "snapshots": ["qwen3-max"]}'
+  metadata: '{"alias_platforms": {"alibaba/qwen3-max": "deepinfra", "qwen3-max": "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2025-09-23"], "snapshots": ["qwen3-max"]}'
   review_status: reviewed
 - id: qwen/qwen3.6-flash
   display_name: Qwen3.6 Flash
@@ -28201,7 +28266,7 @@
   - alibaba/qwen3.6-flash
   - qwen3-6-flash
   - qwen3.6-flash
-  metadata: '{"alias_platforms": {"Qwen3.6-Flash": "moark", "alibaba/qwen3-6-flash": "nano-gpt", "qwen3-6-flash": "nano-gpt", "qwen3.6-flash": "302ai"}, "openrouter_adopted": true, "release_dates": ["2026-04-27"],
+  metadata: '{"alias_platforms": {"Qwen3.6-Flash": "moark", "alibaba/qwen3-6-flash": "moark", "qwen3-6-flash": "moark", "qwen3.6-flash": "moark"}, "openrouter_adopted": true, "release_dates": ["2026-04-27"],
     "snapshots": ["qwen3.6-flash"]}'
   review_status: reviewed
 - id: qwen/qwen3.6-plus
@@ -28232,8 +28297,8 @@
   - qwen3-6-plus
   - qwen3.6-plus
   - qwen3.6-plus-free
-  metadata: '{"alias_platforms": {"alibaba/qwen3-6-plus": "nano-gpt", "qwen3-6-plus": "nano-gpt", "qwen3.6-plus": "alibaba-coding-plan", "qwen3.6-plus-free": "opencode"}, "knowledge_cutoffs": ["2025-04"],
-    "openrouter_adopted": true, "release_dates": ["2026-04-02"], "snapshots": ["qwen3.6-plus"]}'
+  metadata: '{"alias_platforms": {"alibaba/qwen3-6-plus": "nano-gpt", "qwen3-6-plus": "nano-gpt", "qwen3.6-plus": "alibaba-cn", "qwen3.6-plus-free": "opencode"}, "knowledge_cutoffs": ["2025-04"], "openrouter_adopted":
+    true, "release_dates": ["2026-04-02"], "snapshots": ["qwen3.6-plus"]}'
   review_status: reviewed
 - id: qwen/qwen3.7-flash
   display_name: Qwen3.7 Flash
@@ -28257,7 +28322,7 @@
   - qwen3-7-flash
   - qwen3.7-flash
   - qwen3.7-flash:thinking
-  metadata: '{"alias_platforms": {"alibaba/qwen3-7-flash": "nano-gpt", "qwen3-7-flash": "nano-gpt", "qwen3.7-flash": "alibaba", "qwen3.7-flash:thinking": "nano-gpt"}, "openrouter_adopted": true, "release_dates":
+  metadata: '{"alias_platforms": {"alibaba/qwen3-7-flash": "nano-gpt", "qwen3-7-flash": "nano-gpt", "qwen3.7-flash": "alibaba-cn", "qwen3.7-flash:thinking": "nano-gpt"}, "openrouter_adopted": true, "release_dates":
     ["2026-07-15"], "snapshots": ["qwen3.7-flash"]}'
   review_status: reviewed
 - id: qwen/qwen3.7-max
@@ -28284,8 +28349,8 @@
   - qwen3-7-max
   - qwen3.7-max
   - qwen3.7-max:thinking
-  metadata: '{"alias_platforms": {"alibaba/qwen3-7-max": "deepinfra", "qwen3-7-max": "deepinfra", "qwen3.7-max": "abacus", "qwen3.7-max:thinking": "nano-gpt"}, "openrouter_adopted": true, "release_dates":
-    ["2026-05-21"], "snapshots": ["qwen3.7-max"]}'
+  metadata: '{"alias_platforms": {"alibaba/qwen3-7-max": "cloudflare-ai-gateway", "qwen3-7-max": "cloudflare-ai-gateway", "qwen3.7-max": "alibaba-cn", "qwen3.7-max:thinking": "nano-gpt"}, "openrouter_adopted":
+    true, "release_dates": ["2026-05-21"], "snapshots": ["qwen3.7-max"]}'
   review_status: reviewed
 - id: qwen/qwen3.7-plus
   display_name: Qwen3.7 Plus
@@ -28312,8 +28377,8 @@
   - qwen3-7-plus
   - qwen3.7-plus
   - qwen3.7-plus:thinking
-  metadata: '{"alias_platforms": {"alibaba/qwen3-7-plus": "nano-gpt", "qwen3-7-plus": "nano-gpt", "qwen3.7-plus": "alibaba-coding-plan", "qwen3.7-plus:thinking": "nano-gpt"}, "knowledge_cutoffs": ["2025-04"],
-    "openrouter_adopted": true, "release_dates": ["2026-06-02"], "snapshots": ["qwen3.7-plus"]}'
+  metadata: '{"alias_platforms": {"alibaba/qwen3-7-plus": "cloudflare-ai-gateway", "qwen3-7-plus": "cloudflare-ai-gateway", "qwen3.7-plus": "alibaba-cn", "qwen3.7-plus:thinking": "nano-gpt"}, "knowledge_cutoffs":
+    ["2025-04"], "openrouter_adopted": true, "release_dates": ["2026-06-02"], "snapshots": ["qwen3.7-plus"]}'
   review_status: reviewed
 - id: qwen/qwen3.8-flash
   display_name: Qwen3.8 Flash
@@ -28336,7 +28401,7 @@
   - alibaba/qwen3.8-flash
   - qwen3-8-flash
   - qwen3.8-flash
-  metadata: '{"alias_platforms": {"alibaba/qwen3-8-flash": "deepinfra", "qwen3-8-flash": "deepinfra", "qwen3.8-flash": "302ai"}, "openrouter_adopted": true, "release_dates": ["2026-08-26"], "snapshots":
+  metadata: '{"alias_platforms": {"alibaba/qwen3-8-flash": "nano-gpt", "qwen3-8-flash": "nano-gpt", "qwen3.8-flash": "alibaba-cn"}, "openrouter_adopted": true, "release_dates": ["2026-08-26"], "snapshots":
     ["qwen3.8-flash"]}'
   review_status: reviewed
 - id: qwen/qwen3.8-max
@@ -28362,8 +28427,8 @@
   - qwen3-8-max
   - qwen3.8-max
   - qwen3.8-max:thinking
-  metadata: '{"alias_platforms": {"alibaba/qwen3-8-max": "deepinfra", "qwen3-8-max": "deepinfra", "qwen3.8-max": "abacus", "qwen3.8-max:thinking": "nano-gpt"}, "release_dates": ["2026-08-03"], "snapshots":
-    ["qwen3.8-max"]}'
+  metadata: '{"alias_platforms": {"alibaba/qwen3-8-max": "cloudflare-ai-gateway", "qwen3-8-max": "cloudflare-ai-gateway", "qwen3.8-max": "alibaba-cn", "qwen3.8-max:thinking": "nano-gpt"}, "release_dates":
+    ["2026-08-03"], "snapshots": ["qwen3.8-max"]}'
   review_status: reviewed
 - id: qwen/qwen3.8-max-0902
   display_name: Qwen3.8 Max 0902
@@ -28601,8 +28666,9 @@
   - reflection/beam-1-0
   - reflection/beam-1-0-501b-a23b
   - reflection/beam-1.0-501b-a23b
-  metadata: '{"alias_platforms": {"beam": "kilo", "beam-1-0": "nano-gpt", "beam-1-0-501b-a23b": "wandb", "beam-free": "opencode-go", "reflection/beam": "kilo", "reflection/beam-1-0": "nano-gpt", "reflection/beam-1-0-501b-a23b":
-    "wandb", "reflection/beam-1.0-501b-a23b": "openrouter"}, "hf_deferred": true, "providers": ["kilo", "nebius", "opencode", "opencode-go", "vercel"], "underlying_key": "beam"}'
+  metadata: '{"alias_platforms": {"beam": "vercel", "beam-1-0": "nano-gpt", "beam-1-0-501b-a23b": "cloudflare-ai-gateway", "beam-free": "opencode-go", "reflection/beam": "vercel", "reflection/beam-1-0":
+    "nano-gpt", "reflection/beam-1-0-501b-a23b": "cloudflare-ai-gateway", "reflection/beam-1.0-501b-a23b": "openrouter"}, "hf_deferred": true, "providers": ["kilo", "nebius", "opencode", "opencode-go",
+    "vercel"], "underlying_key": "beam"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: rekaai/reka-edge
@@ -28943,7 +29009,8 @@
   - l3-3-euryale-70b
   - l3.3-euryale-70b
   - sao10k/l3-3-euryale-70b
-  metadata: '{"alias_platforms": {"l3-3-euryale-70b": "kilo", "sao10k/l3-3-euryale-70b": "kilo"}, "openrouter_adopted": true, "providers": ["kilo", "openrouter"], "underlying_key": "l3-3-euryale-70b"}'
+  metadata: '{"alias_platforms": {"l3-3-euryale-70b": "kilo", "sao10k/l3-3-euryale-70b": "kilo"}, "openrouter_adopted": true, "providers": ["kilo", "openrouter"], "underlying_key": "l3-3-euryale-70b", "upstream_status":
+    "removed"}'
   review_status: draft
   resolution_source: models_dev
 - id: sap-abap-1
@@ -29368,7 +29435,7 @@
   output_modalities: null
   tags: []
   aliases: []
-  metadata: '{"providers": ["vercel", "zenmux"], "underlying_key": "grok-imagine-image-2-0", "upstream_status": "removed"}'
+  metadata: '{"providers": ["vercel", "zenmux"], "underlying_key": "grok-imagine-image-2-0"}'
   review_status: draft
   resolution_source: models_dev
 - id: spacexai/grok-imagine-video
@@ -29418,7 +29485,7 @@
   aliases:
   - grok-imagine-video-1-5-lite
   - grok-imagine-video-1.5-lite
-  metadata: '{"alias_platforms": {"grok-imagine-video-1-5-lite": "xai", "grok-imagine-video-1.5-lite": "xai"}, "providers": ["vercel", "xai"], "underlying_key": "grok-imagine-video-1-5-lite"}'
+  metadata: '{"alias_platforms": {"grok-imagine-video-1-5-lite": "vercel", "grok-imagine-video-1.5-lite": "xai"}, "providers": ["vercel", "xai"], "underlying_key": "grok-imagine-video-1-5-lite"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: spacexai/grok-imagine-video-1-5-preview
@@ -29685,7 +29752,7 @@
   - step-3.7-flash
   - stepfun/step-3-7-flash
   - stepfun/step-3.7-flash
-  metadata: '{"alias_platforms": {"step-3-7-flash": "deepinfra", "step-3.7-flash": "stepfun-ai", "stepfun/step-3-7-flash": "deepinfra", "stepfun/step-3.7-flash": "openrouter"}, "hf_deferred": true, "providers":
+  metadata: '{"alias_platforms": {"step-3-7-flash": "nano-gpt", "step-3.7-flash": "stepfun-ai", "stepfun/step-3-7-flash": "nano-gpt", "stepfun/step-3.7-flash": "openrouter"}, "hf_deferred": true, "providers":
     ["stepfun"], "underlying_key": "step-3-7-flash"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -29696,17 +29763,18 @@
   architecture: null
   params_billions: null
   parents: []
-  open_weights: false
+  open_weights: true
   release_date: '2026-09-16'
   input_modalities: null
   output_modalities: null
-  tags: []
+  tags:
+  - open-weight
   aliases:
   - Step 5 Preview
   - step-5-preview
   - step-5-preview-free
   - stepfun/step-5-preview
-  metadata: '{"alias_platforms": {"step-5-preview": "deepinfra", "step-5-preview-free": "opencode-go", "stepfun/step-5-preview": "deepinfra"}, "hf_deferred": true, "providers": ["stepfun"], "underlying_key":
+  metadata: '{"alias_platforms": {"step-5-preview": "nano-gpt", "step-5-preview-free": "opencode-go", "stepfun/step-5-preview": "nano-gpt"}, "hf_deferred": true, "providers": ["stepfun"], "underlying_key":
     "step-5-preview"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -29937,8 +30005,8 @@
   aliases:
   - hunyuan-a13b-instruct
   - tencent/hunyuan-a13b-instruct
-  metadata: '{"alias_platforms": {"hunyuan-a13b-instruct": "siliconflow", "tencent/hunyuan-a13b-instruct": "siliconflow"}, "hf_deferred": true, "providers": ["kilo", "openrouter", "siliconflow", "siliconflow-cn"],
-    "underlying_key": "hunyuan-a13b-instruct"}'
+  metadata: '{"alias_platforms": {"hunyuan-a13b-instruct": "kilo", "tencent/hunyuan-a13b-instruct": "kilo"}, "hf_deferred": true, "providers": ["kilo", "openrouter", "siliconflow", "siliconflow-cn"], "underlying_key":
+    "hunyuan-a13b-instruct"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: tencent/Hy-MT2-30B-A3B
@@ -30001,7 +30069,7 @@
   - hy3
   - hy3-free
   - tencent/hy3
-  metadata: '{"alias_platforms": {"hy3": "deepinfra", "hy3-free": "opencode", "tencent/hy3": "deepinfra"}, "hf_deferred": true, "providers": ["aihubmix", "deepinfra", "huggingface", "kilo", "llmgateway",
+  metadata: '{"alias_platforms": {"hy3": "nano-gpt", "hy3-free": "opencode", "tencent/hy3": "nano-gpt"}, "hf_deferred": true, "providers": ["aihubmix", "deepinfra", "huggingface", "kilo", "llmgateway",
     "nano-gpt", "novita-ai", "opencode", "opencode-go", "openrouter", "orcarouter", "requesty", "siliconflow", "tencent-tokenhub", "vercel"], "underlying_key": "hy3"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -30046,7 +30114,7 @@
   - Hy4 preview
   - hy4-preview
   - tencent/hy4-preview
-  metadata: '{"alias_platforms": {"hy4-preview": "deepinfra", "tencent/hy4-preview": "deepinfra"}, "hf_deferred": true, "providers": ["aihubmix", "deepinfra", "huggingface", "kilo", "llmgateway", "nano-gpt",
+  metadata: '{"alias_platforms": {"hy4-preview": "nano-gpt", "tencent/hy4-preview": "nano-gpt"}, "hf_deferred": true, "providers": ["aihubmix", "deepinfra", "huggingface", "kilo", "llmgateway", "nano-gpt",
     "novita-ai", "opencode-go", "openrouter", "tencent-tokenhub", "venice", "vercel"], "underlying_key": "hy4-preview"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -30325,8 +30393,8 @@
   - inkling
   - thinkingmachines/inkling
   - thinkingmachines/inkling:free
-  metadata: '{"alias_platforms": {"inkling": "deepinfra", "thinkingmachines/inkling": "deepinfra", "thinkingmachines/inkling:free": "openrouter"}, "hf_deferred": true, "providers": ["abacus", "baseten",
-    "deepinfra", "fireworks-ai", "huggingface", "kilo", "llmgateway", "merge-gateway", "nano-gpt", "nvidia", "openrouter", "requesty", "togetherai", "venice", "vercel"], "underlying_key": "inkling"}'
+  metadata: '{"alias_platforms": {"inkling": "nano-gpt", "thinkingmachines/inkling": "nano-gpt", "thinkingmachines/inkling:free": "openrouter"}, "hf_deferred": true, "providers": ["abacus", "baseten", "deepinfra",
+    "fireworks-ai", "huggingface", "kilo", "llmgateway", "merge-gateway", "nano-gpt", "nvidia", "openrouter", "requesty", "togetherai", "venice", "vercel"], "underlying_key": "inkling"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: thinkingmachines/Inkling-Small
@@ -30347,7 +30415,7 @@
   - inkling-small
   - thinkingmachines/inkling-small
   - thinkingmachines/inkling-small:free
-  metadata: '{"alias_platforms": {"inkling-small": "deepinfra", "thinkingmachines/inkling-small": "deepinfra", "thinkingmachines/inkling-small:free": "openrouter"}, "hf_deferred": true, "providers": ["baseten",
+  metadata: '{"alias_platforms": {"inkling-small": "nano-gpt", "thinkingmachines/inkling-small": "nano-gpt", "thinkingmachines/inkling-small:free": "openrouter"}, "hf_deferred": true, "providers": ["baseten",
     "deepinfra", "huggingface", "kilo", "nano-gpt", "openrouter", "vercel"], "underlying_key": "inkling-small"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -30746,21 +30814,23 @@
 - id: upstage/solar-mini4
   display_name: Solar Mini 4
   org_id: upstage
-  family: solar-mini4
+  family: solar-mini-4
   architecture: null
   params_billions: null
   parents: []
   open_weights: false
-  release_date: '2026-09-23'
-  input_modalities: null
-  output_modalities: null
+  release_date: '2026-09-22'
+  input_modalities:
+  - text
+  output_modalities:
+  - text
   tags: []
   aliases:
   - 'Upstage: Solar Mini 4'
   - solar-mini4
-  metadata: '{"alias_platforms": {"solar-mini4": "nano-gpt"}, "openrouter_adopted": true, "providers": ["kilo", "nano-gpt", "openrouter"], "underlying_key": "solar-mini4"}'
-  review_status: draft
-  resolution_source: models_dev
+  - upstage/solar-mini-4
+  metadata: '{"alias_platforms": {"solar-mini4": "nano-gpt"}, "knowledge_cutoffs": ["2026-02"], "release_dates": ["2026-09-22"], "snapshots": ["solar-mini4"]}'
+  review_status: reviewed
 - id: upstage/solar-pro-3
   display_name: Solar Pro 3
   org_id: upstage
@@ -31214,7 +31284,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: writer.palmyra-x5
-  display_name: Palmyra X5 (US)
+  display_name: writer.palmyra-x5
   org_id: null
   family: writer.palmyra-x5
   architecture: null
@@ -31228,6 +31298,7 @@
   - org-unknown
   aliases:
   - Palmyra X5
+  - Palmyra X5 (US)
   - us.writer.palmyra-x5-v1:0
   - writer.palmyra-x5-v1:0
   metadata: '{"alias_platforms": {"us.writer.palmyra-x5-v1:0": "amazon-bedrock", "writer.palmyra-x5-v1:0": "amazon-bedrock"}, "providers": ["amazon-bedrock"], "underlying_key": "writer.palmyra-x5"}'
@@ -31307,8 +31378,8 @@
   - grok-4-20-multi-agent
   - xai/grok-4-20-multi-agent
   - xai/grok-4.20-multi-agent
-  metadata: '{"alias_platforms": {"grok-4-20-multi-agent": "poe", "xai/grok-4-20-multi-agent": "poe"}, "openrouter_adopted": true, "providers": ["kilo", "nano-gpt", "openrouter", "poe", "venice", "vercel"],
-    "underlying_key": "grok-4-20-multi-agent"}'
+  metadata: '{"alias_platforms": {"grok-4-20-multi-agent": "nano-gpt", "xai/grok-4-20-multi-agent": "nano-gpt"}, "openrouter_adopted": true, "providers": ["kilo", "nano-gpt", "openrouter", "poe", "venice",
+    "vercel"], "underlying_key": "grok-4-20-multi-agent"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: x-ai/grok-4.3
@@ -31332,7 +31403,8 @@
   - grok-4.3
   - xai/grok-4-3
   - xai/grok-4.3
-  metadata: '{"alias_platforms": {"grok-4-3": "nano-gpt", "grok-4.3": "abacus", "xai/grok-4-3": "nano-gpt"}, "openrouter_adopted": true, "release_dates": ["2026-04-17"], "snapshots": ["grok-4.3"]}'
+  metadata: '{"alias_platforms": {"grok-4-3": "cloudflare-ai-gateway", "grok-4.3": "302ai", "xai/grok-4-3": "cloudflare-ai-gateway"}, "openrouter_adopted": true, "release_dates": ["2026-04-17"], "snapshots":
+    ["grok-4.3"]}'
   review_status: reviewed
 - id: x-ai/grok-4.5
   display_name: Grok 4.5
@@ -31355,7 +31427,8 @@
   - grok-4.5
   - xai/grok-4-5
   - xai/grok-4.5
-  metadata: '{"alias_platforms": {"grok-4-5": "nano-gpt", "grok-4.5": "abacus", "xai/grok-4-5": "nano-gpt"}, "openrouter_adopted": true, "release_dates": ["2026-07-08"], "snapshots": ["grok-4.5"]}'
+  metadata: '{"alias_platforms": {"grok-4-5": "cloudflare-ai-gateway", "grok-4.5": "302ai", "xai/grok-4-5": "cloudflare-ai-gateway"}, "openrouter_adopted": true, "release_dates": ["2026-07-08"], "snapshots":
+    ["grok-4.5"]}'
   review_status: reviewed
 - id: x-ai/grok-4.6
   display_name: Grok 4.6
@@ -31378,7 +31451,7 @@
   - grok-4.6
   - xai/grok-4-6
   - xai/grok-4.6
-  metadata: '{"alias_platforms": {"grok-4-6": "perplexity-agent", "grok-4.6": "abacus", "xai/grok-4-6": "perplexity-agent"}, "knowledge_cutoffs": ["2026-02-01"], "openrouter_adopted": true, "release_dates":
+  metadata: '{"alias_platforms": {"grok-4-6": "cloudflare-ai-gateway", "grok-4.6": "azure", "xai/grok-4-6": "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2026-02-01"], "openrouter_adopted": true, "release_dates":
     ["2026-08-12"], "snapshots": ["grok-4.6"]}'
   review_status: reviewed
 - id: x-ai/grok-4.7
@@ -31402,8 +31475,8 @@
   - grok-4.7
   - xai/grok-4-7
   - xai/grok-4.7
-  metadata: '{"alias_platforms": {"grok-4-7": "nano-gpt", "grok-4.7": "302ai", "xai/grok-4-7": "nano-gpt"}, "knowledge_cutoffs": ["2026-05"], "openrouter_adopted": true, "release_dates": ["2026-09-21"],
-    "snapshots": ["grok-4.7"]}'
+  metadata: '{"alias_platforms": {"grok-4-7": "cloudflare-ai-gateway", "grok-4.7": "azure", "xai/grok-4-7": "cloudflare-ai-gateway"}, "knowledge_cutoffs": ["2026-05"], "openrouter_adopted": true, "release_dates":
+    ["2026-09-21"], "snapshots": ["grok-4.7"]}'
   review_status: reviewed
 - id: x-ai/grok-build-0.1
   display_name: Grok Build 0.1
@@ -31426,7 +31499,8 @@
   - grok-build-0.1
   - xai/grok-build-0-1
   - xai/grok-build-0.1
-  metadata: '{"alias_platforms": {"grok-build-0-1": "nano-gpt", "grok-build-0.1": "xai", "xai/grok-build-0-1": "nano-gpt"}, "openrouter_adopted": true, "release_dates": ["2026-04-16"], "snapshots": ["grok-build-0.1"]}'
+  metadata: '{"alias_platforms": {"grok-build-0-1": "nano-gpt", "grok-build-0.1": "requesty", "xai/grok-build-0-1": "nano-gpt"}, "openrouter_adopted": true, "release_dates": ["2026-04-16"], "snapshots":
+    ["grok-build-0.1"]}'
   review_status: reviewed
 - id: x-preview-f
   display_name: x-preview-f
@@ -31553,7 +31627,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: xai/grok-4
-  display_name: grok-4-fast-reasoning
+  display_name: Grok 4
   org_id: xai
   family: grok-4
   architecture: null
@@ -31567,7 +31641,8 @@
   aliases:
   - Grok 4
   - grok-4
-  metadata: '{"alias_platforms": {"grok-4": "poe"}, "providers": ["302ai", "fastrouter", "helicone", "jiekou", "llmgateway", "poe", "qiniu-ai"], "underlying_key": "grok-4"}'
+  - grok-4-fast-reasoning
+  metadata: '{"alias_platforms": {"grok-4": "fastrouter"}, "providers": ["302ai", "fastrouter", "helicone", "jiekou", "llmgateway", "poe", "qiniu-ai"], "underlying_key": "grok-4"}'
   review_status: draft
   resolution_source: models_dev
 - id: xai/grok-4-0709
@@ -31585,7 +31660,7 @@
   aliases:
   - Grok 4 (0709)
   - grok-4-0709
-  metadata: '{"alias_platforms": {"grok-4-0709": "abacus"}, "providers": ["abacus", "jiekou"], "underlying_key": "grok-4-0709"}'
+  metadata: '{"alias_platforms": {"grok-4-0709": "jiekou"}, "providers": ["abacus", "jiekou"], "underlying_key": "grok-4-0709"}'
   review_status: draft
   resolution_source: models_dev
 - id: xai/grok-4-1
@@ -31605,7 +31680,7 @@
   - grok-4-1
   - grok-4-1-fast-reasoning
   - grok-4.1
-  metadata: '{"alias_platforms": {"grok-4-1": "302ai", "grok-4.1": "302ai"}, "providers": ["302ai", "azure", "frogbot", "google-vertex", "helicone", "jiekou", "llmgateway", "poe", "qiniu-ai", "vercel"],
+  metadata: '{"alias_platforms": {"grok-4-1": "qiniu-ai", "grok-4.1": "302ai"}, "providers": ["302ai", "azure", "frogbot", "google-vertex", "helicone", "jiekou", "llmgateway", "poe", "qiniu-ai", "vercel"],
     "underlying_key": "grok-4-1"}'
   review_status: draft
   resolution_source: models_dev
@@ -31874,7 +31949,7 @@
   tags: []
   aliases:
   - grok-code-fast-1
-  metadata: '{"alias_platforms": {"grok-code-fast-1": "poe"}, "providers": ["abacus", "frogbot", "helicone", "jiekou", "poe", "qiniu-ai"], "underlying_key": "grok-code-fast-1"}'
+  metadata: '{"alias_platforms": {"grok-code-fast-1": "frogbot"}, "providers": ["abacus", "frogbot", "helicone", "jiekou", "poe", "qiniu-ai"], "underlying_key": "grok-code-fast-1"}'
   review_status: draft
   resolution_source: models_dev
 - id: xai/grok-imagine-image
@@ -31912,7 +31987,7 @@
   tags: []
   aliases:
   - grok-imagine-image-2-0
-  metadata: '{"alias_platforms": {"grok-imagine-image-2-0": "zenmux"}, "providers": ["vercel", "zenmux"], "underlying_key": "grok-imagine-image-2-0"}'
+  metadata: '{"alias_platforms": {"grok-imagine-image-2-0": "zenmux"}, "providers": ["vercel", "zenmux"], "underlying_key": "grok-imagine-image-2-0", "upstream_status": "removed"}'
   review_status: draft
   resolution_source: models_dev
 - id: xai/grok-imagine-image-pro
@@ -32154,7 +32229,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: xai/xai.grok-4-6
-  display_name: Grok 4.6 (US)
+  display_name: Grok 4.6 (Global)
   org_id: xai
   family: xai.grok-4-6
   architecture: null
@@ -32166,6 +32241,7 @@
   output_modalities: null
   tags: []
   aliases:
+  - Grok 4.6 (US)
   - global.xai.grok-4.6
   - us.xai.grok-4.6
   - xai.grok-4-6
@@ -32345,7 +32421,7 @@
   review_status: draft
   resolution_source: models_dev
 - id: xiaomi/mimo-v2-6-flash-uncensored
-  display_name: MiMo V2.6 Flash Uncensored Thinking
+  display_name: MiMo V2.6 Flash Uncensored
   org_id: xiaomi
   family: mimo-v2-6-flash-uncensored
   architecture: null
@@ -32359,6 +32435,7 @@
   - open-weight
   aliases:
   - MiMo V2.6 Flash Uncensored
+  - MiMo V2.6 Flash Uncensored Thinking
   - mimo-v2-6-flash-uncensored
   metadata: '{"alias_platforms": {"mimo-v2-6-flash-uncensored": "nano-gpt"}, "providers": ["nano-gpt"], "underlying_key": "mimo-v2-6-flash-uncensored"}'
   review_status: draft
@@ -32492,9 +32569,9 @@
   - xiaomi-mimo-v2-6-flash
   - xiaomi/mimo-v2-6-flash
   - xiaomi/xiaomi-mimo-v2-6-flash
-  metadata: '{"alias_platforms": {"mimo-v2-6-flash": "deepinfra", "mimo-v2.6-flash": "xiaomi-token-plan-cn", "mimo-v2.6-flash-free": "opencode", "xiaomi-mimo-v2-6-flash": "venice", "xiaomi/mimo-v2-6-flash":
-    "deepinfra"}, "openrouter_adopted": true, "providers": ["aihubmix", "deepinfra", "kilo", "llmgateway", "nano-gpt", "novita-ai", "opencode", "opencode-go", "openrouter", "requesty", "vercel", "xiaomi",
-    "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp"], "underlying_key": "mimo-v2-6-flash"}'
+  metadata: '{"alias_platforms": {"mimo-v2-6-flash": "xiaomi-token-plan-cn", "mimo-v2.6-flash": "xiaomi-token-plan-cn", "mimo-v2.6-flash-free": "opencode", "xiaomi-mimo-v2-6-flash": "venice", "xiaomi/mimo-v2-6-flash":
+    "xiaomi-token-plan-cn"}, "openrouter_adopted": true, "providers": ["aihubmix", "deepinfra", "kilo", "llmgateway", "nano-gpt", "novita-ai", "opencode", "opencode-go", "openrouter", "requesty", "vercel",
+    "xiaomi", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp"], "underlying_key": "mimo-v2-6-flash"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: xiaomi/mimo-v2.6-pro
@@ -32514,9 +32591,9 @@
   - mimo-v2-6-pro
   - mimo-v2.6-pro
   - xiaomi/mimo-v2-6-pro
-  metadata: '{"alias_platforms": {"mimo-v2-6-pro": "deepinfra", "mimo-v2.6-pro": "xiaomi-token-plan-cn", "xiaomi/mimo-v2-6-pro": "deepinfra"}, "openrouter_adopted": true, "providers": ["aihubmix", "deepinfra",
-    "kilo", "llmgateway", "nano-gpt", "neuralwatt", "novita-ai", "opencode-go", "openrouter", "requesty", "vercel", "xiaomi", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp", "zenmux"],
-    "underlying_key": "mimo-v2-6-pro"}'
+  metadata: '{"alias_platforms": {"mimo-v2-6-pro": "xiaomi-token-plan-cn", "mimo-v2.6-pro": "xiaomi-token-plan-cn", "xiaomi/mimo-v2-6-pro": "xiaomi-token-plan-cn"}, "openrouter_adopted": true, "providers":
+    ["aihubmix", "deepinfra", "kilo", "llmgateway", "nano-gpt", "neuralwatt", "novita-ai", "opencode-go", "openrouter", "requesty", "vercel", "xiaomi", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp",
+    "zenmux"], "underlying_key": "mimo-v2-6-pro"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: xiaomi/mimo-v2.6-pro-ultraspeed
@@ -32536,8 +32613,8 @@
   - mimo-v2-6-pro-ultraspeed
   - mimo-v2.6-pro-ultraspeed
   - xiaomi/mimo-v2-6-pro-ultraspeed
-  metadata: '{"alias_platforms": {"mimo-v2-6-pro-ultraspeed": "nano-gpt", "mimo-v2.6-pro-ultraspeed": "aihubmix", "xiaomi/mimo-v2-6-pro-ultraspeed": "nano-gpt"}, "openrouter_adopted": true, "providers":
-    ["aihubmix", "kilo", "nano-gpt", "openrouter", "vercel", "xiaomi"], "underlying_key": "mimo-v2-6-pro-ultraspeed"}'
+  metadata: '{"alias_platforms": {"mimo-v2-6-pro-ultraspeed": "nano-gpt", "mimo-v2.6-pro-ultraspeed": "xiaomi", "xiaomi/mimo-v2-6-pro-ultraspeed": "nano-gpt"}, "openrouter_adopted": true, "providers": ["aihubmix",
+    "kilo", "nano-gpt", "openrouter", "vercel", "xiaomi"], "underlying_key": "mimo-v2-6-pro-ultraspeed"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: xpersona-frieren-coder
@@ -32669,7 +32746,7 @@
   - glm-5.3-flashx
   - zai/glm-5-3-flashx
   - zai/glm-5.3-flashx
-  metadata: '{"alias_platforms": {"glm-5-3-flashx": "zai", "glm-5.3-flashx": "zai", "zai/glm-5-3-flashx": "zai"}, "openrouter_adopted": true, "release_dates": ["2026-09-18"], "snapshots": ["glm-5.3-flashx"]}'
+  metadata: '{"alias_platforms": {"glm-5-3-flashx": "vercel", "glm-5.3-flashx": "zai", "zai/glm-5-3-flashx": "vercel"}, "openrouter_adopted": true, "release_dates": ["2026-09-18"], "snapshots": ["glm-5.3-flashx"]}'
   review_status: reviewed
 - id: z-ai/glm-5.3-prime
   display_name: 'Z.ai: GLM 5.3 Prime'
@@ -32709,7 +32786,7 @@
   aliases:
   - glm-5v-turbo
   - zai/glm-5v-turbo
-  metadata: '{"alias_platforms": {"glm-5v-turbo": "zai", "zai/glm-5v-turbo": "zai"}, "openrouter_adopted": true, "release_dates": ["2026-04-01"], "snapshots": ["glm-5v-turbo"]}'
+  metadata: '{"alias_platforms": {"glm-5v-turbo": "nano-gpt", "zai/glm-5v-turbo": "nano-gpt"}, "openrouter_adopted": true, "release_dates": ["2026-04-01"], "snapshots": ["glm-5v-turbo"]}'
   review_status: reviewed
 - id: z-image
   display_name: Z Image Turbo
@@ -32785,7 +32862,7 @@
   - autoglm-phone-9b-multilingual
   - zai/autoglm-phone-9b-multilingual
   - zhipuai/autoglm-phone-9b-multilingual
-  metadata: '{"alias_platforms": {"autoglm-phone-9b-multilingual": "novita-ai", "zai/autoglm-phone-9b-multilingual": "novita-ai"}, "hf_deferred": true, "providers": ["huggingface", "novita-ai"], "underlying_key":
+  metadata: '{"alias_platforms": {"autoglm-phone-9b-multilingual": "huggingface", "zai/autoglm-phone-9b-multilingual": "huggingface"}, "hf_deferred": true, "providers": ["huggingface", "novita-ai"], "underlying_key":
     "autoglm-phone-9b-multilingual"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -32874,7 +32951,7 @@
   - z-ai/glm-4.5v
   - zai/glm-4-5v
   - zai/glm-4.5v
-  metadata: '{"alias_platforms": {"glm-4-5v": "zai", "glm-4.5v": "zai", "z-ai/glm-4.5v": "openrouter", "zai/glm-4-5v": "zai"}, "hf_deferred": true, "providers": ["zai"], "underlying_key": "glm-4-5v"}'
+  metadata: '{"alias_platforms": {"glm-4-5v": "nano-gpt", "glm-4.5v": "302ai", "z-ai/glm-4.5v": "openrouter", "zai/glm-4-5v": "nano-gpt"}, "hf_deferred": true, "providers": ["zai"], "underlying_key": "glm-4-5v"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: zai-org/GLM-4.6
@@ -32914,7 +32991,8 @@
   - z-ai/glm-4.6v
   - zai/glm-4-6v
   - zai/glm-4.6v
-  metadata: '{"alias_platforms": {"glm-4-6v": "poe", "glm-4.6v": "zai", "z-ai/glm-4.6v": "openrouter", "zai/glm-4-6v": "poe"}, "hf_deferred": true, "providers": ["zai"], "underlying_key": "glm-4-6v"}'
+  metadata: '{"alias_platforms": {"glm-4-6v": "nano-gpt", "glm-4.6v": "zhipuai-coding-plan", "z-ai/glm-4.6v": "openrouter", "zai/glm-4-6v": "nano-gpt"}, "hf_deferred": true, "providers": ["zai"], "underlying_key":
+    "glm-4-6v"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: zai-org/GLM-4.6V-Flash
@@ -32938,7 +33016,7 @@
   - zai/glm-4-6v-flash
   - zai/glm-4.6v-flash
   - zhipuai/glm-4.6v-flash
-  metadata: '{"alias_platforms": {"glm-4-6v-flash": "zai", "glm-4.6v-flash": "zai", "zai/glm-4-6v-flash": "zai"}, "hf_deferred": true, "providers": ["zai"], "underlying_key": "glm-4-6v-flash"}'
+  metadata: '{"alias_platforms": {"glm-4-6v-flash": "huggingface", "glm-4.6v-flash": "zai", "zai/glm-4-6v-flash": "huggingface"}, "hf_deferred": true, "providers": ["zai"], "underlying_key": "glm-4-6v-flash"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: zai-org/GLM-4.7
@@ -33063,9 +33141,9 @@
   - zai/glm5-2
   - zai/zai-glm-5-2
   - zhipuai/glm-5.2
-  metadata: '{"alias_platforms": {"GLM-5.2": "wafer.ai", "TEE/glm-5.2": "nano-gpt", "TEE/glm-5.2:thinking": "nano-gpt", "databricks-glm-5-2": "databricks", "glm-5-2": "deepinfra", "glm-5.2": "zai", "glm-5.2-fast":
-    "neuralwatt", "glm-5.2@eu": "requesty", "glm5-2": "regolo-ai", "glm5.2": "regolo-ai", "glm5.2-fast": "wafer.ai", "z-ai/glm-5.2": "openrouter", "z-ai/glm-5.2:free": "openrouter", "zai-glm-5-2": "mistral",
-    "zai/glm-5-2": "deepinfra", "zai/glm5-2": "regolo-ai", "zai/zai-glm-5-2": "mistral"}, "hf_deferred": true, "providers": ["zai"], "underlying_key": "glm-5-2"}'
+  metadata: '{"alias_platforms": {"GLM-5.2": "wafer.ai", "TEE/glm-5.2": "nano-gpt", "TEE/glm-5.2:thinking": "nano-gpt", "databricks-glm-5-2": "databricks", "glm-5-2": "nano-gpt", "glm-5.2": "alibaba-cn",
+    "glm-5.2-fast": "requesty", "glm-5.2@eu": "requesty", "glm5-2": "regolo-ai", "glm5.2": "regolo-ai", "glm5.2-fast": "wafer.ai", "z-ai/glm-5.2": "openrouter", "z-ai/glm-5.2:free": "openrouter", "zai-glm-5-2":
+    "mistral", "zai/glm-5-2": "nano-gpt", "zai/glm5-2": "regolo-ai", "zai/zai-glm-5-2": "mistral"}, "hf_deferred": true, "providers": ["zai"], "underlying_key": "glm-5-2"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: zai-org/GLM-5.3
@@ -33099,8 +33177,8 @@
   - zai/zai-glm-5-3
   - zai/zai.glm-5-3
   - zhipuai/glm-5.3
-  metadata: '{"alias_platforms": {"GLM-5.3": "moark", "TEE/glm-5.3": "nano-gpt", "glm-5-3": "deepinfra", "glm-5.3": "zai", "glm-5.3-fast": "llmgateway", "glm-5.3@eu": "requesty", "global.zai.glm-5.3": "amazon-bedrock",
-    "us.zai.glm-5.3": "amazon-bedrock", "z-ai/glm-5.3": "openrouter", "zai-glm-5-3": "mistral", "zai.glm-5-3": "amazon-bedrock", "zai/glm-5-3": "deepinfra", "zai/zai-glm-5-3": "mistral", "zai/zai.glm-5-3":
+  metadata: '{"alias_platforms": {"GLM-5.3": "moark", "TEE/glm-5.3": "nano-gpt", "glm-5-3": "moark", "glm-5.3": "moark", "glm-5.3-fast": "llmgateway", "glm-5.3@eu": "requesty", "global.zai.glm-5.3": "amazon-bedrock",
+    "us.zai.glm-5.3": "amazon-bedrock", "z-ai/glm-5.3": "openrouter", "zai-glm-5-3": "mistral", "zai.glm-5-3": "amazon-bedrock", "zai/glm-5-3": "moark", "zai/zai-glm-5-3": "mistral", "zai/zai.glm-5-3":
     "amazon-bedrock"}, "hf_deferred": true, "providers": ["zai"], "underlying_key": "glm-5-3"}'
   review_status: reviewed
   resolution_source: models_dev
@@ -33128,8 +33206,8 @@
   - zai/glm-5-3-flash
   - zai/glm-5.3-flash
   - zhipuai/glm-5.3-flash
-  metadata: '{"alias_platforms": {"TEE/glm-5.3-flash": "nano-gpt", "glm-5-3-flash": "deepinfra", "glm-5.3-flash": "zai", "glm-5.3-flash-free": "opencode", "glm-5.3-flash@eu": "requesty", "z-ai/glm-5.3-flash":
-    "openrouter", "zai/glm-5-3-flash": "deepinfra"}, "hf_deferred": true, "providers": ["zai"], "underlying_key": "glm-5-3-flash"}'
+  metadata: '{"alias_platforms": {"TEE/glm-5.3-flash": "nano-gpt", "glm-5-3-flash": "nano-gpt", "glm-5.3-flash": "privatemode-ai", "glm-5.3-flash-free": "opencode", "glm-5.3-flash@eu": "requesty", "z-ai/glm-5.3-flash":
+    "openrouter", "zai/glm-5-3-flash": "nano-gpt"}, "hf_deferred": true, "providers": ["zai"], "underlying_key": "glm-5-3-flash"}'
   review_status: reviewed
   resolution_source: models_dev
 - id: zai-org/GLM-Image
@@ -33765,7 +33843,7 @@
   - glm-4-7-flashx
   - glm-4.7-flashx
   - zai/glm-4-7-flashx
-  metadata: '{"alias_platforms": {"glm-4-7-flashx": "zai", "glm-4.7-flashx": "zai", "zai/glm-4-7-flashx": "zai"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2026-01-19"], "snapshots": ["glm-4.7-flashx"]}'
+  metadata: '{"alias_platforms": {"glm-4-7-flashx": "vercel", "glm-4.7-flashx": "zai", "zai/glm-4-7-flashx": "vercel"}, "knowledge_cutoffs": ["2025-04"], "release_dates": ["2026-01-19"], "snapshots": ["glm-4.7-flashx"]}'
   review_status: reviewed
 - id: zai/glm-5-1-6bit
   display_name: GLM 5.1 6bit
