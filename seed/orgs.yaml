@@ -855,3 +855,17 @@
   kind: lab
   metadata: '{"paper": "https://arxiv.org/abs/2608.20554"}'
   review_status: draft
+
+# --- Phocinae — publisher of the Largha typed-decision model family (HF org
+# `Phocinae`, https://huggingface.co/Phocinae). Org behind the
+# Phocinae-Largha-150M-v1 typed-decisions EEE_datastore submission;
+# review_status draft -> maintainer promotes.
+- id: phocinae
+  display_name: Phocinae
+  website: https://huggingface.co/Phocinae
+  hf_org: Phocinae
+  aliases: []
+  tags: '["lab"]'
+  kind: lab
+  metadata: '{}'
+  review_status: draft

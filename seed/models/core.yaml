@@ -13785,3 +13785,27 @@ entries:
   aliases:
   - EuroLLM-22B-Instruct
   - EuroLLM-22B-it
+
+# --- Phocinae — Largha typed-decision model family (pub. 2026-10-08) ---
+# HF-native repo (Apache-2.0; 144.3M params; mmBERT-small base). Curated floor
+# entry for the Phocinae-Largha-150M-v1 typed-decisions EEE_datastore
+# submission; not yet carried by the generated sources. review_status draft ->
+# maintainer promotes.
+- id: Phocinae/Phocinae-Largha-150M-v1
+  resolution_source: hf
+  display_name: Phocinae-Largha-150M-v1
+  org_id: phocinae
+  family: largha-150m
+  architecture: null
+  params_billions: 0.1443
+  parents: []
+  open_weights: true
+  release_date: '2026-10-08'
+  input_modalities: null
+  output_modalities: null
+  tags:
+  - open-weight
+  metadata: '{"hf_id": "Phocinae/Phocinae-Largha-150M-v1"}'
+  review_status: draft
+  aliases:
+  - Phocinae-Largha-150M-v1
