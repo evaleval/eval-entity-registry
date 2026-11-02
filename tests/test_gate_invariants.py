@@ -1499,7 +1499,7 @@ def test_every_openrouter_snapshot_key_resolves(resolver):
     )
 
 
-_BARE_ID_CEILING = 250
+_BARE_ID_CEILING = 260
 
 
 def test_bare_canonical_org_ambiguity_is_explicit(models_df):

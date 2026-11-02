@@ -2428,3 +2428,84 @@ def test_orgless_mint_folds_only_on_a_unique_open_weight_name(mod):
     assert "flash" in {e["id"] for e in ambiguous}
     closed = fold([hf("lab/Flash-Pro", "Flash"), bare("private-flash", "Flash", False)])
     assert "private-flash" in {e["id"] for e in closed}
+
+
+# ---------------------------------------------------------------------------
+# A fold the committed file already made is never regressed by a fresh mint:
+# the mint's spelling is a committed alias of a defined owner, so it must be
+# suppressed onto that owner, and a second run over the result is a fixpoint.
+# ---------------------------------------------------------------------------
+def test_fresh_mint_of_a_committed_fold_is_suppressed_and_regen_is_a_fixpoint(mod, tmp_path):
+    core = tmp_path / "core.yaml"
+    core.write_text(
+        yaml.safe_dump(
+            [{"id": "Foo/Bar-30B", "display_name": "Foo Bar 30B", "aliases": []}]
+        )
+    )
+    committed = [{"id": "Foo/Bar-30B", "aliases": ["bar-30b", "Bar-30B"]}]
+
+    def fresh() -> list[dict]:
+        return [{
+            "id": "bar-30b",
+            "display_name": "Bar-30B",
+            "aliases": [],
+            "metadata": "{}",
+            "parents": [],
+        }]
+
+    def run(prior: list[dict]) -> list[dict]:
+        batch, claims = mod._carry_forward_committed(fresh(), prior)
+        return mod.reconcile_generated_against_existing(
+            batch, sources=(core,), committed_claims=claims
+        )
+
+    first = run(committed)
+    by_id = {e["id"]: e for e in first}
+    assert "bar-30b" not in by_id, "the committed fold must win over the fresh mint"
+    assert set(by_id) == {"Foo/Bar-30B"}
+    assert {"bar-30b", "Bar-30B"} <= set(by_id["Foo/Bar-30B"]["aliases"])
+    assert run(first) == first, "a second run over the regenerated file must be a fixpoint"
+
+
+def test_fresh_mint_on_a_real_hf_repo_id_is_not_folded_by_a_stale_claim(mod, tmp_path):
+    core = tmp_path / "core.yaml"
+    core.write_text(
+        yaml.safe_dump(
+            [{"id": "Foo/Bar-30B", "display_name": "Foo Bar 30B", "aliases": []}]
+        )
+    )
+    committed = [{"id": "Foo/Bar-30B", "aliases": ["Foo/Bar-30B-Instruct"]}]
+    fresh = [{
+        "id": "Foo/Bar-30B-Instruct",
+        "display_name": "Foo Bar 30B Instruct",
+        "aliases": [],
+        "metadata": json.dumps({"hf_deferred": True}),
+        "parents": [],
+    }]
+    batch, claims = mod._carry_forward_committed(fresh, committed)
+    out = mod.reconcile_generated_against_existing(batch, sources=(core,), committed_claims=claims)
+    assert "Foo/Bar-30B-Instruct" in {e["id"] for e in out}
+
+
+# ---------------------------------------------------------------------------
+# Two committed canonicals that share an identity (the generator strips
+# serving tags such as `-fast`) must stay two: the fresh entry carrying one
+# committed id is not renamed to the other, so neither committed id is merged
+# away and the regen is a fixpoint.
+# ---------------------------------------------------------------------------
+def test_fresh_entry_on_a_committed_id_is_never_renamed_to_another_committed_id(mod):
+    committed = [
+        {"id": "google/veo-3-1", "display_name": "Veo 3.1", "aliases": ["veo-3-1"],
+         "metadata": "{}", "parents": []},
+        {"id": "google/veo-3.1-fast", "display_name": "Veo 3.1 Fast", "aliases": [],
+         "metadata": "{}", "parents": []},
+    ]
+    fresh = [{"id": "google/veo-3-1", "display_name": "Veo-3.1", "aliases": ["veo-3-1"],
+              "metadata": "{}", "parents": []}]
+    batch, claims = mod._carry_forward_committed([dict(e) for e in fresh], committed)
+    ids = {e["id"] for e in batch if "display_name" in e}
+    assert ids == {"google/veo-3-1", "google/veo-3.1-fast"}
+    assert claims["google/veo-3-1"] == "google/veo-3-1"
+    assert claims["google/veo-3.1-fast"] == "google/veo-3.1-fast"
+    again, _ = mod._carry_forward_committed([dict(e) for e in fresh], batch)
+    assert {e["id"] for e in again if "display_name" in e} == ids

@@ -275,6 +275,7 @@ _NAME_VENDOR_MAP: list[tuple[str, str]] = sorted([
     ("hunyuan", "tencent"), ("ernie", "baidu"), ("doubao", "bytedance"), ("seed", "bytedance"),
     ("command", "cohere"), ("aya", "cohere"), ("nova", "amazon"), ("titan", "amazon"),
     ("solar", "upstage"), ("jamba", "ai21"), ("jurassic", "ai21"), ("sonar", "perplexity"),
+    ("sarvam", "sarvam-ai"),
     ("hermes", "nousresearch"), ("granite", "ibm"), ("flux", "black-forest-labs"),
     ("voyage", "voyageai"), ("cogito", "deepcogito"), ("falcon", "tiiuae"),
     ("olmo", "allenai"), ("tulu", "allenai"), ("bge", "baai"), ("inflection", "inflection"),
@@ -2293,6 +2294,7 @@ def _carry_forward_committed(
                 if a:
                     by_form.setdefault(a, e)
     skip = _load_core_skip_ids()
+    committed_ids = {c["id"] for c in committed if c.get("id")}
     claims: dict[str, str] = {}
     out = list(fresh)
     retained = 0
@@ -2316,15 +2318,21 @@ def _carry_forward_committed(
             cur is None and cid not in skip and "display_name" in c
             and cid not in _non_lineage_bases()
         ):
-            t = _pick_twin_candidate(cid, by_twin.get(_twin_key(cid), []))
+            # A fresh entry whose id is itself committed already has its
+            # identity; renaming it to a second committed spelling would merge
+            # two committed canonicals (`veo-3-1` onto `veo-3.1-fast`).
+            def _uncommitted(cands: list[dict]) -> list[dict]:
+                return [e for e in cands if e["id"] not in committed_ids]
+
+            t = _pick_twin_candidate(cid, _uncommitted(by_twin.get(_twin_key(cid), [])))
             if t is None:
                 t = _pick_twin_candidate(
                     cid,
-                    [
+                    _uncommitted([
                         e
                         for k in sorted(_extended_twin_keys(cid))
                         for e in by_twin_ext.get(k, [])
-                    ],
+                    ]),
                 )
             if t is None:
                 # Form-level twin: the fresh entry carries the committed id as
@@ -2645,7 +2653,13 @@ def reconcile_generated_against_existing(
         tgt = f["hf_target"]
         return tgt if tgt and tgt != e.get("id") else None
 
-    # Partition: suppressed when the id steals an existing canonical or
+    _committed = committed_claims or {}
+    _committed_norm: dict[str, str] = {}
+    for form, owner_id in sorted(_committed.items()):
+        _committed_norm.setdefault(_norm(form), owner_id)
+
+    # Partition: suppressed when the id steals an existing canonical, is a
+    # form the committed file already folded onto a defined owner, or
     # org-aware-folds to a real HF repo.
     survivors: list[dict] = []
     suppressed: list[dict] = []
@@ -2657,6 +2671,23 @@ def reconcile_generated_against_existing(
             o = _owner_of(cid)
             if o and o != cid and o in owner_defining:
                 owner = o
+        # The regenerated file's own committed folds are ownership too: a
+        # spelling the carry-forward assigned to a defined owner must not
+        # come back as a fresh invented canonical, or each run regresses the
+        # fold it recorded and the output never reaches a fixpoint. Exempt:
+        # an entry on a real HF repo id (deferred there, or oracle-fixed),
+        # which names its own repo, and an id some other source still
+        # defines — there the sources disagree, and the rekey recipe settles
+        # it, not the regen.
+        if (
+            owner is None and cid and "display_name" in e
+            and _entry_meta(e).get("hf_deferred") is not True
+            and cid not in _oracle_fixed_ids()
+            and _owner_of(cid) is None
+        ):
+            co = _committed.get(cid) or _committed_norm.get(_norm(cid))
+            if co and co != cid and co in owner_defining:
+                owner = co
         # An exact re-emit of an existing canonical enriches it rather than
         # surviving as a duplicate, and never goes through decide_fold, whose
         # fuzzy tier strips variant markers and would drag a distinct
@@ -2694,7 +2725,6 @@ def reconcile_generated_against_existing(
 
     # Donors iterate in id order so the first donor wins per scalar field.
     sibling_ids = {e["id"] for e in survivors}
-    _committed = committed_claims or {}
     enrich_aliases: dict[str, set[str]] = defaultdict(set)
     enrich_scalars: dict[str, dict] = defaultdict(dict)
     for e in sorted(suppressed, key=lambda x: x["id"]):
