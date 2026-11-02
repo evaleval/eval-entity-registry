@@ -27918,3 +27918,36 @@
   aliases:
     - aisi-the-last-ones
     - "The Last Ones"
+
+# --- Typed-decisions (LocalLLaMA/typed-decisions) — minted for the
+# Phocinae-Largha-150M-v1 EEE_datastore submission (source configs
+# typed-decisions-en / typed-decisions-zh); review_status draft -> maintainer
+# promotes.
+
+- id: typed-decisions
+  preferred_metric: accuracy
+  display_name: Typed Decisions
+  description: "Typed-decision benchmark (LocalLLaMA/typed-decisions): each case pairs a state with five typed questions (noul yes/no, choice pick-one, score 2-10) across four agent workflows; scores measure agreement with the gold decisions. English test split (400 cases / 2000 decisions) plus a Chinese translation set."
+  dataset_repo: LocalLLaMA/typed-decisions
+  parent_benchmark_id: null
+  tags: '["domain-specific", "multilingual"]'
+  metadata: '{}'
+  review_status: draft
+
+- id: typed-decisions-en
+  display_name: Typed Decisions En
+  description: "English test split of typed-decisions. Slice child of typed-decisions (EEE source config `typed-decisions-en`)."
+  dataset_repo: LocalLLaMA/typed-decisions
+  parent_benchmark_id: typed-decisions
+  tags: '["domain-specific", "multilingual"]'
+  metadata: '{}'
+  review_status: draft
+
+- id: typed-decisions-zh
+  display_name: Typed Decisions Zh
+  description: "Chinese cut of typed-decisions (machine-translated cases). Slice child of typed-decisions (EEE source config `typed-decisions-zh`)."
+  dataset_repo: LocalLLaMA/typed-decisions
+  parent_benchmark_id: typed-decisions
+  tags: '["domain-specific", "multilingual"]'
+  metadata: '{}'
+  review_status: draft
