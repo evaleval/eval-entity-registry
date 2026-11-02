@@ -11374,9 +11374,7 @@
   review_status: reviewed
   params_billions: 7.24
   open_weights: true
-  parents:
-  - id: LeroyDyer/SpydazWeb_AI_CyberTron_Ultra_7b
-    relationship: finetune
+  parents: []
   lineage_origin_model_org_id: LeroyDyer
 - id: LeroyDyer/SpydazWeb_AI_HumanAI_RP
   release_date: '2024-10-20'
@@ -29472,8 +29470,6 @@
     relationship: merge
   - id: bunnycore/Llama-3.2-3B-ProdigyPlus
     relationship: merge
-  - id: bunnycore/Llama-3.2-3B-ProdigyPlusPlus
-    relationship: merge
   lineage_origin_model_org_id: bunnycore
 - id: bunnycore/Llama-3.2-3B-RP-DeepThink
   release_date: '2024-12-27'
@@ -30470,9 +30466,7 @@
   review_status: reviewed
   params_billions: 0.95
   open_weights: true
-  parents:
-  - id: cckm/tinymistral_950m
-    relationship: finetune
+  parents: []
   lineage_origin_model_org_id: cckm
 - id: cgato/TheSalt-L3-8b-v0.3.2
   release_date: '2024-06-18'
@@ -30830,9 +30824,7 @@
   review_status: reviewed
   params_billions: 685.4
   open_weights: true
-  parents:
-  - id: deepseek-ai/DeepSeek-Math-V2
-    relationship: quantized
+  parents: []
   lineage_origin_model_org_id: deepseek
 - id: deepseek-ai/DeepSeek-OCR
   release_date: '2025-10-17'
@@ -31977,9 +31969,7 @@
   review_status: reviewed
   params_billions: 1.24
   open_weights: true
-  parents:
-  - id: duyhv1411/Llama-3.2-1B-en-vi
-    relationship: finetune
+  parents: []
   lineage_origin_model_org_id: duyhv1411
 - id: dwikitheduck/gemma-2-2b-id-inst
   release_date: '2024-10-24'
@@ -34149,9 +34139,7 @@
   review_status: reviewed
   params_billions: 4.3
   open_weights: true
-  parents:
-  - id: google/gemma-3-4b-it
-    relationship: finetune
+  parents: []
   lineage_origin_model_org_id: google
 - id: google/gemma-3n-E2B
   release_date: '2025-06-12'
@@ -44901,9 +44889,7 @@
   review_status: reviewed
   params_billions: 401.58
   open_weights: true
-  parents:
-  - id: meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8
-    relationship: quantized
+  parents: []
   lineage_origin_model_org_id: meta
 - id: meta-llama/Llama-4-Scout-17B-16E
   release_date: '2025-04-02'
@@ -57903,9 +57889,7 @@
   review_status: reviewed
   params_billions: 3.23
   open_weights: true
-  parents:
-  - id: tiiuae/Falcon3-3B-Instruct
-    relationship: finetune
+  parents: []
   lineage_origin_model_org_id: tiiuae
 - id: tiiuae/Falcon3-7B-Base
   release_date: '2024-11-21'

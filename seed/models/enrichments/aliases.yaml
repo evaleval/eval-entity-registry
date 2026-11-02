@@ -2165,6 +2165,7 @@
   - meta-llama/Meta-Llama-3.3-70B-Instruct
   - meta/llama-3.3-70b-instruct-maas
   - meta/llama-3-3-instruct-70b
+  - meta/llama3-3-70b
 - id: meta-llama/Meta-Llama-3-70B
   aliases:
   - meta-llama/Llama-3-70B
@@ -2257,9 +2258,6 @@
   - meta-llama/Meta-Llama-3.1-405B-Instruct
   - Llama-3.1-405B-it
   - meta/llama-3-1-instruct-405b
-- id: meta/llama-3-3-70b
-  aliases:
-  - meta/llama3-3-70b
 - id: meta/llama-3-3-70b-arliai-rpmax-v2
   aliases:
   - llama-3.3-70b-arliai-rpmax-v3
@@ -2348,9 +2346,12 @@
   aliases:
   - microsoft/phi4
   - unknown/phi4-14b
-- id: minimax/minimax-m1
+- id: MiniMaxAI/MiniMax-M1-80k
   aliases:
   - minimax-m1-40k
+  - minimax/minimax-m1
+  - minimax/minimax-m1-40k
+  - unknown/minimax-m1
 - id: MiniMaxAI/MiniMax-Text-01
   aliases:
   - unknown/minimax
@@ -3462,3 +3463,9 @@
 - id: nvidia/Llama-3.1-Nemotron-70B-Instruct
   aliases:
   - nvidia/llama-3-1-nemotron-instruct-70b
+# Raw EEE spellings whose tier3 draft folded onto the HF-true repo
+# (scripts/rekey_promoted_ids.py); the raw must keep resolving.
+- id: moonshotai/Kimi-K2-Instruct-0905
+  aliases:
+  - kimi/kimi-k2-0905
+  - moonshotai/kimi-k2-0905
