@@ -548,3 +548,20 @@ relationships:
     entity_b: include
     relationship_type: extended_from
     is_confirmed: true
+
+  # --- Vals.ai versioned benchmarks ---
+
+  - entity_a: finance-agent-v2
+    entity_b: finance-agent
+    relationship_type: version_of
+    is_confirmed: true
+
+  - entity_a: terminal-bench-2-1
+    entity_b: terminal-bench-2
+    relationship_type: version_of
+    is_confirmed: true
+
+  - entity_a: public-benefits-bench
+    entity_b: public-benefits-bench-v1
+    relationship_type: version_of
+    is_confirmed: true

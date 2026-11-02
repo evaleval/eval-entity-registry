@@ -1402,3 +1402,98 @@ class TestBenchmarkObservationRole:
         assert r.resolve_structured_benchmark("MMLU All Subjects") is None
         assert r.resolve_structured_benchmark("mmlu") is None
 
+
+
+class TestDeclaredEvalNameLayout:
+    """A source whose composite declares `metadata.eval_name_layout` says
+    which leading segments of its dotted names are not identity: the source
+    segment and any grouping layer (`paperswithcode.<category>.<benchmark>`).
+    The category is never probed as identity and never ends the probe, and
+    the fallback spelling strips exactly what the layout declares."""
+
+    def _resolver(self, declared: bool = True):
+        from eval_entity_resolver import CanonicalStore
+
+        composites = pd.DataFrame(
+            [
+                {
+                    "id": "paperswithcode",
+                    "display_name": "Papers with Code",
+                    "source_configs": '["paperswithcode"]',
+                    "metadata": (
+                        '{"eval_name_layout": "source.category.benchmark"}'
+                        if declared else "{}"
+                    ),
+                },
+                {
+                    "id": "llm-stats",
+                    "display_name": "LLM Stats",
+                    "source_configs": '["llm-stats"]',
+                    "metadata": '{"eval_name_layout": "source.benchmark"}',
+                },
+            ]
+        )
+        return Resolver(
+            _store_with_aliases(
+                ("math", "benchmark", "math", None, "confirmed"),
+                ("swe_bench_pro", "benchmark", "swe-bench-pro", None, "confirmed"),
+                ("Papers with Code", "composite", "paperswithcode", None, "confirmed"),
+            ),
+            canonical_store=CanonicalStore(composites_df=composites),
+        )
+
+    def test_category_segment_is_not_identity(self):
+        # `math` is a registered benchmark; as a declared category it must
+        # not claim Riemann-Bench.
+        r = self._resolver()
+        assert r.resolve_structured_benchmark(
+            "paperswithcode.math.riemann_bench", source_config="paperswithcode"
+        ) is None
+        assert r.fallback_benchmark_raw(
+            "paperswithcode.math.riemann_bench", "paperswithcode"
+        ) == "riemann bench"
+
+    def test_leaf_past_an_unknown_category_resolves(self):
+        match = self._resolver().resolve_structured_benchmark(
+            "paperswithcode.coding_agents.swe_bench_pro", source_config="paperswithcode"
+        )
+        assert match is not None
+        assert (match.canonical_id, match.benchmark_raw, match.subset) == (
+            "swe-bench-pro", "swe bench pro", None,
+        )
+
+    def test_undeclared_source_keeps_the_old_reading(self):
+        r = self._resolver(declared=False)
+        match = r.resolve_structured_benchmark(
+            "paperswithcode.math.riemann_bench", source_config="paperswithcode"
+        )
+        assert match is not None and match.canonical_id == "math"
+        assert r.eval_name_layout("paperswithcode") is None
+
+    def test_depth_only_applies_under_the_source_segment(self):
+        match = self._resolver().resolve_structured_benchmark(
+            "math.riemann_bench", source_config="paperswithcode"
+        )
+        assert match is not None and match.canonical_id == "math"
+
+    def test_fallback_strips_only_a_declared_layout(self):
+        r = self._resolver()
+        assert r.eval_name_layout("llm-stats") == 0
+        assert r.fallback_benchmark_raw("llm_stats.cwe-bench", "llm-stats") == "cwe-bench"
+        # A folder that names its own benchmark declares nothing, so its
+        # name stays in the key instead of becoming "category law".
+        assert r.fallback_benchmark_raw(
+            "vectara-hallucination-leaderboard.category.law",
+            "vectara-hallucination-leaderboard",
+        ) == "vectara-hallucination-leaderboard category law"
+        assert r.fallback_benchmark_raw("llm_stats.cwe-bench", None) == "llm stats cwe-bench"
+        assert r.fallback_benchmark_raw(None, "llm-stats") is None
+
+    def test_layout_strings_parse_strictly(self):
+        from eval_entity_resolver.canonical_store import _parse_eval_name_layout
+
+        assert _parse_eval_name_layout("source.benchmark") == 0
+        assert _parse_eval_name_layout("source.category.benchmark") == 1
+        assert _parse_eval_name_layout("source.a.b.benchmark") == 2
+        for bad in ("benchmark", "category.benchmark", "source.category", "source..benchmark", 1, None):
+            assert _parse_eval_name_layout(bad) is None

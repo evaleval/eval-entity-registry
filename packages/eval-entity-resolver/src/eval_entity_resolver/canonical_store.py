@@ -54,6 +54,20 @@ def _safe_json_load(s: str, default: Any = None) -> Any:
         return default
 
 
+def _parse_eval_name_layout(layout: Any) -> Optional[int]:
+    """`source.benchmark` → 0, `source.category.benchmark` → 1, …; None for
+    anything that is not a dotted token list starting with `source` and
+    ending with `benchmark`."""
+    if not isinstance(layout, str):
+        return None
+    tokens = [t.strip() for t in layout.split(".")]
+    if len(tokens) < 2 or tokens[0] != "source" or tokens[-1] != "benchmark":
+        return None
+    if any(not t for t in tokens[1:-1]):
+        return None
+    return len(tokens) - 2
+
+
 def _hf_repo_id_of(ent: Optional[dict], canonical_id: Optional[str]) -> Optional[str]:
     """The model's HF repo id when the registry can ATTEST it, else None.
 
@@ -235,6 +249,35 @@ class CanonicalStore:
         if not canonical_id:
             return None
         return self._ensure_index(entity_type).get(canonical_id)
+
+    def eval_name_layout(self, source_config: str) -> Optional[int]:
+        """The declared dotted-`evaluation_name` layout of `source_config`,
+        read from `metadata.eval_name_layout` of the composite that lists it:
+        `source.benchmark` or `source.<namespace>.…benchmark`. Returns the
+        number of grouping segments between the source segment and the
+        benchmark (0 for `source.benchmark`), or None when the source
+        declares no layout — callers must then not strip anything."""
+        from eval_entity_resolver.normalization import normalize
+
+        cached = getattr(self, "_eval_name_layout_by_config", None)
+        if cached is None:
+            cached = {}
+
+            def _json(value: Any) -> Any:
+                return _safe_json_load(value) if isinstance(value, str) else value
+
+            for row in self._ensure_index("composite").values():
+                meta = _json(row.get("metadata"))
+                layout = meta.get("eval_name_layout") if isinstance(meta, dict) else None
+                depth = _parse_eval_name_layout(layout)
+                if depth is None:
+                    continue
+                for member in _json(row.get("source_configs")) or []:
+                    config = member.get("config") if isinstance(member, dict) else member
+                    if isinstance(config, str) and config:
+                        cached[normalize(config)] = depth
+            self._eval_name_layout_by_config = cached
+        return cached.get(normalize(source_config))
 
     @property
     def org_dev_map(self) -> dict[str, str]:

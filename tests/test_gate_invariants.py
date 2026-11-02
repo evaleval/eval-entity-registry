@@ -787,6 +787,27 @@ _ORACLE_ALIAS_EXEMPT: frozenset = frozenset({
     # `vercel` is an inference platform (seed/inference_platforms.yaml), not a
     # developer; the host prefix is stripped, so no_match is correct.
     ("org", "vercel"),
+    # Leaderboard aggregators are composites (seed/composites.yaml), not
+    # benchmarks: as benchmark canonicals they claimed every unregistered name
+    # under their datastore folder and pooled unrelated results into one score.
+    # Retired as benchmarks; no_match for the benchmark entity_type is correct.
+    ("benchmark", "LLM Stats"), ("benchmark", "LLM-Stats"),
+    ("benchmark", "llm-stats"), ("benchmark", "llm_stats"),
+    ("benchmark", "Vals AI"), ("benchmark", "vals-ai"), ("benchmark", "vals_ai"),
+    ("benchmark", "OpenEval"), ("benchmark", "openeval"),
+    ("benchmark", "open-eval"), ("benchmark", "open_eval"),
+    # Bare scoring-mode / subset tokens minted as benchmarks; they claimed
+    # `vals_ai.programbench.strict` and `vals_ai.cyber.patch` once the real
+    # parent benchmarks resolved.
+    ("benchmark", "STRICT"), ("benchmark", "strict"),
+    ("benchmark", "PATCH!"), ("benchmark", "patch"),
+    # BFCL subset spellings are now scoped to the `bfcl` folder: unscoped,
+    # `multi_turn` / `web_search` captured other benchmarks' subsets.
+    ("benchmark", "Multi turn"), ("benchmark", "multi_turn"),
+    ("benchmark", "Web search"), ("benchmark", "web_search"),
+    ("benchmark", "Non live"), ("benchmark", "non_live"),
+    ("benchmark", "Live"), ("benchmark", "live"),
+    ("benchmark", "Memory"), ("benchmark", "memory"),
 }) | _INVENTED_WRONG_ORG_IDS
 
 

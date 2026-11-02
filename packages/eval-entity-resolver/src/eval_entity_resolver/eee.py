@@ -209,12 +209,37 @@ def prepare_eval_name_segments(eval_name: str | None) -> list[str] | None:
     return segments or None
 
 
-def clean_eval_name(eval_name: str) -> str:
+# A dot between digits is a version (`frontier_cs_2.0`), not a segment break.
+_DOT_SEGMENT_RE = re.compile(r"(?<!\d)\.|\.(?!\d)")
+
+
+def split_dotted_eval_name(name: str) -> list[str]:
+    return [p for p in _DOT_SEGMENT_RE.split(name) if p.strip()]
+
+
+def segment_reads_as_metric(segment: str) -> bool:
+    """True when a dotted-name segment reads as a metric to the keyword
+    extractor (`live_accuracy`, `rank`), so it is a metric tail rather than
+    the benchmark's own name (`swe_bench_pro`, `babble_anti_unification`)."""
+    return _keyword_extract(segment.replace("_", " ").lower()) is not None
+
+
+def clean_eval_name(
+    eval_name: str,
+    source_config: str | None = None,
+    namespace_segments: int = 0,
+) -> str:
     """Strip embedded metric information from an ``evaluation_name``, leaving
     the benchmark portion.
 
-    * Dot notation — ``"bfcl.live.live_accuracy"`` → ``"bfcl live"`` (the last
-      segment is the metric)
+    * Dot notation — ``"bfcl.live.live_accuracy"`` → ``"bfcl live"``: a
+      trailing segment is dropped only when it reads as a metric;
+      ``"llm_stats.cwe-bench"`` keeps ``cwe-bench`` (dropping it would make
+      every name under a source collapse onto the source's own name). A
+      leading segment naming ``source_config`` is dropped, and so are the
+      next ``namespace_segments`` segments — the adapter's grouping layer
+      (``paperswithcode.<task category>.<benchmark>``), declared per source
+      in the registry's composites seed.
     * Underscore suffix — ``"fibble1_arena_win_rate"`` → ``"fibble1 arena"``
     * Trailing words — ``"Gaming Score"`` → ``"Gaming"``
     """
@@ -223,7 +248,19 @@ def clean_eval_name(eval_name: str) -> str:
         return name
 
     if "." in name and " " not in name:
-        parts = name.rsplit(".", 1)[0].split(".")
+        from eval_entity_resolver.normalization import normalize
+
+        parts = split_dotted_eval_name(name)
+        if (
+            len(parts) > 1
+            and source_config
+            and normalize(parts[0]) == normalize(source_config)
+        ):
+            parts = parts[1:]
+            if namespace_segments > 0 and len(parts) > namespace_segments:
+                parts = parts[namespace_segments:]
+        if len(parts) > 1 and segment_reads_as_metric(parts[-1]):
+            parts = parts[:-1]
         return " ".join(p.replace("_", " ") for p in parts)
 
     has_underscores = "_" in name and " " not in name

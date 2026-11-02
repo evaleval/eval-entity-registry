@@ -74,11 +74,13 @@ def test_registered_child_still_wins(resolver):
     assert match.canonical_id == "mcp-atlas"
 
 
-def test_unregistered_child_becomes_a_slice_of_the_aggregator(resolver):
-    match = resolver.resolve_structured_benchmark("llm_stats.deepswe-1.1", "llm-stats")
-    assert (match.canonical_id, match.benchmark_raw, match.subset) == (
-        "llm-stats", "llm stats deepswe-1", "deepswe-1",
-    )
+def test_unregistered_child_of_an_aggregator_stays_unresolved(resolver):
+    """`llm-stats` re-publishes other benchmarks and is not one itself, so
+    it is not seeded as a benchmark: an unregistered child must stay
+    unresolved rather than pool under the aggregator, and the fallback
+    spelling is the child's own name (declared `source.benchmark` layout)."""
+    assert resolver.resolve_structured_benchmark("llm_stats.deepswe-1.1", "llm-stats") is None
+    assert resolver.fallback_benchmark_raw("llm_stats.deepswe-1.1", "llm-stats") == "deepswe-1.1"
 
 
 def test_deeper_hit_still_outranks_the_folder(resolver):
@@ -86,10 +88,19 @@ def test_deeper_hit_still_outranks_the_folder(resolver):
     assert (match.canonical_id, match.subset) == ("mmlu-pro", "biology")
 
 
-def test_unregistered_child_under_a_registered_folder(resolver):
+def test_registered_child_under_an_aggregator_keeps_its_subset(resolver):
+    """`vals-ai` is likewise a re-publisher, not a benchmark: the child is
+    the identity and the trailing segment its subset."""
     match = resolver.resolve_structured_benchmark("vals_ai.programbench.strict", "vals-ai")
-    assert match.canonical_id == "vals-ai"
-    assert match.subset == "programbench strict"
+    assert match.canonical_id == "programbench"
+    assert match.subset == "strict"
+
+
+def test_unregistered_child_under_an_aggregator_stays_unresolved(resolver):
+    assert resolver.resolve_structured_benchmark("vals_ai.zzz_bench.overall", "vals-ai") is None
+    # The fallback keeps every non-metric segment: an unresolved name's
+    # reported cuts (`overall`, `partial`) stay distinct keys.
+    assert resolver.fallback_benchmark_raw("vals_ai.zzz_bench.overall", "vals-ai") == "zzz bench overall"
 
 
 @pytest.mark.parametrize("name,folder", [

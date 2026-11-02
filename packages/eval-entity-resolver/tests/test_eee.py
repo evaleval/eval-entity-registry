@@ -222,6 +222,48 @@ class TestCleanEvalName:
     def test_empty(self):
         assert clean_eval_name("") == ""
 
+    # --- Dot notation: the last segment is dropped only when it is a metric ---
+
+    def test_dot_keeps_a_benchmark_leaf(self):
+        assert (
+            clean_eval_name("paperswithcode.coding_agents.swe_bench_pro")
+            == "paperswithcode coding agents swe bench pro"
+        )
+
+    def test_dot_keeps_a_two_segment_benchmark(self):
+        assert clean_eval_name("llm_stats.cwe-bench") == "llm stats cwe-bench"
+
+    def test_dot_keeps_a_version_number_whole(self):
+        assert (
+            clean_eval_name("frontier_cs_2.0.algorithms.polygon")
+            == "frontier cs 2.0 algorithms polygon"
+        )
+
+    def test_source_segment_is_dropped(self):
+        assert clean_eval_name("llm_stats.cwe-bench", source_config="llm-stats") == "cwe-bench"
+
+    def test_source_and_namespace_segments_are_dropped(self):
+        assert (
+            clean_eval_name(
+                "paperswithcode.math.riemann_bench",
+                source_config="paperswithcode",
+                namespace_segments=1,
+            )
+            == "riemann bench"
+        )
+
+    def test_namespace_depth_never_empties_the_name(self):
+        assert (
+            clean_eval_name("paperswithcode.vending_bench_2", source_config="paperswithcode", namespace_segments=1)
+            == "vending bench 2"
+        )
+
+    def test_metric_tail_still_dropped_after_namespaces(self):
+        assert (
+            clean_eval_name("bfcl.live.live_accuracy", source_config="bfcl", namespace_segments=0)
+            == "live"
+        )
+
 
 class TestMidSentenceOnTruncation:
     """The "X on Y" pattern must not truncate prose: a keyword after a

@@ -1791,7 +1791,8 @@
 
 - id: bfcl-live
   display_name: BFCL Live
-  aliases: ["Live"]
+  scoped_aliases:
+    bfcl: ["Live", "live"]
   description: BFCL Live — function-calling benchmark with live user queries.
   dataset_repo: gorilla-llm/Berkeley-Function-Calling-Leaderboard
   parent_benchmark_id: bfcl
@@ -1812,7 +1813,12 @@
 
 - id: bfcl-multi-turn
   display_name: BFCL Multi-turn
-  aliases: ["Multi turn", "multi_turn"]
+  # Subset spellings scoped to the bfcl folder: unscoped they claim any
+  # benchmark's `multi_turn` subset.
+  scoped_aliases:
+    bfcl:
+      - "Multi turn"
+      - "multi_turn"
   description: BFCL multi-turn function calling.
   dataset_repo: gorilla-llm/Berkeley-Function-Calling-Leaderboard
   parent_benchmark_id: bfcl
@@ -1822,7 +1828,8 @@
 
 - id: bfcl-non-live
   display_name: BFCL Non-live
-  aliases: ["Non live", "non_live"]
+  scoped_aliases:
+    bfcl: ["Non live", "non_live"]
   description: BFCL Non-live — static function-calling subset.
   dataset_repo: gorilla-llm/Berkeley-Function-Calling-Leaderboard
   parent_benchmark_id: bfcl
@@ -1852,7 +1859,10 @@
 
 - id: bfcl-web-search
   display_name: BFCL Web Search
-  aliases: ["Web search", "web_search"]
+  scoped_aliases:
+    bfcl:
+      - "Web search"
+      - "web_search"
   description: BFCL web-search function-calling subset.
   dataset_repo: gorilla-llm/Berkeley-Function-Calling-Leaderboard
   parent_benchmark_id: bfcl
@@ -2729,26 +2739,6 @@
   metadata: '{}'
   review_status: reviewed
 
-- id: llm-stats
-  display_name: LLM-Stats
-  aliases: ["llm-stats", "llm_stats", "LLM Stats", "LLM-Stats"]
-  description: LLM-Stats — third-party leaderboard aggregator at llm-stats.com.
-  dataset_repo: null
-  parent_benchmark_id: null
-  tags: '["leaderboard", "aggregation"]'
-  metadata: '{}'
-  review_status: reviewed
-
-- id: vals-ai
-  display_name: Vals AI
-  aliases: ["vals-ai", "vals_ai", "Vals AI"]
-  description: Vals AI — third-party benchmark/leaderboard aggregator at vals.ai.
-  dataset_repo: null
-  parent_benchmark_id: null
-  tags: '["leaderboard", "aggregation"]'
-  metadata: '{}'
-  review_status: reviewed
-
 - id: artificial-analysis-llms
   preferred_metric: score
   display_name: Artificial Analysis LLMs
@@ -2757,16 +2747,6 @@
   dataset_repo: null
   parent_benchmark_id: null
   tags: '["leaderboard", "aggregation"]'
-  metadata: '{}'
-  review_status: reviewed
-
-- id: openeval
-  display_name: OpenEval
-  aliases: ["openeval", "OpenEval", "open_eval", "open-eval"]
-  description: OpenEval — leaderboard aggregator.
-  dataset_repo: null
-  parent_benchmark_id: null
-  tags: '["leaderboard"]'
   metadata: '{}'
   review_status: reviewed
 
@@ -18205,17 +18185,6 @@
   aliases:
     - parrot
 
-- id: patch
-  display_name: PATCH!
-  dataset_repo: null
-  parent_benchmark_id: null
-  tags: '["general"]'
-  metadata: '{}'
-  review_status: reviewed
-  aliases:
-    - PATCH!
-    - patch
-
 - id: pathmcqa
   display_name: Pathmcqa
   dataset_repo: null
@@ -21484,16 +21453,6 @@
   review_status: reviewed
   aliases:
     - streetmath
-
-- id: strict
-  display_name: STRICT
-  dataset_repo: null
-  parent_benchmark_id: null
-  tags: '["general"]'
-  metadata: '{}'
-  review_status: reviewed
-  aliases:
-    - STRICT
 
 - id: structbench
   display_name: StructBench
@@ -25510,6 +25469,14 @@
     - Vals index overall
     - Vals index swebench
     - Vals index terminal bench 2
+    - Vals index terminal bench 2 1
+    - Vals index code migration
+    - Vals index emb
+    - Vals index legal research
+    - Vals index legal agent benchmark
+    - Vals index vibe code bench
+    - Vals Index v2.2
+    - vals_index_v2_2
     - vals-index
     - vals_ai_vals_index
     - vals_ai_vals_index_case_law_v2
@@ -25538,6 +25505,8 @@
     - Vals multimodal index sage
     - Vals multimodal index swebench
     - Vals multimodal index terminal bench 2
+    - Vals multimodal index terminal bench 2 1
+    - Vals multimodal index vibe code bench
     - vals-multimodal-index
     - vals_ai_vals_multimodal_index
     - vals_ai_vals_multimodal_index_case_law_v2
@@ -25561,6 +25530,10 @@
   aliases:
     - Vibe Code
     - Vibe Code overall
+    - Vibe Code Bench
+    - Vibe Code Bench v1.1
+    - Vibe Code Bench 1-100
+    - vcb-1-100
     - vals_ai_vibe_code
     - vals_ai_vibe_code_overall
     - vibe-code
@@ -27918,3 +27891,525 @@
   aliases:
     - aisi-the-last-ones
     - "The Last Ones"
+
+# --- Agentic / coding benchmarks reported by both Papers with Code and LLM Stats ---
+
+- id: frontier-cs-2
+  preferred_metric: score
+  display_name: FrontierCS 2
+  description: Frontier-CS 2.0 — expert-level computer-science research and engineering tasks (algorithms, systems, ML, security, …) scored per task on a 0–100 platform run score; Papers with Code reports the fitted FrontierCS Capabilities Index.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["coding", "agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - FrontierCS 2
+    - FrontierCS 2.0
+    - Frontier-CS 2
+    - Frontier-CS 2.0
+    - frontier-cs-2
+    - frontier_cs_2
+    - frontier_cs_2.0
+    - frontiercs-2
+    - frontiercs_2
+
+- id: riemann-bench
+  preferred_metric: pass-at-1
+  display_name: Riemann-Bench
+  description: Surge AI benchmark of advanced mathematics and scientific reasoning tasks.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["math", "reasoning"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Riemann-Bench
+    - RiemannBench
+    - riemann-bench
+    - riemann_bench
+    - riemannbench
+
+- id: cwe-bench
+  preferred_metric: pass-at-1
+  display_name: CWE-Bench
+  description: Agentic benchmark on finding and patching real-world software vulnerabilities (CWE classes).
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["cybersecurity", "agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - CWE-Bench
+    - CWE-bench v1
+    - cwe-bench
+    - cwe_bench
+    - cwe_bench_v1
+
+- id: exploitgym
+  preferred_metric: success-rate
+  display_name: ExploitGym
+  description: Large-scale exploitation benchmark built from real-world vulnerabilities across userspace programs, browser engines and the kernel.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["cybersecurity", "agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - ExploitGym
+    - exploitgym
+    - exploit_gym
+    - exploit-gym
+
+- id: sec-bench-pro
+  preferred_metric: success-rate
+  display_name: SEC-bench Pro
+  description: Self-evolving software-security benchmark measuring agent bug hunting on critical, high-complexity systems. Distinct from SEC-bench.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["cybersecurity", "agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - SEC-bench Pro
+    - sec-bench-pro
+    - sec_bench_pro
+
+- id: terminal-bench-4
+  preferred_metric: accuracy
+  display_name: Terminal-Bench 4.0
+  description: Terminal-Bench 4.0 — agentic terminal tasks with executable final-container-state verifiers.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["coding", "agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Terminal-Bench 4.0
+    - Terminal-Bench 4
+    - Terminal-Bench 4.0-AA
+    - terminal-bench-4
+    - terminal-bench-4.0
+    - terminal-bench-4.0-aa
+    - terminal_bench_4_0
+
+- id: terminal-bench-science
+  preferred_metric: accuracy
+  display_name: Terminal-Bench-Science
+  description: Stanford-led community benchmark of terminal tasks drawn from scientific research workflows (v0.1, 70 tasks).
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["coding", "agentic", "domain-specific"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Terminal-Bench-Science
+    - Terminal-Bench-Science 0.1
+    - terminal-bench-science
+    - terminal-bench-science-0.1
+    - terminal_bench_science_0_1
+
+- id: frontierswe-v2
+  preferred_metric: score
+  display_name: FrontierSWE v2
+  description: FrontierSWE V2 — open-ended technical project tasks for coding agents, reported as mean@5. Kept separate from FrontierSWE v1.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["coding", "software-engineering", "agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - FrontierSWE v2
+    - FrontierSWE V2
+    - frontierswe-v2
+    - frontierswe_v2
+
+- id: blueprint-bench-2
+  preferred_metric: score
+  display_name: Blueprint-Bench 2
+  description: Agentic spatial-reasoning benchmark — floor-plan connectivity recovered from images, normalized so random = 0 and perfect = 1.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["multimodal", "reasoning", "agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Blueprint-Bench 2
+    - blueprint-bench-2
+    - blueprint_bench_2
+
+- id: automationbench
+  preferred_metric: success-rate
+  display_name: AutomationBench
+  description: Tool-use benchmark evaluating agents on automating real-world workflows across business applications.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["agentic", "function-calling"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - AutomationBench
+    - AutomationBench (private v1.0.6)
+    - automationbench
+    - automationbench_private_1_0_6
+    - automation_bench
+
+- id: webdev-arena
+  preferred_metric: elo
+  display_name: WebDev Arena
+  description: LMArena leaderboard for web-development tasks, scored by pairwise human preference (Elo).
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["coding", "leaderboard"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - WebDev Arena
+    - webdev-arena
+    - webdev_arena
+
+# --- Vals.ai proprietary benchmarks (previously pooled under the removed `vals-ai` entry) ---
+# Identity segment is the vals-ai name token (`vals_ai.<token>.<subset>`); the
+# display name is the record's own dataset_name.
+
+- id: hlab
+  display_name: Harvey's Legal Agent Benchmark
+  description: Harvey × Vals.ai legal agent benchmark; practice areas (antitrust, banking & finance, trusts & estates, …) are reported as subsets.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["professional-services", "agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - hlab
+    - HLAB
+    - Harvey's Legal Agent Benchmark
+    - Harvey Legal Agent Benchmark
+
+- id: legal-research-bench
+  display_name: Legal Research Bench
+  description: Vals.ai legal research benchmark; areas of law are reported as subsets.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["professional-services"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Legal Research Bench
+    - legal-research-bench
+    - legal_research
+    - legal research
+
+- id: finance-agent-v2
+  display_name: Finance Agent (v2)
+  description: Vals.ai Finance Agent benchmark, version 2; task categories (adjustments, comparables, market analysis, …) are reported as subsets. Version 1.1 is `finance-agent`.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["agentic", "professional-services"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Finance Agent (v2)
+    - Finance Agent v2
+    - finance-agent-v2
+    - finance_agent_v2
+    - fabv2
+    - llm_stats_finance_agent_v2
+
+- id: emb-vals
+  display_name: EMB
+  description: Vals.ai EMB finance benchmark (comps, dataroom, DCF, … reported as subsets).
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["professional-services"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - emb-vals
+    - vals ai emb
+  scoped_aliases:
+    vals-ai:
+      - emb
+      - EMB
+
+- id: terminal-bench-2-1
+  display_name: Terminal-Bench 2.1
+  description: Terminal-Bench 2.1 — point release after 2.0; distinct version per the versioned-benchmark rule.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["coding", "agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Terminal-Bench 2.1
+    - terminal-bench-2-1
+    - terminal-bench-2.1
+    - terminal_bench_2_1
+
+- id: code-migration
+  display_name: Code Migration
+  description: Vals.ai code-migration benchmark (CLI, COBOL, code quality, … reported as subsets).
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["coding", "software-engineering"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Code Migration
+    - code-migration
+    - code_migration
+
+- id: programbench
+  display_name: ProgramBench
+  description: ProgramBench — reconstruct a program so it passes hidden behavioural tests; strict / lenient / almost-resolved scoring variants are reported as subsets.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["coding", "software-engineering"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - ProgramBench
+    - Program Bench
+    - programbench
+    - program-bench
+    - program_bench
+    - llm_stats_program_bench
+
+- id: tax-agent-bench
+  display_name: Tax Agent Bench
+  description: Vals.ai tax agent benchmark.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["agentic", "professional-services"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Tax Agent Bench
+    - tax-agent-bench
+    - tax_agent_bench
+
+- id: cyberbench
+  display_name: CyberBench
+  description: Vals.ai cybersecurity benchmark (patch / overall). Distinct from CyberGym, CyberSecEval and the AISI cyber CTFs.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["cybersecurity", "agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - CyberBench
+    - cyberbench
+    - cyber-bench
+  scoped_aliases:
+    vals-ai:
+      - cyber
+
+- id: biomysterybench
+  display_name: BioMysteryBench
+  description: Biology mystery-solving benchmark (human-solvable / human-difficult splits reported as subsets).
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["domain-specific", "reasoning"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - BioMysteryBench
+    - biomysterybench
+    - bio-mystery-bench
+    - llm_stats_biomysterybench
+
+- id: public-benefits-bench
+  display_name: Public Benefits Bench
+  description: Vals.ai public-benefits eligibility benchmark, version 1.1. Version 1 is `public-benefits-bench-v1`.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["professional-services"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Public Benefits Bench
+    - Public Benefits Bench v1.1
+    - public-benefits-bench
+    - public_benefits_bench
+
+- id: public-benefits-bench-v1
+  display_name: Public Benefits Bench v1
+  description: Vals.ai public-benefits eligibility benchmark, version 1.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["professional-services"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Public Benefits Bench v1
+    - public-benefits-bench-v1
+    - public_benefits_bench_v1
+
+- id: voice-code-bench
+  display_name: VoiceCodeBench
+  description: Vals.ai voice-driven coding benchmark.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["coding", "audio"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - VoiceCodeBench
+    - Voice Code Bench
+    - voice-code-bench
+    - voice_code_bench
+
+- id: sre-bench
+  display_name: SRE Bench
+  description: Vals.ai site-reliability-engineering benchmark.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["agentic", "software-engineering"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - SRE Bench
+    - sre-bench
+    - srebench
+    - sre_bench
+
+- id: time-horizon-index
+  display_name: Time Horizon Index
+  description: Vals.ai Time Horizon Index (KSP) — long-horizon task progress.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Time Horizon Index
+    - "Time Horizon Index: KSP"
+    - time-horizon-index
+    - time_horizon_index
+
+- id: reverse-eng-bench
+  display_name: ReverseEngBench
+  description: Vals.ai reverse-engineering benchmark.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["cybersecurity", "coding"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - ReverseEngBench
+    - reverse-eng-bench
+    - reverse_eng
+
+- id: web-search-index
+  display_name: Web Search Index
+  description: Vals.ai web-search backend index (finance, legal, … reported as subsets).
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["retrieval"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Web Search Index
+    - web-search-index
+    - web_search_backends
+    # Joined subset spellings keep the row on the index: the bare `legal`
+    # subset is otherwise claimed by AIR-Bench's `Legal` category alias.
+    - web search backends overall
+    - web search backends finance
+    - web search backends legal
+
+- id: cua-bench
+  display_name: CUA-bench
+  description: Vals.ai computer-use agent benchmark. Distinct from AdvCUA.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - CUA-bench
+    - cua-bench
+    - cua_bench
+
+- id: mysterymechanism
+  display_name: MysteryMechanism
+  description: Vals.ai MysteryMechanism reasoning benchmark.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["reasoning"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - MysteryMechanism
+    - mysterymechanism
+    - mystery-mechanism
+
+- id: agent-poker-bench
+  display_name: Agent Poker Bench
+  description: Vals.ai agent poker benchmark.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["agentic"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Agent Poker Bench
+    - agent-poker-bench
+    - poker_agent
+
+# --- OpenEval safety benchmarks (previously pooled under the removed `openeval` entry) ---
+
+- id: advbench
+  display_name: AdvBench
+  description: AdvBench (Zou et al. 2023) — harmful-behaviour prompts; refusal measured by refusal strings.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["safety", "harmlessness"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - AdvBench
+    - advbench
+    - adv-bench
+    - adv_bench
+
+- id: sorry-bench
+  display_name: SORRY-Bench
+  description: SORRY-Bench (Xie et al. 2024) — fine-grained refusal evaluation across unsafe-request categories.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["safety", "harmlessness"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - SORRY-Bench
+    - sorry-bench
+    - sorry_bench
+    - sorrybench
+
+- id: health-orsc-bench
+  display_name: Health-ORSC-Bench
+  description: Health over-refusal / safe-completion benchmark; refusal measured by refusal strings.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["safety", "domain-specific"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Health-ORSC-Bench
+    - health-orsc-bench
+    - health_orsc_bench
+
+- id: vectara-hallucination-leaderboard
+  display_name: Vectara Hallucination Leaderboard
+  description: Vectara's HHEM-scored summarisation hallucination benchmark; topic categories and text-complexity cuts are reported as subsets of the one benchmark.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["factuality"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - Vectara Hallucination Leaderboard
+    - vectara-hallucination-leaderboard
+    - vectara_hallucination_leaderboard
+    - hallucination-leaderboard

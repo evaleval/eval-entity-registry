@@ -12,7 +12,11 @@ from typing import Callable, Optional
 
 from eval_entity_resolver.alias_store import AliasStore
 from eval_entity_resolver.canonical_store import CanonicalStore, _hf_repo_id_of
-from eval_entity_resolver.eee import _keyword_extract, prepare_eval_name_segments
+from eval_entity_resolver.eee import (
+    clean_eval_name,
+    prepare_eval_name_segments,
+    segment_reads_as_metric,
+)
 from eval_entity_resolver.normalization import normalize
 from eval_entity_resolver.models import (
     HfIdHit,
@@ -415,12 +419,46 @@ class Resolver:
         ):
             probe_segments = segments[1:]
             dropped_source = True
+            # The source's declared grouping layer (`paperswithcode.math.
+            # riemann_bench`: `math` is a task category) is never probed as
+            # identity — it would claim the MATH benchmark for every maths
+            # row — and does not end the probe.
+            depth = self.eval_name_layout(source_config) or 0
+            if depth and len(probe_segments) > depth:
+                probe_segments = probe_segments[depth:]
         match = self._probe_benchmark_segments(probe_segments, source_config)
         if match is None and dropped_source:
             match = self._probe_benchmark_segments(
-                segments, source_config, alias_tiers_only_at=0
+                [segments[0], *probe_segments], source_config, alias_tiers_only_at=0
             )
         return match
+
+    def eval_name_layout(self, source_config: Optional[str]) -> Optional[int]:
+        """The source's declared dotted-name layout (registry composites
+        seed, `metadata.eval_name_layout`): the number of grouping segments
+        between the source segment and the benchmark, or None when the
+        source declares none."""
+        if not source_config or self.canonical_store is None:
+            return None
+        return self.canonical_store.eval_name_layout(source_config)
+
+    def fallback_benchmark_raw(
+        self, raw_name: Optional[str], source_config: Optional[str]
+    ) -> Optional[str]:
+        """The benchmark surface form for a name the structured probe could
+        not place, so one spelling feeds the plain lookup and the
+        observation-role check. Only a DECLARED layout strips anything: a
+        folder that names its own benchmark (`vectara-hallucination-
+        leaderboard.category.law`) must keep that name in the key, and the
+        registry — not the spelling — says which folders are aggregators."""
+        if not raw_name or not isinstance(raw_name, str):
+            return None
+        depth = self.eval_name_layout(source_config)
+        if depth is None:
+            return clean_eval_name(raw_name)
+        return clean_eval_name(
+            raw_name, source_config=source_config, namespace_segments=depth
+        )
 
     def _probe_benchmark_segments(
         self,
@@ -546,7 +584,6 @@ class Resolver:
         """True when a trailing segment resolves as a metric or reads as one to
         the metric extractor (`bfcl.live.live_accuracy`), so a metric tail is
         never mistaken for a subset."""
-        spelled = segment.replace("_", " ")
         if exact_match(segment, "metric", source_config, self.store):
             return True
         if len(segment) < _MIN_METRIC_SEGMENT_LEN:
@@ -555,7 +592,7 @@ class Resolver:
             return False
         if normalized_match(segment, "metric", self.store, source_config):
             return True
-        return _keyword_extract(spelled.lower()) is not None
+        return segment_reads_as_metric(segment)
 
     # ------------------------------------------------------------------
     # HF id check (injected)

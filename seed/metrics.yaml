@@ -4779,3 +4779,16 @@
   max_score: 1.0
   metadata: '{}'
   review_status: reviewed
+
+- id: fci
+  display_name: FrontierCS Capabilities Index
+  aliases: ["FCI", "fci", "paperswithcode.fci", "FrontierCS Capabilities Index"]
+  # Fitted agent-strength index on the FrontierCS 2 scale (Kimi K2.7 at 0;
+  # ten points multiply the odds of beating a task metric by e): an index
+  # in points, not the 0-100 per-task platform run score.
+  score_type: continuous
+  lower_is_better: false
+  min_score: -.inf
+  max_score: .inf
+  metadata: '{"unit": "points"}'
+  review_status: reviewed

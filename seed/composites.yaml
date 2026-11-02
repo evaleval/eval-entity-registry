@@ -7,6 +7,12 @@
 # - `configs` lists the EEE source_configs that belong to this composite.
 #   When omitted, the slug itself is used as the single config (display-only
 #   override).
+# - `metadata.eval_name_layout` declares the shape of the source's dotted
+#   `evaluation_name`: `source.benchmark` (a re-publisher whose names are
+#   `<source>.<benchmark>`) or `source.category.benchmark` (a grouping layer
+#   between). The resolver never probes a declared category as a benchmark
+#   and strips only declared segments when spelling an unresolved name; an
+#   undeclared source keeps its full name.
 #
 # Source configs not in any entry get default 1:1 treatment:
 # slug = kebab-case(source_config), display = source_metadata.source_name.
@@ -31,6 +37,8 @@ vals-ai:
   display: Vals.ai
   configs:
     - vals-ai
+  metadata:
+    eval_name_layout: source.benchmark
 swe-bench-verified-mini:
   display: SWE-bench Verified Mini
   configs:
@@ -43,6 +51,20 @@ llm-stats:
   display: LLM Stats
   configs:
     - llm-stats
+  # Re-publishes other benchmarks; it is not a benchmark itself, so its
+  # dotted names carry the benchmark right after the source segment.
+  metadata:
+    eval_name_layout: source.benchmark
+openeval:
+  display: OpenEval
+  metadata:
+    eval_name_layout: source.benchmark
+paperswithcode:
+  display: Papers with Code
+  # The category segment groups benchmarks and never names one (`math` there
+  # is not MATH); the resolver strips only what a layout declares.
+  metadata:
+    eval_name_layout: source.category.benchmark
 wasp:
   display: WASP
   configs:
