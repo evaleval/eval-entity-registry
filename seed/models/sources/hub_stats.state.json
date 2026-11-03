@@ -1,5 +1,5 @@
 {
-  "parquet_sha256": "00fdb07cd2bea8bc1d5ada3a3ff2d76202d4c3f2165bee25c7cfe0bd1cf731b7",
+  "parquet_sha256": "90da9eb35e54310f6577b7f89349e8d62b46d9769df2504b0d21e07275371a96",
   "rows_checked_at_sha256": [
     "0-hero/Matter-0.1-7B-DPO-preview",
     "0-hero/Matter-0.1-7B-boost-DPO-preview",
@@ -1640,6 +1640,7 @@
     "Sicarius-Prototyping/bacon_and_food",
     "SicariusSicariiStuff/2B-ad",
     "SicariusSicariiStuff/2B_or_not_2B",
+    "SicariusSicariiStuff/Assistant_Pepe_32B",
     "SicariusSicariiStuff/Dusk_Rainbow",
     "SicariusSicariiStuff/Eximius_Persona_5B",
     "SicariusSicariiStuff/Impish_LLAMA_3B",
@@ -11487,6 +11488,7 @@
     "showlab/show-o2-7b",
     "shuttleai/shuttle-3",
     "shyamieee/Padma-v7.0",
+    "sicariussicariistuff/assistant-pepe-32b",
     "silma-ai/SILMA-9B-Instruct-v1.0",
     "silma-ai/SILMA-Kashif-2B-Instruct-v1.0",
     "siqi00/Mistral-7B-DFT",
