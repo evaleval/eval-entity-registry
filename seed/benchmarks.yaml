@@ -63,7 +63,6 @@
   display_name: GPQA
   aliases:
     - artificial_analysis.gpqa
-    - vals ai gpqa
     - gpqa_main
   description: Graduate-Level Google-Proof Q&A — expert-level science questions.
   dataset_repo: Idavidrein/gpqa
@@ -25390,6 +25389,17 @@
     - vals_ai_gpqa_diamond
     - vals_ai_gpqa_diamond_few_shot_cot
     - vals_ai_gpqa_diamond_zero_shot_cot
+    - vals_ai_gpqa_overall
+    - vals ai gpqa
+  # Vals.ai evaluates only the 198-question Diamond set, so under that source
+  # its bare GPQA and "Overall" spellings mean Diamond; elsewhere bare GPQA is
+  # the `gpqa` benchmark.
+  scoped_aliases:
+    vals-ai:
+      - gpqa
+      - GPQA
+      - "GPQA - Overall"
+      - "GPQA Diamond - Overall"
 
 - id: ioi
   display_name: IOI
@@ -25639,19 +25649,6 @@
     - vibe_code_bench
     - vibe-code-bench
     - "Vibe Code Bench"
-
-- id: gpqa-overall
-  display_name: Gpqa overall
-  dataset_repo: null
-  parent_benchmark_id: null
-  tags: '["reasoning"]'
-  metadata: '{}'
-  review_status: reviewed
-  aliases:
-    - Gpqa overall
-    - gpqa-overall
-    - gpqa_overall
-    - vals_ai_gpqa_overall
 
 - id: bbq
   preferred_metric: accuracy

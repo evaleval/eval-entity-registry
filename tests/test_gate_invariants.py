@@ -808,6 +808,11 @@ _ORACLE_ALIAS_EXEMPT: frozenset = frozenset({
     ("benchmark", "Non live"), ("benchmark", "non_live"),
     ("benchmark", "Live"), ("benchmark", "live"),
     ("benchmark", "Memory"), ("benchmark", "memory"),
+    # `gpqa-overall` was a Vals-only id for Vals.ai's GPQA Diamond headline;
+    # its spellings are scoped to `vals-ai` on `gpqa-diamond`, since unscoped
+    # "GPQA overall" does not say which GPQA set it scores.
+    ("benchmark", "Gpqa overall"), ("benchmark", "gpqa-overall"),
+    ("benchmark", "gpqa_overall"),
 }) | _INVENTED_WRONG_ORG_IDS
 
 

@@ -1,7 +1,7 @@
 """Benchmark spellings of the re-publisher sources (BenchPress, LLM Stats,
-Papers with Code) resolve to the canonical they report, and BenchPress's
-dotted names keep only the benchmark segment when unresolved. Skips without
-fixtures."""
+Papers with Code, Vals.ai) resolve to the canonical they report, and
+BenchPress's dotted names keep only the benchmark segment when unresolved.
+Skips without fixtures."""
 from pathlib import Path
 
 import pytest
@@ -64,6 +64,9 @@ def _resolved(resolver, name, source_config):
     ("paperswithcode.computer_use_agents.ground_ui_1k", "paperswithcode", "groundui-1k"),
     ("paperswithcode.computer_use_agents.windowsagentarena", "paperswithcode", "windows-agent-arena"),
     ("paperswithcode.audio_understanding.musicavqa", "paperswithcode", "music-avqa"),
+    ("vals_ai.gpqa", "vals-ai", "gpqa-diamond"),
+    ("vals_ai.gpqa_diamond_few_shot_cot", "vals-ai", "gpqa-diamond"),
+    ("vals_ai.gpqa_diamond_zero_shot_cot", "vals-ai", "gpqa-diamond"),
 ])
 def test_republished_benchmark_resolves(resolver, name, source_config, expected):
     assert _resolved(resolver, name, source_config) == expected
@@ -83,6 +86,16 @@ def test_benchpress_fallback_keeps_the_benchmark_segment(resolver):
 
 def test_swelancer_scope_does_not_leak(resolver):
     assert resolver.resolve("swelancer", "benchmark", check_hf=False).canonical_id is None
+
+
+@pytest.mark.parametrize("label", ["gpqa", "GPQA - Overall", "GPQA Diamond - Overall"])
+def test_vals_gpqa_labels_are_the_diamond_set(resolver, label):
+    assert resolver.resolve(label, "benchmark", "vals-ai", check_hf=False).canonical_id == "gpqa-diamond"
+
+
+def test_vals_gpqa_scope_does_not_leak(resolver):
+    assert resolver.resolve("gpqa", "benchmark", check_hf=False).canonical_id == "gpqa"
+    assert resolver.resolve("GPQA - Overall", "benchmark", check_hf=False).canonical_id is None
 
 
 @pytest.mark.parametrize("name,source_config,not_expected", [
