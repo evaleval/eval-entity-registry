@@ -56,6 +56,7 @@
     - big-bench-hard
     - big_bench_hard
     - llm_stats_big_bench_hard
+    - bigbench-hard
 
 - id: gpqa
   preferred_metric: accuracy
@@ -3388,7 +3389,7 @@
 
 - id: kor-bench
   display_name: KOR-Bench
-  aliases: ["KOR-Bench", "kor_bench"]
+  aliases: ["KOR-Bench", "kor_bench", "korbench"]
   description: Korean reasoning benchmark.
   dataset_repo: null
   parent_benchmark_id: null
@@ -3753,6 +3754,7 @@
     - ARC AGI 2
     - arc_agi_2
     - arc-agi-v2
+    - arcagi2
   description: ARC-AGI 2 — second-generation ARC (Abstraction and Reasoning Corpus) benchmark. Successor benchmark, not a subset — kept un-parented so it is never folded into ARC-AGI as a slice.
   dataset_repo: null
   parent_benchmark_id: null
@@ -3804,19 +3806,16 @@
     - AA-Omniscience
     - aa_omniscience
     - artificial_analysis.aa_omniscience
+    - omniscience
+    # 360VOT is a 360-degree object-tracking benchmark, not AA-Omniscience;
+    # kept only until a 360vot canonical takes the spelling.
+    - "360VOT"
   description: Artificial Analysis Omniscience benchmark — multi-domain knowledge evaluation.
   dataset_repo: null
   parent_benchmark_id: null
   tags: '["knowledge", "multi-domain"]'
   metadata: '{}'
   review_status: reviewed
-  dataset_repo: null
-  parent_benchmark_id: null
-  tags: '["general"]'
-  metadata: '{}'
-  review_status: reviewed
-  aliases:
-    - "360VOT"
 
 - id: 360vots
   display_name: "360VOTS"
@@ -4884,6 +4883,7 @@
   review_status: reviewed
   aliases:
     - artifactsbench
+    - artifacts-bench
 
 - id: arxiv2table
   display_name: ARXIV2TABLE
@@ -5557,6 +5557,7 @@
     - big-bench-extra-hard
     - big_bench_extra_hard
     - llm_stats_big_bench_extra_hard
+    - bigbench-extra-hard
 
 - id: bigcodebench-hard
   display_name: Bigcodebench Hard
@@ -7904,6 +7905,7 @@
   aliases:
     - Csimpleqa
     - llm_stats_csimpleqa
+    - c_simpleqa
 
 - id: cub
   display_name: CUB
@@ -7998,6 +8000,7 @@
   review_status: reviewed
   aliases:
     - cvbench
+    - cv_bench
 
 - id: cweval
   display_name: CWEval
@@ -8201,6 +8204,7 @@
     - deepresearch-bench
     - deepresearch_bench
     - deepresearch bench
+    - deepresearchbench
 
 - id: deepmath-creative
   display_name: DeepMath-Creative
@@ -11217,6 +11221,7 @@
     - groundui-1k
     - groundui_1k
     - llm_stats_groundui_1k
+    - ground_ui_1k
 
 - id: gsm8k-chat
   display_name: Gsm8k Chat
@@ -14180,6 +14185,7 @@
     - matharena apex
     - matharena-apex
     - matharena_apex
+    - matharena-apex-2025
 
 - id: mathbode
   display_name: MathBode
@@ -14543,6 +14549,9 @@
     - llm_stats_mcp_atlas
     - mcp-atlas
     - mcp_atlas
+    - mcpatlas
+    - mcpatlas_public
+    - mcpatlas_full
 
 - id: mcp-bench
   display_name: MCP-Bench
@@ -15985,6 +15994,7 @@
     - mmsi bench
     - mmsi-bench
     - mmsi_bench
+    - mmsibench
 
 - id: mmstar
   display_name: MMStar
@@ -16385,6 +16395,7 @@
     - mrcr v2 8 needle
     - mrcr-v2-8-needle
     - mrcr_v2_8_needle
+    - mrcr-v2-8needle
 
 - id: mrg-bench
   display_name: MRG-Bench
@@ -16451,6 +16462,7 @@
     - llm_stats_mt_bench
     - mt-bench
     - mt_bench
+    - mtbench
     # The suite total is the parent's own row, not a child: folded 2026-09-16
     # (the former child entity mt-bench-overall kept as aliases).
     - MT-Bench (overall)
@@ -16924,6 +16936,7 @@
     - music avqa
     - music-avqa
     - music_avqa
+    - musicavqa
 
 - id: musiccaps
   display_name: Musiccaps
@@ -17656,6 +17669,7 @@
   aliases:
     - Olympiadbench
     - llm_stats_olympiadbench
+    - olympiadbench_full
 
 - id: olympicarena
   display_name: OlympicArena
@@ -21820,6 +21834,9 @@
     - swe lancer ic diamond subset
     - swe-lancer-ic-diamond-subset
     - swe_lancer_ic_diamond_subset
+  scoped_aliases:
+    benchpress:
+      - swelancer
 
 - id: swe-mera
   display_name: SWE-MERA
@@ -22189,6 +22206,7 @@
     - llm_stats_tau_bench
     - tau-bench
     - tau_bench
+    - taubench
 
 - id: tau-bench-airline
   display_name: Tau Bench Airline
@@ -22207,6 +22225,7 @@
     - tau-bench-airline-hal
     - hal_taubench_airline_tau_bench_airline
     - hal-taubench-airline
+    - taubench_airline
   scoped_aliases:
     hal-taubench-airline:
       - "Tau Bench Airline"
@@ -22224,6 +22243,7 @@
     - tau bench retail
     - tau-bench-retail
     - tau_bench_retail
+    - taubench_retail
 
 - id: taxi
   display_name: TAXI
@@ -23476,6 +23496,7 @@
     - v star
     - v-star
     - v_star
+    - vstar
 
 - id: vader
   display_name: VADER
@@ -23818,6 +23839,7 @@
     - video holmes
     - video-holmes
     - video_holmes
+    - videoholmes
 
 - id: video-mme
   display_name: Video-MME
@@ -24476,6 +24498,7 @@
   aliases:
     - llm_stats_vlmsareblind
     - vlmsareblind
+    - vlms_are_blind
 
 - id: vlqa
   display_name: VLQA
@@ -24934,6 +24957,7 @@
     - windows agent arena
     - windows-agent-arena
     - windows_agent_arena
+    - windowsagentarena
 
 - id: windowsagentarena-v2
   display_name: WindowsAgentArena-V2
@@ -25346,6 +25370,7 @@
     - corpfin-max-fitting-context
     - corpfin-shared-max-context
     - corpfin
+    - corpfin-v2
 
 - id: gpqa-diamond
   preferred_metric: accuracy
@@ -28124,6 +28149,9 @@
     - automationbench
     - automationbench_private_1_0_6
     - automation_bench
+    - automationbench-aa
+    - automationbench-1.0.6
+    - automation-bench-private-heldout
 
 - id: webdev-arena
   preferred_metric: elo

@@ -65,6 +65,10 @@ paperswithcode:
   # is not MATH); the resolver strips only what a layout declares.
   metadata:
     eval_name_layout: source.category.benchmark
+benchpress:
+  display: BenchPress
+  metadata:
+    eval_name_layout: source.benchmark
 wasp:
   display: WASP
   configs:
