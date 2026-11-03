@@ -4573,6 +4573,17 @@
     - amc_2022_23
     - llm_stats_amc_2022_23
 
+- id: amc-2023
+  display_name: AMC 2023
+  description: The 2023 American Mathematics Competition problems (AMC23). A single competition year, distinct from the combined amc-2022-23 set.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["math"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - amc_2023
+    - amc23
 - id: amo-bench
   display_name: AMO-Bench
   dataset_repo: null
@@ -10494,6 +10505,17 @@
     - frontiermath
     - llm_stats_frontiermath
 
+- id: frontierscience-olympiad
+  display_name: FrontierScience Olympiad
+  description: Olympiad track of OpenAI's FrontierScience (arXiv 2601.21165), olympiad-level science problems. The Research track is frontierscience-research.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["science"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - frontierscience_olympiad
+
 - id: frontierscience-research
   display_name: Frontierscience Research
   dataset_repo: null
@@ -11680,6 +11702,7 @@
     - hmmt-2025
     - hmmt_2025
     - llm_stats_hmmt_2025
+    - hmmt_feb_2025
 
 - id: hmmt-feb-26
   display_name: Hmmt Feb 26
@@ -11693,6 +11716,7 @@
     - hmmt-feb-26
     - hmmt_feb_26
     - llm_stats_hmmt_feb_26
+    - hmmt_feb_2026
 
 - id: holistic-evaluation-of-text-to-image-models
   display_name: Holistic Evaluation of Text-to-Image Models
@@ -12146,6 +12170,17 @@
     - imagine e
     - imagine_e
 
+- id: imo-2025
+  display_name: IMO 2025
+  description: The six problems of the 2025 International Mathematical Olympiad, proof-graded. A single competition year, distinct from the IMO-Bench suite (imo-bench).
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["math"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - imo_2025
+
 - id: imo-answerbench
   display_name: Imo Answerbench
   dataset_repo: null
@@ -12158,6 +12193,9 @@
     - imo-answerbench
     - imo_answerbench
     - llm_stats_imo_answerbench
+  scoped_aliases:
+    paperswithcode:
+      - answerbench
 
 - id: imo-bench
   display_name: IMO-Bench
@@ -12170,6 +12208,17 @@
     - imo bench
     - imo-bench
     - imo_bench
+
+- id: imo-proofbench
+  display_name: IMO-ProofBench
+  description: Proof-writing component of IMO-Bench (Luong et al. 2025, arXiv 2511.01846); sibling of imo-answerbench.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["math"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - imo_proofbench
 
 - id: include
   display_name: INCLUDE
@@ -12518,6 +12567,17 @@
     - internal-api-instruction-following-hard
     - internal_api_instruction_following_hard
     - llm_stats_internal_api_instruction_following_hard
+
+- id: ipho-2024
+  display_name: IPhO 2024
+  description: Theory problems of the 2024 International Physics Olympiad. Distinct from ipho-2025.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["science"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - ipho_2024
 
 - id: ipho-2025
   display_name: Ipho 2025
@@ -23327,6 +23387,17 @@
   review_status: reviewed
   aliases:
     - urdufactbench
+
+- id: usamo-2026
+  display_name: USAMO 2026
+  description: The six problems of the 2026 USA Mathematical Olympiad, proof-graded. Distinct from usamo25.
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["math"]'
+  metadata: '{}'
+  review_status: reviewed
+  aliases:
+    - usamo_2026
 
 - id: usamo25
   display_name: Usamo25
