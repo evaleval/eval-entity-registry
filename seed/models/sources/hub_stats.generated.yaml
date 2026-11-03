@@ -636,6 +636,20 @@
   - id: meta-llama/Llama-3.2-3B
     relationship: finetune
   lineage_origin_model_org_id: meta
+- id: Aleph-Alpha/Kolibri-1
+  release_date: '2026-10-02'
+  tags:
+  - de
+  - en
+  - eval-results
+  - license:apache-2.0
+  - moe
+  - safetensors
+  aliases: []
+  metadata: '{"downloads_all_time": 24842, "hf_id": "Aleph-Alpha/Kolibri-1", "library_name": "transformers", "license": "apache-2.0", "likes": 996, "pipeline_tag": "text-generation", "source": "hub_stats"}'
+  review_status: reviewed
+  params_billions: 78.1
+  open_weights: true
 - id: Alibaba-NLP/gte-Qwen2-7B-instruct
   release_date: '2024-06-15'
   tags:
@@ -11374,7 +11388,9 @@
   review_status: reviewed
   params_billions: 7.24
   open_weights: true
-  parents: []
+  parents:
+  - id: LeroyDyer/SpydazWeb_AI_CyberTron_Ultra_7b
+    relationship: finetune
   lineage_origin_model_org_id: LeroyDyer
 - id: LeroyDyer/SpydazWeb_AI_HumanAI_RP
   release_date: '2024-10-20'
@@ -13489,6 +13505,18 @@
   metadata: '{"downloads_all_time": 977478, "hf_id": "MiniMaxAI/MiniMax-M3", "library_name": "transformers", "license": "other", "likes": 1601, "pipeline_tag": "image-text-to-text", "source": "hub_stats"}'
   review_status: reviewed
   params_billions: 427.04
+  open_weights: true
+- id: MiniMaxAI/MiniMax-M3.1-Flash
+  release_date: '2026-10-17'
+  tags:
+  - eval-results
+  - license:other
+  - moe
+  - safetensors
+  aliases: []
+  metadata: '{"downloads_all_time": 23530, "hf_id": "MiniMaxAI/MiniMax-M3.1-Flash", "library_name": "transformers", "license": "other", "likes": 529, "pipeline_tag": "image-text-to-text", "source": "hub_stats"}'
+  review_status: reviewed
+  params_billions: 220.49
   open_weights: true
 - id: MiniMaxAI/MiniMax-Text-01
   release_date: '2025-01-12'
@@ -25405,6 +25433,31 @@
   - id: meta-llama/Llama-3.1-8B
     relationship: finetune
   lineage_origin_model_org_id: meta
+- id: aisingapore/Qwen-SEA-LION-v4-32B-IT
+  release_date: '2025-10-16'
+  tags:
+  - en
+  - fil
+  - id
+  - km
+  - license:mit
+  - lo
+  - ms
+  - my
+  - safetensors
+  - ta
+  - th
+  - vi
+  - zh
+  aliases: []
+  metadata: '{"downloads_all_time": 23261, "hf_id": "aisingapore/Qwen-SEA-LION-v4-32B-IT", "library_name": "transformers", "license": "mit", "likes": 8, "pipeline_tag": "text-generation", "source": "hub_stats"}'
+  review_status: reviewed
+  params_billions: 32.76
+  open_weights: true
+  parents:
+  - id: Qwen/Qwen3-32B
+    relationship: finetune
+  lineage_origin_model_org_id: alibaba
 - id: aixonlab/Aether-12b
   release_date: '2024-09-24'
   tags:
@@ -29470,6 +29523,8 @@
     relationship: merge
   - id: bunnycore/Llama-3.2-3B-ProdigyPlus
     relationship: merge
+  - id: bunnycore/Llama-3.2-3B-ProdigyPlusPlus
+    relationship: merge
   lineage_origin_model_org_id: bunnycore
 - id: bunnycore/Llama-3.2-3B-RP-DeepThink
   release_date: '2024-12-27'
@@ -30466,7 +30521,9 @@
   review_status: reviewed
   params_billions: 0.95
   open_weights: true
-  parents: []
+  parents:
+  - id: cckm/tinymistral_950m
+    relationship: finetune
   lineage_origin_model_org_id: cckm
 - id: cgato/TheSalt-L3-8b-v0.3.2
   release_date: '2024-06-18'
@@ -30824,7 +30881,9 @@
   review_status: reviewed
   params_billions: 685.4
   open_weights: true
-  parents: []
+  parents:
+  - id: deepseek-ai/DeepSeek-Math-V2
+    relationship: quantized
   lineage_origin_model_org_id: deepseek
 - id: deepseek-ai/DeepSeek-OCR
   release_date: '2025-10-17'
@@ -31969,7 +32028,9 @@
   review_status: reviewed
   params_billions: 1.24
   open_weights: true
-  parents: []
+  parents:
+  - id: duyhv1411/Llama-3.2-1B-en-vi
+    relationship: finetune
   lineage_origin_model_org_id: duyhv1411
 - id: dwikitheduck/gemma-2-2b-id-inst
   release_date: '2024-10-24'
@@ -34139,7 +34200,9 @@
   review_status: reviewed
   params_billions: 4.3
   open_weights: true
-  parents: []
+  parents:
+  - id: google/gemma-3-4b-it
+    relationship: finetune
   lineage_origin_model_org_id: google
 - id: google/gemma-3n-E2B
   release_date: '2025-06-12'
@@ -37401,6 +37464,16 @@
   - id: inclusionAI/Ling-3.0-flash
     relationship: finetune
   lineage_origin_model_org_id: inclusionAI
+- id: inclusionAI/Ling-3.0-flash-Sante
+  release_date: '2026-10-19'
+  tags:
+  - license:mit
+  - safetensors
+  aliases: []
+  metadata: '{"downloads_all_time": 1739, "hf_id": "inclusionAI/Ling-3.0-flash-Sante", "license": "mit", "likes": 81, "pipeline_tag": "text-generation", "source": "hub_stats"}'
+  review_status: reviewed
+  params_billions: 127.49
+  open_weights: true
 - id: inclusionAI/Ling-3.0-flash-VL
   release_date: '2026-09-04'
   tags:
@@ -37422,6 +37495,21 @@
   review_status: reviewed
   params_billions: 572.12
   open_weights: true
+- id: inclusionAI/Ling-3.1-flash-1019
+  release_date: '2026-10-27'
+  tags:
+  - eval-results
+  - license:mit
+  - safetensors
+  aliases: []
+  metadata: '{"downloads_all_time": 1851, "hf_id": "inclusionAI/Ling-3.1-flash-1019", "license": "mit", "likes": 90, "pipeline_tag": "text-generation", "source": "hub_stats"}'
+  review_status: reviewed
+  params_billions: 572.12
+  open_weights: true
+  parents:
+  - id: inclusionAI/Ling-3.1-flash
+    relationship: variant
+    axis: version
 - id: inclusionAI/Ling-flash-2.0
   release_date: '2025-09-17'
   tags:
@@ -44889,7 +44977,9 @@
   review_status: reviewed
   params_billions: 401.58
   open_weights: true
-  parents: []
+  parents:
+  - id: meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8
+    relationship: quantized
   lineage_origin_model_org_id: meta
 - id: meta-llama/Llama-4-Scout-17B-16E
   release_date: '2025-04-02'
@@ -50642,6 +50732,16 @@
   - id: meta-llama/Llama-3.1-8B
     relationship: finetune
   lineage_origin_model_org_id: meta
+- id: ornith-ai/Ornith-1.5-122B
+  release_date: '2026-10-16'
+  tags:
+  - license:mit
+  - safetensors
+  aliases: []
+  metadata: '{"downloads_all_time": 162752, "hf_id": "ornith-ai/Ornith-1.5-122B", "library_name": "transformers", "license": "mit", "likes": 207, "pipeline_tag": "text-generation", "source": "hub_stats"}'
+  review_status: reviewed
+  params_billions: 125.09
+  open_weights: true
 - id: ornith-ai/Ornith-1.5-35B-A3B
   release_date: '2026-08-18'
   tags:
@@ -51244,6 +51344,20 @@
   review_status: reviewed
   params_billions: 0.38
   open_weights: true
+- id: pqhaz/DeepSeek-V4.1-Flash-1017-heretic
+  release_date: '2026-10-17'
+  tags:
+  - license:mit
+  - safetensors
+  aliases: []
+  metadata: '{"downloads_all_time": 936, "hf_id": "pqhaz/DeepSeek-V4.1-Flash-1017-heretic", "license": "mit", "likes": 12, "pipeline_tag": "image-text-to-text", "source": "hub_stats"}'
+  review_status: reviewed
+  params_billions: 763.21
+  open_weights: true
+  parents:
+  - id: deepseek-ai/DeepSeek-V4.1-Flash-1017
+    relationship: quantized
+  lineage_origin_model_org_id: deepseek
 - id: prince-canuma/Ministral-8B-Instruct-2410-HF
   release_date: '2024-10-16'
   tags:
@@ -57889,7 +58003,9 @@
   review_status: reviewed
   params_billions: 3.23
   open_weights: true
-  parents: []
+  parents:
+  - id: tiiuae/Falcon3-3B-Instruct
+    relationship: finetune
   lineage_origin_model_org_id: tiiuae
 - id: tiiuae/Falcon3-7B-Base
   release_date: '2024-11-21'
