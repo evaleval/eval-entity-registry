@@ -1,5 +1,5 @@
 {
-  "parquet_sha256": "90da9eb35e54310f6577b7f89349e8d62b46d9769df2504b0d21e07275371a96",
+  "parquet_sha256": "f32106b0f4d2c1a305d1ec012847a436bf260e654790cae7a4e6ce16fc3350a9",
   "rows_checked_at_sha256": [
     "0-hero/Matter-0.1-7B-DPO-preview",
     "0-hero/Matter-0.1-7B-boost-DPO-preview",
@@ -6756,6 +6756,7 @@
     "hunyuan/hy-mt2-lite",
     "hunyuan/hy-mt2-plus",
     "hunyuan/hy-mt2-pro",
+    "hunyuan/hy4",
     "iFaz/llama32_1B_en_emo_v1",
     "iFaz/llama32_3B_en_emo_1000_stp",
     "iFaz/llama32_3B_en_emo_2000_stp",
@@ -11808,6 +11809,7 @@
     "tencent hunyuan/hy-mt2-lite",
     "tencent hunyuan/hy-mt2-plus",
     "tencent hunyuan/hy-mt2-pro",
+    "tencent hunyuan/hy4",
     "tencent/Hunyuan-A13B-Instruct",
     "tencent/Hunyuan-MT-7B",
     "tencent/Hy-MT2-30B-A3B",
@@ -11828,6 +11830,7 @@
     "tencent/hy-mt2-pro",
     "tencent/hy3",
     "tencent/hy3-preview",
+    "tencent/hy4",
     "tencent/hy4-preview",
     "tensopolis/falcon3-10b-tensopolis-v1",
     "tensopolis/falcon3-10b-tensopolis-v2",
