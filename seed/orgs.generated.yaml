@@ -6392,3 +6392,10 @@
   tags: '[]'
   metadata: '{}'
   review_status: reviewed
+- id: ricursiveai
+  display_name: ricursiveai
+  hf_org: ricursiveai
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
