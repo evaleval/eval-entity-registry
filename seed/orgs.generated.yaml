@@ -6420,3 +6420,10 @@
   tags: '[]'
   metadata: '{}'
   review_status: reviewed
+- id: paperinstruments
+  display_name: paperinstruments
+  hf_org: paperinstruments
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
