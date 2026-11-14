@@ -1,5 +1,5 @@
 {
-  "parquet_sha256": "1f4fe008e73cf723af94e83999f3fb780cba575cf754b07cd32aea1c52dc4228",
+  "parquet_sha256": "0cda1d6f5ca95361cd79caf6fd539d37eb838a22fe1ee076b74dfd349284de77",
   "rows_checked_at_sha256": [
     "0-hero/Matter-0.1-7B-DPO-preview",
     "0-hero/Matter-0.1-7B-boost-DPO-preview",
@@ -6964,6 +6964,7 @@
     "inclusionai/ling-3-0-tiny",
     "inclusionai/ling-3-1-flash",
     "inclusionai/ling-3-1-flash-1019",
+    "inclusionai/ling-3-2-flash",
     "inclusionai/ling-3.0-flash",
     "inclusionai/ling-3.0-flash-fin",
     "inclusionai/ling-3.0-flash-fin:free",
@@ -12027,6 +12028,7 @@
     "theprint/phi-3-mini-4k-python",
     "thinkcoder/llama3-8b-instruct-lora-8-sft",
     "thinkingmachines/Inkling",
+    "thinkingmachines/Inkling-2-Small",
     "thinkingmachines/Inkling-Small",
     "thinkingmachines/inkling",
     "thinkingmachines/inkling-2-small",
