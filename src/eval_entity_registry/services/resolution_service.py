@@ -90,6 +90,7 @@ def _build_canonical_store(registry_store: RegistryStore) -> CanonicalStore:
         orgs_df=_table_with_pending(registry_store, "canonical_orgs") if registry_store.has_table("canonical_orgs") else None,
         families_df=registry_store.table("canonical_families") if registry_store.has_table("canonical_families") else None,
         composites_df=registry_store.table("canonical_composites") if registry_store.has_table("canonical_composites") else None,
+        inference_platforms_df=registry_store.table("canonical_inference_platforms") if registry_store.has_table("canonical_inference_platforms") else None,
     )
 
 

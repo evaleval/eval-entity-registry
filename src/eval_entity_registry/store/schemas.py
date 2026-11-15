@@ -164,7 +164,8 @@ _SCHEMAS: dict[str, dict] = {
         "updated_at": pd.StringDtype(),
     },
     # Host-token spellings (`fireworks/`, `-bedrock`, …) live in `aliases`
-    # and are inverted into the platform map by lib/inference_platforms_map.py.
+    # and are inverted into the platform map by the resolver's
+    # CanonicalStore.host_token_platforms().
     "canonical_inference_platforms": {
         "id": pd.StringDtype(),            # PK; = models.dev provider slug where one exists
         "display_name": pd.StringDtype(),

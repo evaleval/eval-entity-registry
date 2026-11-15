@@ -21,6 +21,7 @@ _TABLES = {
     "org": "canonical_orgs",
     "family": "canonical_families",
     "composite": "canonical_composites",
+    "inference_platform": "canonical_inference_platforms",
 }
 
 # Scalar parent column for non-model types; models carry a typed `parents`
@@ -44,6 +45,11 @@ def _is_na(value) -> bool:
 
 def _na_to_none(value: Any) -> Any:
     return None if _is_na(value) else value
+
+
+def _is_list_like(value: Any) -> bool:
+    """A list or a pyarrow/numpy array of values, not a scalar or a string."""
+    return hasattr(value, "__iter__") and not isinstance(value, (str, bytes, dict))
 
 
 def _safe_json_load(s: str, default: Any = None) -> Any:
@@ -126,6 +132,7 @@ def _kwarg_for(entity_type: str) -> str:
         "org": "orgs_df",
         "family": "families_df",
         "composite": "composites_df",
+        "inference_platform": "inference_platforms_df",
     }[entity_type]
 
 
@@ -146,6 +153,7 @@ class CanonicalStore:
         orgs_df: Optional[pd.DataFrame] = None,
         families_df: Optional[pd.DataFrame] = None,
         composites_df: Optional[pd.DataFrame] = None,
+        inference_platforms_df: Optional[pd.DataFrame] = None,
     ) -> None:
         self._tables: dict[str, pd.DataFrame] = {
             "model": models_df if models_df is not None else pd.DataFrame(),
@@ -155,7 +163,11 @@ class CanonicalStore:
             "org": orgs_df if orgs_df is not None else pd.DataFrame(),
             "family": families_df if families_df is not None else pd.DataFrame(),
             "composite": composites_df if composites_df is not None else pd.DataFrame(),
+            "inference_platform": (
+                inference_platforms_df if inference_platforms_df is not None else pd.DataFrame()
+            ),
         }
+        self._host_token_platforms: Optional[dict[str, str]] = None
         self._index: dict[str, dict[str, dict]] = {}
         # benchmark_id → family_id, built lazily from canonical_families.
         self._benchmark_to_family: Optional[dict[str, str]] = None
@@ -249,6 +261,34 @@ class CanonicalStore:
         if not canonical_id:
             return None
         return self._ensure_index(entity_type).get(canonical_id)
+
+    def host_token_platforms(self) -> dict[str, str]:
+        """Lowercased host-token spelling (`together/`, `-bedrock`) →
+        `canonical_inference_platforms.id`, inverted from the table's
+        `aliases`. Empty when the store carries no platform table."""
+        if self._host_token_platforms is None:
+            mapping: dict[str, str] = {}
+            for platform_id, row in self._ensure_index("inference_platform").items():
+                aliases = row.get("aliases")
+                if isinstance(aliases, str):
+                    aliases = _safe_json_load(aliases, default=[])
+                if _is_list_like(aliases):
+                    for alias in aliases:
+                        if isinstance(alias, str) and alias:
+                            mapping[alias.lower()] = platform_id
+            self._host_token_platforms = mapping
+        return self._host_token_platforms
+
+    def require_host_token_platforms(self, origin: str) -> None:
+        """Refuse a registry snapshot that cannot attribute any host token.
+        Without this every `inference_platform` resolves to None and nothing
+        downstream can tell that from a model served by no platform."""
+        if not self.host_token_platforms():
+            raise ValueError(
+                f"registry snapshot at {origin} has no host tokens in "
+                "canonical_inference_platforms (table missing, empty, or "
+                "without aliases); inference_platform cannot be resolved"
+            )
 
     def eval_name_layout(self, source_config: str) -> Optional[int]:
         """The declared dotted-`evaluation_name` layout of `source_config`,

@@ -13,16 +13,15 @@ reported quantization; consumers needing that precision must read the original
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Mapping, Optional
 
 from eval_entity_resolver.normalization import normalize
-from eval_entity_resolver.strategies._platform_map import get_host_token_platform
 
 
 # Stripped only from the end of the raw value; longer suffixes first so a
 # shorter one cannot pre-empt a compound (`-int8` vs `-int8-awq`). Host
 # suffixes (`-together`, `-bedrock`, `-openrouter`) are deliberately absent:
-# they live in `_SUFFIX_PLATFORM_MAP` so the platform is captured, not lost.
+# they live in `_HOST_SUFFIXES` so the platform is captured, not lost.
 _STRIP_SUFFIXES = [
     # Evaluation-mode suffixes (BFCL).
     "-fc",
@@ -169,9 +168,9 @@ def _orgs_agree(
 
 # Hosting platforms, gateways and missing-developer placeholders: dropped as a
 # prefix so the bare model body is tried, since they are not developers.
-# Deliberately broader than the `inference_platforms` seed: stripping for
-# matching is independent of platform attribution. Values come from the seed
-# map; tokens absent there capture `None`.
+# Deliberately broader than the registry's platform table: stripping for
+# matching is independent of platform attribution, which `fuzzy_match` reads
+# from the snapshot's host-token map.
 _HOST_PREFIX_TOKENS: tuple[str, ...] = (
     "unknown",
     "bedrock", "amazon-bedrock", "aws-bedrock",
@@ -190,16 +189,10 @@ _HOST_PREFIX_TOKENS: tuple[str, ...] = (
     "kilo", "vercel", "llmgateway", "poe",
 )
 
-_HOST_PREFIXES_TO_STRIP: dict[str, Optional[str]] = {
-    token: (None if token == "unknown" else get_host_token_platform(f"{token}/"))
-    for token in _HOST_PREFIX_TOKENS
-}
+_HOST_PREFIXES_TO_STRIP = frozenset(_HOST_PREFIX_TOKENS)
 
 # Host suffixes: captured as the platform side-value rather than discarded.
-_SUFFIX_PLATFORM_MAP: dict[str, Optional[str]] = {
-    suffix: get_host_token_platform(suffix)
-    for suffix in ("-together", "-bedrock", "-openrouter")
-}
+_HOST_SUFFIXES: tuple[str, ...] = ("-together", "-bedrock", "-openrouter")
 
 
 def _drop_duplicated_org_prefix(value: str) -> str | None:
@@ -258,16 +251,15 @@ def _drop_duplicated_org_prefix(value: str) -> str | None:
 
 
 def _drop_host_prefix(value: str) -> tuple[str, Optional[str]] | None:
-    """``(rest, platform_id)`` when the developer prefix (``host/`` or
-    ``host.``) is a known hosting platform, else None. ``platform_id`` is None
-    when the host token has no attribution in the seed map; ``rest`` keeps the
-    raw casing.
+    """``(rest, host_token)`` when the developer prefix (``host/`` or
+    ``host.``) is a known hosting platform, else None. ``host_token`` is
+    lowercased; ``rest`` keeps the raw casing.
     """
     if "/" in value:
         org, rest = value.split("/", 1)
         org_lower = org.lower()
         if org_lower in _HOST_PREFIXES_TO_STRIP and rest:
-            return (rest, _HOST_PREFIXES_TO_STRIP[org_lower])
+            return (rest, org_lower)
     if "." in value:
         # Bedrock-style `bedrock.anthropic.claude-3-5-sonnet`: only the
         # segment before the first dot can be the host.
@@ -276,7 +268,7 @@ def _drop_host_prefix(value: str) -> tuple[str, Optional[str]] | None:
         rest = value[first_dot + 1:]
         org_lower = org.lower()
         if org_lower in _HOST_PREFIXES_TO_STRIP and rest:
-            return (rest, _HOST_PREFIXES_TO_STRIP[org_lower])
+            return (rest, org_lower)
     return None
 
 # Below exact (1.0) and normalized (0.95) so the tier is recoverable from the
@@ -297,15 +289,13 @@ def _strip_suffix(value: str) -> str | None:
     return None
 
 
-def _strip_and_capture_platform_suffix(value: str) -> tuple[str, Optional[str]] | None:
-    """``(stem, platform_id)`` after stripping a trailing host suffix
-    (`-together` / `-bedrock` / `-openrouter`), or None. The platform is a side
-    value, never embedded in the candidate."""
+def _strip_host_suffix(value: str) -> tuple[str, str] | None:
+    """``(stem, host_suffix)`` after stripping a trailing host suffix
+    (`-together` / `-bedrock` / `-openrouter`), or None."""
     lower = value.lower()
-    for suffix, platform in _SUFFIX_PLATFORM_MAP.items():
+    for suffix in _HOST_SUFFIXES:
         if lower.endswith(suffix):
-            stem = value[: len(value) - len(suffix)]
-            return (stem, platform)
+            return (value[: len(value) - len(suffix)], suffix)
     return None
 
 
@@ -409,12 +399,17 @@ def fuzzy_match(
     source_config: Optional[str] = None,
     org_dev_map: Optional[dict] = None,
     known_orgs: Optional[frozenset] = None,
+    *,
+    host_token_platforms: Mapping[str, str],
 ) -> tuple[Optional[str], float, Optional[str]]:
     """Returns ``(canonical_id, confidence, inference_platform)``; canonical_id
     is None on no match.
 
     ``inference_platform`` is a SIDE VALUE captured from a host token and never
     embedded in the matched candidate, so capture cannot alter the canonical_id.
+    ``host_token_platforms`` attributes a host token spelling (``together/``,
+    ``-bedrock``) to a platform id; it comes from the registry snapshot
+    (``CanonicalStore.host_token_platforms``).
     A suffix capture (`-bedrock`) takes priority over a prefix capture
     (`together/`): a host token in the model name is the stronger per-run signal.
     """
@@ -437,12 +432,11 @@ def fuzzy_match(
 
     # Before the generic strip so the host suffix is captured, not discarded;
     # the stem is re-stripped (`model-fc-together` → capture, then drop `-fc`).
-    suffix_capture = _strip_and_capture_platform_suffix(raw_value)
+    suffix_capture = _strip_host_suffix(raw_value)
     if suffix_capture:
-        stem, platform = suffix_capture
+        stem, host_suffix = suffix_capture
         candidates_to_try.append(stem)
-        if platform is not None:
-            captured_platform = platform
+        captured_platform = host_token_platforms.get(host_suffix)
         stem_stripped = _strip_suffix(stem)
         if stem_stripped:
             candidates_to_try.append(stem_stripped)
@@ -457,10 +451,10 @@ def fuzzy_match(
     for val in [raw_value] + candidates_to_try[:]:
         host = _drop_host_prefix(val)
         if host:
-            bare, platform = host
+            bare, host_token = host
             candidates_to_try.append(bare)
-            if captured_platform is None and platform is not None:
-                captured_platform = platform
+            if captured_platform is None:
+                captured_platform = host_token_platforms.get(f"{host_token}/")
             stripped_bare = _strip_suffix(bare)
             if stripped_bare:
                 candidates_to_try.append(stripped_bare)
