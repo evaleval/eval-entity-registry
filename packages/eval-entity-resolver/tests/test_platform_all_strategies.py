@@ -35,6 +35,8 @@ _ALIASES = [
     ("openai/gpt-4o-openrouter", "openai/gpt-4o"),
     ("Groq/Llama-3-Groq-8B-Tool-Use", "Groq/Llama-3-Groq-8B-Tool-Use"),
     ("fireworks/ember-1", "fireworks/ember-1"),
+    # No canonical_models row: the id's namespace is the developer on record.
+    ("groq/unlisted", "Groq/Unlisted"),
 ]
 
 _PLATFORMS = [
@@ -98,6 +100,7 @@ def test_host_suffix_names_the_platform_on_an_exact_alias(resolver):
         ("groq/llama_3_groq_8b_tool_use", "Groq/Llama-3-Groq-8B-Tool-Use", "normalized"),
         ("fireworks/ember-1", "fireworks/ember-1", "exact"),
         ("fireworks/ember-1-fc", "fireworks/ember-1", "fuzzy"),
+        ("groq/unlisted", "Groq/Unlisted", "exact"),
     ],
 )
 def test_prefix_that_is_the_models_developer_is_not_a_host(
