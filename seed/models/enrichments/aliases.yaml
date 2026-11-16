@@ -1024,6 +1024,7 @@
   - claude35-sonnet-june-24
 - id: anthropic/claude-3.7-sonnet-thinking
   aliases:
+  - anthropic/claude-3.7-thinking
   - Claude 3.7 Sonnet Thinking
   - claude-3.7-thinking
   - unknown/claude-3-7-sonnet-thinking
@@ -2839,6 +2840,7 @@
   - unknown/openai-o1
 - id: openai/o3
   aliases:
+  - openai/gpt-o3
   - gpt-o3
   - openai/o3-mini-deep-research-agentic
   - unknown/gpt-o3

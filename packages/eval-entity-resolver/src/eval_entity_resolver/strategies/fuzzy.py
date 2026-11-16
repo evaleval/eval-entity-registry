@@ -27,6 +27,7 @@ from eval_entity_resolver.normalization import normalize
 # Longer spellings first so `-high-effort` is read before `-high`.
 _EFFORT_SUFFIXES: dict[str, str] = {
     "-xhigh-effort": "xhigh",
+    "-max-effort": "max",
     "-high-effort": "high",
     "-medium-effort": "medium",
     "-low-effort": "low",

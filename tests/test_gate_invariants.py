@@ -903,6 +903,18 @@ def test_model_display_names_are_humanized(models_df):
 
 # Snapshot (id, parent_id) edges allowed not to land; any other lost edge fails.
 _ORACLE_EDGE_EXEMPT: frozenset = frozenset({
+    # An effort tier or thinking budget is the same model served differently:
+    # the finetune edge is re-typed variant/mode (see the run-condition gate).
+    ("anthropic/claude-3.7-thinking-16k", "anthropic/claude-3.7-sonnet-thinking"),
+    ("anthropic/claude-3.7-thinking-1k", "anthropic/claude-3.7-sonnet-thinking"),
+    ("anthropic/claude-3.7-thinking-8k", "anthropic/claude-3.7-sonnet-thinking"),
+    ("anthropic/claude-opus-4-6-thinking-120k-max", "anthropic/claude-opus-4.6-thinking"),
+    ("anthropic/claude-opus-4-6-thinking-max", "anthropic/claude-opus-4.6-thinking"),
+    ("anthropic/claude-sonnet-4-6-max", "anthropic/claude-sonnet-4.6"),
+    ("openai/gpt-5-1-2025-11-13-thinking-high", "openai/gpt-5.1-2025-11-13"),
+    ("openai/gpt-5-1-2025-11-13-thinking-low", "openai/gpt-5.1-2025-11-13"),
+    ("openai/gpt-5-1-2025-11-13-thinking-medium", "openai/gpt-5.1-2025-11-13"),
+    ("openai/gpt-o3-high", "openai/o3"),
     # Inverted tier3 edge (the base coder as a "finetune" of Intel's int4 quant).
     ("alibaba/qwen-3-coder-480b", "Intel/Qwen3-Coder-480B-A35B-Instruct-int4-mixed-AutoRound"),
     # Real parent is deepseek-ai/DeepSeek-Coder-V2-Base (per hub-stats baseModels).
@@ -1032,6 +1044,10 @@ def test_resolve_surfaces_typed_edges_and_ancestry(resolver, models_df):
 # Snapshot (field, id) lineage memberships that cannot be preserved: the root is
 # no longer a distinct canonical, so the model is correctly a singleton root.
 _ORACLE_LINEAGE_EXEMPT: frozenset = frozenset({
+    # Effort-tier leaves re-typed finetune -> variant/mode: same identity as
+    # the base, so no separate lineage origin.
+    ("lineage_origin_model_id", "anthropic/claude-sonnet-4-6-max"),
+    ("lineage_origin_model_id", "openai/gpt-o3-high"),
     # Dated snapshots re-typed finetune -> variant/version: same identity as the
     # family, so no separate lineage origin.
     ("lineage_origin_model_id", "google/gemini-1.5-pro-0514"),
@@ -1838,3 +1854,114 @@ def test_axis_only_ever_qualifies_a_variant_edge(models_df):
         f"from the known {AXIS_ON_NON_VARIANT_FLOOR}: "
         f"{[b for b in bad][:10]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# A run condition in a model id is linked to the model it ran on
+# ---------------------------------------------------------------------------
+# A source can weld a reasoning-effort tier or a thinking-token budget onto a
+# model id (`o3-2025-04-16-high`, `…-thinking-16k`). That is the same model
+# served differently, so a canonical with such an id is a `variant` leaf of
+# the model its stem names, and the resolver reports the condition. A tier
+# word can also be part of a product name; those are listed with the reason.
+_TIER_WORD_IS_THE_PRODUCT_NAME: frozenset = frozenset({
+    # Size or product tiers, not reasoning effort: the stem is another product.
+    "openai-community/gpt2-medium",   # GPT-2 Medium is a model size
+    "alibaba/qwen-max",               # Qwen Max / Plus / Turbo product ladder
+    "alibaba/qwen-vl-max",
+    "qwen/qwen2.5-max",
+    "openai/gpt-5.1-codex-max",       # Codex Max is its own product
+    "minimax/minimax-h3-max",         # models.dev catalog entry; no source states an effort
+})
+
+# Leaves that still carry an edge beside their `variant` edge. The extra edge
+# is the `finetune -> family` a generator writes for every tier-named id. The
+# generated files are not hand-edited, so it stays until the generator stops
+# writing it. Ratchet: the count may only fall.
+CONDITION_LEAF_STRAY_EDGE_FLOOR = 37
+
+
+def run_condition_link_problems(models_df, resolver) -> tuple[list, list]:
+    """`(unlinked, stray)` over canonicals whose id ends in a run condition.
+
+    `unlinked`: `(id, base)` where the id without the condition names another
+    model but the canonical is not a variant of it. `stray`: `(id, edges)`
+    where a linked leaf carries an edge beside its variant edge."""
+    from eval_entity_resolver.strategies.fuzzy import reasoning_run_condition_of
+
+    unlinked: list[tuple[str, str]] = []
+    stray: list[tuple[str, list]] = []
+    for cid, parents in zip(models_df["id"], models_df["parents"]):
+        cid = str(cid)
+        condition = reasoning_run_condition_of(cid)
+        if condition is None:
+            continue
+        result = resolver.resolve(cid, "model")
+        if result.canonical_id != cid:
+            continue
+        if result.reasoning_effort or result.reasoning_tokens:
+            extra = [
+                (e.get("id"), e.get("relationship")) for e in _parse_parents(parents)
+                if not (e.get("relationship") == "variant"
+                        and e.get("id") == result.parent_canonical_id)
+            ]
+            if extra:
+                stray.append((cid, extra))
+            continue
+        for stem in condition.stems:
+            base = resolver.resolve(stem, "model").canonical_id
+            if base and base != cid:
+                unlinked.append((cid, base))
+                break
+    return unlinked, stray
+
+
+def test_run_condition_ids_are_linked_to_their_base(models_df, resolver):
+    unlinked, stray = run_condition_link_problems(models_df, resolver)
+    unexplained = [u for u in unlinked if u[0] not in _TIER_WORD_IS_THE_PRODUCT_NAME]
+    assert unexplained == [], (
+        "canonical id(s) are another model's id plus an effort tier or "
+        "thinking budget, but are not a variant of that model. Link each in "
+        "seed/models/enrichments/parents.yaml (relationship: variant, axis: "
+        f"mode), or list it as a product name with the reason: {unexplained}"
+    )
+    assert len(stray) <= CONDITION_LEAF_STRAY_EDGE_FLOOR, (
+        f"{len(stray)} run-condition leaf(s) carry an edge beside their "
+        f"variant edge, up from the known {CONDITION_LEAF_STRAY_EDGE_FLOOR}: "
+        f"{stray[:10]}"
+    )
+
+
+def test_run_condition_gate_flags_an_unlinked_tier_id_and_a_stray_edge(tmp_path):
+    """Bad input: a tier-named canonical with no link to its base is reported
+    unlinked; one linked but also marked a finetune is reported stray."""
+    from eval_entity_resolver import Resolver
+
+    variant = {"relationship": "variant", "axis": "mode"}
+    models = pd.DataFrame([
+        {"id": "acme/alpha", "org_id": "acme", "parents": "[]"},
+        {"id": "acme/alpha-high", "org_id": "acme", "parents": "[]"},
+        {"id": "acme/beta", "org_id": "acme", "parents": "[]"},
+        {"id": "acme/family", "org_id": "acme", "parents": "[]"},
+        {"id": "acme/beta-low", "org_id": "acme", "parents": json.dumps([
+            {"id": "acme/family", "relationship": "finetune"},
+            {"id": "acme/beta", **variant},
+        ])},
+    ])
+    aliases = pd.DataFrame([
+        {"id": f"a{i}", "raw_value": cid, "entity_type": "model",
+         "canonical_id": cid, "source_config": None, "source_field": None,
+         "status": "confirmed", "strategy": "seed", "confidence": 1.0,
+         "notes": None, "created_at": None, "updated_at": None}
+        for i, cid in enumerate(models["id"])
+    ])
+    aliases.to_parquet(tmp_path / "aliases.parquet")
+    models.to_parquet(tmp_path / "canonical_models.parquet")
+    pd.DataFrame([{
+        "id": "openrouter", "aliases": json.dumps(["OpenRouter", "-openrouter"]),
+        "canonical_org": None,
+    }]).to_parquet(tmp_path / "canonical_inference_platforms.parquet")
+
+    unlinked, stray = run_condition_link_problems(models, Resolver.from_parquet(tmp_path))
+    assert unlinked == [("acme/alpha-high", "acme/alpha")]
+    assert stray == [("acme/beta-low", [("acme/family", "finetune")])]

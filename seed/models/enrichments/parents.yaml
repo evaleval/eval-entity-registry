@@ -6402,15 +6402,18 @@
 - id: anthropic/claude-3.7-thinking-16k
   parents:
   - id: anthropic/claude-3.7-sonnet-thinking
-    relationship: finetune
+    relationship: variant
+    axis: mode
 - id: anthropic/claude-3.7-thinking-1k
   parents:
   - id: anthropic/claude-3.7-sonnet-thinking
-    relationship: finetune
+    relationship: variant
+    axis: mode
 - id: anthropic/claude-3.7-thinking-8k
   parents:
   - id: anthropic/claude-3.7-sonnet-thinking
-    relationship: finetune
+    relationship: variant
+    axis: mode
 - id: anthropic/claude-4-opus-20250514
   parents:
   - id: anthropic/claude-opus-4
@@ -6493,11 +6496,13 @@
 - id: anthropic/claude-opus-4-6-thinking-120k-max
   parents:
   - id: anthropic/claude-opus-4-6-thinking
-    relationship: finetune
+    relationship: variant
+    axis: mode
 - id: anthropic/claude-opus-4-6-thinking-max
   parents:
   - id: anthropic/claude-opus-4-6-thinking
-    relationship: finetune
+    relationship: variant
+    axis: mode
 - id: anthropic/claude-opus-4-thinking
   parents:
   - id: anthropic/claude-opus-4
@@ -6554,7 +6559,13 @@
 - id: anthropic/claude-sonnet-4-6-max
   parents:
   - id: anthropic/claude-sonnet-4.6
-    relationship: finetune
+    relationship: variant
+    axis: mode
+- id: anthropic/claude-sonnet-4-6-non-reasoning-low-effort
+  parents:
+  - id: anthropic/claude-sonnet-4.6
+    relationship: variant
+    axis: mode
 - id: anthropic/claude-sonnet-4-thinking
   parents:
   - id: anthropic/claude-sonnet-4
@@ -6568,6 +6579,11 @@
 - id: anthropic/claude-sonnet-4.5-thinking
   parents:
   - id: anthropic/claude-sonnet-4.5
+    relationship: variant
+    axis: mode
+- id: anthropic/opus-4-6-max-effort
+  parents:
+  - id: anthropic/Opus 4.6
     relationship: variant
     axis: mode
 - id: appvoid/arco-2-instruct
@@ -6622,6 +6638,11 @@
   parents:
   - id: HuggingFaceTB/SmolLM2-360M
     relationship: finetune
+- id: aws/nova-2-0-lite-reasoning
+  parents:
+  - id: aws/nova-2-0-lite
+    relationship: variant
+    axis: mode
 - id: aws/nova-2-0-lite-reasoning-low
   parents:
   - id: aws/nova-2-0-lite-reasoning
@@ -6630,6 +6651,26 @@
 - id: aws/nova-2-0-lite-reasoning-medium
   parents:
   - id: aws/nova-2-0-lite-reasoning
+    relationship: variant
+    axis: mode
+- id: aws/nova-2-0-omni-reasoning-low
+  parents:
+  - id: aws/nova-2-0-omni-reasoning
+    relationship: variant
+    axis: mode
+- id: aws/nova-2-0-omni-reasoning-medium
+  parents:
+  - id: aws/nova-2-0-omni-reasoning
+    relationship: variant
+    axis: mode
+- id: aws/nova-2-0-pro-reasoning-low
+  parents:
+  - id: aws/nova-2-0-pro-reasoning
+    relationship: variant
+    axis: mode
+- id: aws/nova-2-0-pro-reasoning-medium
+  parents:
+  - id: aws/nova-2-0-pro-reasoning
     relationship: variant
     axis: mode
 - id: baconnier/Napoleon_24B_V0.2
@@ -7722,6 +7763,16 @@
   parents:
   - id: deepseek-ai/DeepSeek-V4-Flash
     relationship: quantized
+- id: deepseek/deepseek-v4-flash-max
+  parents:
+  - id: deepseek-ai/DeepSeek-V4-Flash
+    relationship: variant
+    axis: mode
+- id: deepseek/deepseek-v4-pro-max
+  parents:
+  - id: deepseek-ai/DeepSeek-V4-Pro
+    relationship: variant
+    axis: mode
 - id: dfurman/CalmeRys-78B-Orpo-v0.1
   parents:
   - id: MaziyarPanahi/calme-2.4-rys-78b
@@ -8541,6 +8592,26 @@
   - id: google/gemini-2.5-flash
     relationship: variant
     axis: mode
+- id: google/gemini-2-5-flash-preview-05-20-thinking-16k
+  parents:
+  - id: google/gemini-2.5-flash-preview-05-20
+    relationship: variant
+    axis: mode
+- id: google/gemini-2-5-flash-preview-05-20-thinking-1k
+  parents:
+  - id: google/gemini-2.5-flash-preview-05-20
+    relationship: variant
+    axis: mode
+- id: google/gemini-2-5-flash-preview-05-20-thinking-24k
+  parents:
+  - id: google/gemini-2.5-flash-preview-05-20
+    relationship: variant
+    axis: mode
+- id: google/gemini-2-5-flash-preview-05-20-thinking-8k
+  parents:
+  - id: google/gemini-2.5-flash-preview-05-20
+    relationship: variant
+    axis: mode
 - id: google/gemini-2-5-flash-reasoning
   parents:
   - id: google/gemini-2.5-flash
@@ -8553,20 +8624,24 @@
     axis: version
 - id: google/gemini-2-5-pro-2025-06-17-thinking-16k
   parents:
-  - id: google/gemini-2.5-pro-2025-06
-    relationship: finetune
+  - id: google/gemini-2.5-pro-2025-06-17
+    relationship: variant
+    axis: mode
 - id: google/gemini-2-5-pro-2025-06-17-thinking-1k
   parents:
-  - id: google/gemini-2.5-pro-2025-06
-    relationship: finetune
+  - id: google/gemini-2.5-pro-2025-06-17
+    relationship: variant
+    axis: mode
 - id: google/gemini-2-5-pro-2025-06-17-thinking-32k
   parents:
-  - id: google/gemini-2.5-pro-2025-06
-    relationship: finetune
+  - id: google/gemini-2.5-pro-2025-06-17
+    relationship: variant
+    axis: mode
 - id: google/gemini-2-5-pro-2025-06-17-thinking-8k
   parents:
-  - id: google/gemini-2.5-pro-2025-06
-    relationship: finetune
+  - id: google/gemini-2.5-pro-2025-06-17
+    relationship: variant
+    axis: mode
 - id: google/gemini-2.0-flash-thinking
   parents:
   - id: google/gemini-2.0-flash
@@ -8662,20 +8737,24 @@
     axis: version
 - id: google/gemini-3-flash-preview-thinking-high
   parents:
-  - id: google/gemini-3-flash-preview
-    relationship: finetune
+  - id: google/gemini-3-flash-preview-thinking
+    relationship: variant
+    axis: mode
 - id: google/gemini-3-flash-preview-thinking-low
   parents:
-  - id: google/gemini-3-flash-preview
-    relationship: finetune
+  - id: google/gemini-3-flash-preview-thinking
+    relationship: variant
+    axis: mode
 - id: google/gemini-3-flash-preview-thinking-medium
   parents:
-  - id: google/gemini-3-flash-preview
-    relationship: finetune
+  - id: google/gemini-3-flash-preview-thinking
+    relationship: variant
+    axis: mode
 - id: google/gemini-3-flash-preview-thinking-minimal
   parents:
-  - id: google/gemini-3-flash-preview
-    relationship: finetune
+  - id: google/gemini-3-flash-preview-thinking
+    relationship: variant
+    axis: mode
 - id: google/gemini-3-flash-reasoning
   parents:
   - id: google/gemini-3-flash
@@ -8691,8 +8770,9 @@
     axis: version
 - id: google/gemini-3.1-pro-preview-thinking-high
   parents:
-  - id: google/gemini-3.1-pro
-    relationship: finetune
+  - id: google/gemini-3.1-pro-preview-thinking
+    relationship: variant
+    axis: mode
 - id: google/gemini-exp-1114
   parents:
   - id: google/gemini-exp
@@ -13062,16 +13142,19 @@
     relationship: finetune
 - id: openai/gpt-5-1-2025-11-13-thinking-high
   parents:
-  - id: openai/gpt-5.1-2025-11-13
-    relationship: finetune
+  - id: openai/gpt-5.1-2025-11-13-thinking
+    relationship: variant
+    axis: mode
 - id: openai/gpt-5-1-2025-11-13-thinking-low
   parents:
-  - id: openai/gpt-5.1-2025-11-13
-    relationship: finetune
+  - id: openai/gpt-5.1-2025-11-13-thinking
+    relationship: variant
+    axis: mode
 - id: openai/gpt-5-1-2025-11-13-thinking-medium
   parents:
-  - id: openai/gpt-5.1-2025-11-13
-    relationship: finetune
+  - id: openai/gpt-5.1-2025-11-13-thinking
+    relationship: variant
+    axis: mode
 - id: openai/gpt-5-1-non-reasoning
   parents:
   - id: openai/gpt-5.1
@@ -13087,24 +13170,28 @@
     relationship: finetune
 - id: openai/gpt-5-2-2025-12-11-thinking-high
   parents:
-  - id: openai/gpt-5.2
-    relationship: finetune
+  - id: openai/gpt-5.2-2025-12-11-thinking
+    relationship: variant
+    axis: mode
 - id: openai/gpt-5-2-2025-12-11-thinking-low
   parents:
-  - id: openai/gpt-5.2
-    relationship: finetune
+  - id: openai/gpt-5.2-2025-12-11-thinking
+    relationship: variant
+    axis: mode
 - id: openai/gpt-5-2-2025-12-11-thinking-medium
   parents:
-  - id: openai/gpt-5.2
-    relationship: finetune
+  - id: openai/gpt-5.2-2025-12-11-thinking
+    relationship: variant
+    axis: mode
 - id: openai/gpt-5-2-2025-12-11-thinking-none
   parents:
   - id: openai/gpt-5.2
     relationship: finetune
 - id: openai/gpt-5-2-2025-12-11-thinking-xhigh
   parents:
-  - id: openai/gpt-5.2
-    relationship: finetune
+  - id: openai/gpt-5.2-2025-12-11-thinking
+    relationship: variant
+    axis: mode
 - id: openai/gpt-5-2-pro-2025-12-11-high
   parents:
   - id: openai/gpt-5.2-pro-2025-12-11
@@ -13140,12 +13227,32 @@
   - id: openai/gpt-5.4-mini
     relationship: variant
     axis: mode
+- id: openai/gpt-5-4-mini-xhigh
+  parents:
+  - id: openai/gpt-5.4-mini
+    relationship: variant
+    axis: mode
 - id: openai/gpt-5-4-nano-non-reasoning
   parents:
   - id: openai/gpt-5.4-nano
     relationship: variant
     axis: mode
+- id: openai/gpt-5-4-nano-xhigh
+  parents:
+  - id: openai/gpt-5.4-nano
+    relationship: variant
+    axis: mode
 - id: openai/gpt-5-4-non-reasoning
+  parents:
+  - id: openai/gpt-5.4
+    relationship: variant
+    axis: mode
+- id: openai/gpt-5-4-pro-xhigh
+  parents:
+  - id: openai/gpt-5.4-pro
+    relationship: variant
+    axis: mode
+- id: openai/gpt-5-4-xhigh
   parents:
   - id: openai/gpt-5.4
     relationship: variant
@@ -13305,7 +13412,8 @@
 - id: openai/gpt-o3-high
   parents:
   - id: openai/o3
-    relationship: finetune
+    relationship: variant
+    axis: mode
 - id: openai/gpt-o3-mini
   parents:
   - id: openai/o3-mini
