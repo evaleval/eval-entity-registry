@@ -149,3 +149,137 @@ def test_every_host_suffix_the_fuzzy_strategy_strips_is_attributed(seeded_store)
     ).host_token_platforms()
     missing = [s for s in _HOST_SUFFIXES if s not in host_token_platforms]
     assert not missing, f"host suffixes with no platform in the seed: {missing}"
+
+
+# --- An inference provider and a model developer are separate entities ------
+
+
+@pytest.fixture(scope="module")
+def seeded_snapshot(tmp_path_factory):
+    """One `seed --local` for the module: `(resolver, tables)`. Seeding takes most of a minute, so the cases below share it."""
+    import pandas as pd
+
+    fixtures_dir = tmp_path_factory.mktemp("provider_vs_developer") / "fixtures"
+    fixtures_dir.mkdir()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("LOCAL_MODE", "true")
+        mp.setenv("FIXTURES_PATH", str(fixtures_dir))
+        hf_store._store = None
+        result = CliRunner().invoke(
+            app, ["seed", "--local", "--seed-dir", str(SEED_DIR)]
+        )
+        hf_store._store = None
+    assert result.exit_code == 0, result.output
+    tables = {
+        name: pd.read_parquet(fixtures_dir / f"canonical_{name}.parquet")
+        for name in ("models", "inference_platforms", "orgs")
+    }
+    from eval_entity_resolver import Resolver
+
+    return Resolver.from_parquet(str(fixtures_dir)), tables
+
+
+def _prefix_token_platforms(platforms) -> dict[str, dict]:
+    """Prefix host token (`together`) -> its platform row."""
+    out: dict[str, dict] = {}
+    for row in platforms.to_dict("records"):
+        aliases = row["aliases"]
+        for alias in json.loads(aliases) if isinstance(aliases, str) else aliases:
+            if alias.endswith("/"):
+                out[alias[:-1].lower()] = row
+    return out
+
+
+def provider_tokens_used_as_developer(models, platforms) -> list[tuple[str, str]]:
+    """`(model id, org_id)` for every model whose developer is a provider's
+    host token while that provider's row declares no `canonical_org`. Such a
+    provider only serves other developers' models, so it developed nothing."""
+    import pandas as pd
+
+    serving_only = {
+        token
+        for token, row in _prefix_token_platforms(platforms).items()
+        if pd.isna(row.get("canonical_org")) or not row.get("canonical_org")
+    }
+    return [
+        (m["id"], m["org_id"])
+        for m in models[["id", "org_id"]].dropna().to_dict("records")
+        if m["org_id"].lower() in serving_only
+    ]
+
+
+def test_provider_token_check_refuses_a_serving_only_provider_as_developer():
+    import pandas as pd
+
+    platforms = pd.DataFrame(
+        [
+            {"id": "azure", "aliases": '["Azure", "azure/"]', "canonical_org": None},
+            {"id": "groq", "aliases": '["Groq", "groq/"]', "canonical_org": "Groq"},
+        ]
+    )
+    models = pd.DataFrame(
+        [
+            {"id": "azure/phi-4", "org_id": "azure"},
+            {"id": "microsoft/phi-4", "org_id": "microsoft"},
+            {"id": "Groq/Llama-3-Groq-8B-Tool-Use", "org_id": "Groq"},
+        ]
+    )
+    assert provider_tokens_used_as_developer(models, platforms) == [
+        ("azure/phi-4", "azure")
+    ]
+
+
+def test_no_serving_only_provider_is_a_model_developer(seeded_snapshot):
+    _, tables = seeded_snapshot
+    bad = provider_tokens_used_as_developer(
+        tables["models"], tables["inference_platforms"]
+    )
+    assert not bad, f"provider host token recorded as the developer: {bad}"
+
+
+def test_every_canonical_org_is_an_org(seeded_snapshot):
+    """`canonical_org` is the link from a platform to the developer that
+    operates it, whatever the platform's kind."""
+    _, tables = seeded_snapshot
+    plat = tables["inference_platforms"]
+    org_ids = set(tables["orgs"]["id"])
+    linked = plat[plat["canonical_org"].notna() & (plat["canonical_org"] != "")]
+    missing = {
+        r["id"]: r["canonical_org"]
+        for r in linked.to_dict("records")
+        if r["canonical_org"] not in org_ids
+    }
+    assert not missing, f"canonical_org not in canonical_orgs: {missing}"
+
+
+@pytest.mark.parametrize(
+    "raw, developer, platform",
+    [
+        # Fireworks serving other developers' models: the `fireworks/` prefix
+        # is the platform, and the developer is the model's own.
+        ("fireworks/deepseek-v3p1", "deepseek", "fireworks-ai"),
+        ("fireworks/deepseek-v3p2", "deepseek", "fireworks-ai"),
+        ("fireworks/deepseek-v3p2-thinking", "deepseek", "fireworks-ai"),
+        ("fireworks/llama4-maverick-instruct-basic", "meta", "fireworks-ai"),
+        ("fireworks/deepseek-r1", "deepseek", "fireworks-ai"),
+        ("together/llama-2-7b", "meta", "togetherai"),
+        ("azure/phi-4", "microsoft", "azure"),
+        # The provider's own model: the prefix may be a namespace.
+        ("fireworks/ember-1", "fireworks", None),
+        ("together/redpajama-incite-base-7b", "togethercomputer", None),
+        ("together/RedPajama-INCITE-Instruct-7B", "togethercomputer", None),
+        ("together/RedPajama-INCITE-7B-Base", "togethercomputer", None),
+        ("together/redpajama-incite-instruct-3b-v1", "togethercomputer", None),
+        ("together/RedPajama-INCITE-Base-v1-3B", "togethercomputer", None),
+        ("Groq/Llama-3-Groq-8B-Tool-Use", "Groq", None),
+    ],
+)
+def test_seeded_registry_separates_provider_from_developer(
+    seeded_snapshot, raw, developer, platform
+):
+    resolver, tables = seeded_snapshot
+    result = resolver.resolve(raw, "model")
+    assert result.canonical_id is not None, raw
+    models = tables["models"].set_index("id")
+    assert models.loc[result.canonical_id, "org_id"] == developer
+    assert result.inference_platform == platform

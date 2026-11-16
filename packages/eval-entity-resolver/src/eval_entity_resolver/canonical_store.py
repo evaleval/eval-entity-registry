@@ -279,6 +279,15 @@ class CanonicalStore:
             self._host_token_platforms = mapping
         return self._host_token_platforms
 
+    def platform_developer_org(self, platform_id: str) -> Optional[str]:
+        """The developer org that operates `platform_id`, from the platform
+        row's `canonical_org`, or None for a platform that only serves other
+        developers' models. A platform and a developer are separate entities;
+        this column is the one declared link between them."""
+        row = self._ensure_index("inference_platform").get(platform_id) or {}
+        org = _na_to_none(row.get("canonical_org"))
+        return org if isinstance(org, str) and org else None
+
     def require_host_token_platforms(self, origin: str) -> None:
         """Refuse a registry snapshot that cannot attribute any host token.
         Without this every `inference_platform` resolves to None and nothing

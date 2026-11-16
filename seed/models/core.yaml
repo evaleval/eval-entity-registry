@@ -23,6 +23,22 @@ skip_source_ids:
 - alibaba/qwen-3-7-max
 - alibaba/qwen-3-7-plus
 - alibaba/qwen3.7-plus
+# tier3 read the serving platform's prefix as the developer: these are
+# DeepSeek and Meta models served by Fireworks. The raw forms are aliases of
+# the true models in enrichments/aliases.yaml.
+- fireworks/deepseek-v3p1
+- fireworks/deepseek-v3p2
+- fireworks/deepseek-v3p2-thinking
+- fireworks/llama4-maverick-instruct-basic
+# tier3 twins of Together's RedPajama models under the `together/` prefix
+# HELM-style ids use; the canonicals are the `togethercomputer/` HF repos and
+# the raw forms are aliases there. `together/redpajama-incite-7b` pooled the
+# 7B Base and Instruct rows as one model.
+- together/RedPajama-INCITE-Base-v1-3B
+- together/RedPajama-INCITE-Instruct-v1-3B
+- together/redpajama-incite-3b-chat
+- together/redpajama-incite-3b-instruct
+- together/redpajama-incite-7b
 # Stale tier3 name-inference twin of the models.dev mint mistralai/mistral-large-2402;
 # its alias claim on that id stalled the refresh-models cron (alias-collision abort).
 - mistral/mistral-large-2402
@@ -12564,20 +12580,42 @@ entries:
   review_status: reviewed
   aliases:
   - Falcon3-7B
-- id: together/redpajama-incite-7b
-  display_name: RedPajama-INCITE 7B
-  org_id: together
+- id: togethercomputer/RedPajama-INCITE-Base-7B-v0.1
+  display_name: RedPajama-INCITE Base 7B v0.1
+  org_id: togethercomputer
   family: redpajama-incite-7b
   architecture: null
   params_billions: 7.0
-  parents: []
+  parents:
+  - id: togethercomputer/RedPajama-INCITE-7B-Base
+    relationship: variant
+    axis: version
   open_weights: true
-  release_date: null
+  release_date: '2023-05-05'
   input_modalities: null
   output_modalities: null
   tags:
   - open-weight
-  metadata: '{}'
+  metadata: '{"note": "Early preview checkpoint at 800B of 1T training tokens (together.ai/blog/redpajama-7b). The Hugging Face repo of this name now redirects to the final model, a separate entity."}'
+  review_status: reviewed
+  aliases: []
+- id: togethercomputer/RedPajama-INCITE-Instruct-7B-v0.1
+  display_name: RedPajama-INCITE Instruct 7B v0.1
+  org_id: togethercomputer
+  family: redpajama-incite-7b
+  architecture: null
+  params_billions: 7.0
+  parents:
+  - id: togethercomputer/RedPajama-INCITE-7B-Instruct
+    relationship: variant
+    axis: version
+  open_weights: true
+  release_date: '2023-05-05'
+  input_modalities: null
+  output_modalities: null
+  tags:
+  - open-weight
+  metadata: '{"note": "Early preview checkpoint at 800B of 1T training tokens (together.ai/blog/redpajama-7b). The Hugging Face repo of this name now redirects to the final model, a separate entity."}'
   review_status: reviewed
   aliases: []
 - id: togethercomputer/redpajama-incite-3b

@@ -734,14 +734,21 @@ class Resolver:
         return self._enrich(raw_value, entity_type, source_config, canonical_id, strategy, confidence)
 
     def _host_platform(self, raw_value: str, canonical_id: str) -> Optional[str]:
-        """The platform a host token in `raw_value` names, or None. A prefix
-        that is the matched model's own developer (`Groq/Llama-3-Groq-8B`,
-        `fireworks/ember-1`) says who made the model, not who served the run."""
+        """The platform a host token in `raw_value` names, or None.
+
+        Who served a run and who developed the model are separate facts. The
+        developer comes from the matched model, never from the token. A prefix
+        token is ambiguous only when the platform it names is operated by that
+        same developer (the platform row's `canonical_org`): `together/` on a
+        Together-developed model, `Groq/Llama-3-Groq-8B-Tool-Use`,
+        `fireworks/ember-1`. That prefix may be a namespace, so no platform is
+        claimed."""
         cs = self.canonical_store
         host = host_platform_of(raw_value, cs.host_token_platforms())
         if host is None:
             return None
-        if host.prefix_token is not None:
+        operator = cs.platform_developer_org(host.platform_id)
+        if host.prefix_token is not None and operator is not None:
             # An alias can point at an id with no canonical row; its namespace
             # is then the only developer on record.
             developer = (cs.lookup("model", canonical_id) or {}).get("org_id") or (
@@ -749,7 +756,7 @@ class Resolver:
             )
             fold = self._org_fold_map()
             if developer and _norm_org_key(
-                _canon_org(host.prefix_token, fold)
+                _canon_org(operator, fold)
             ) == _norm_org_key(_canon_org(developer, fold)):
                 return None
         return host.platform_id

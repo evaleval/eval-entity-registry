@@ -1622,6 +1622,11 @@ _ADOPTION_REGRESSION_EXEMPT: frozenset = frozenset({
     # The served "phi-4-mini" IS Phi-4-mini-instruct (API names drop -instruct).
     "Phi-4 Mini",
     "microsoft/phi-4-mini",
+    # Base and Instruct are two models; the old home was one
+    # `together/redpajama-incite-7b` node that pooled both. HELM's 7B names
+    # now reach the v0.1 preview entities.
+    "redpajama-incite-base-7b",
+    "redpajama-incite-instruct-7b",
 }) | _INVENTED_WRONG_ORG_IDS
 
 

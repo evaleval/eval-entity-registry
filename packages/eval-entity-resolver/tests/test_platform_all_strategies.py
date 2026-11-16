@@ -22,6 +22,11 @@ _MODELS = [
     {"id": "openai/gpt-4o", "org_id": "openai"},
     {"id": "Groq/Llama-3-Groq-8B-Tool-Use", "org_id": "Groq"},
     {"id": "fireworks/ember-1", "org_id": "fireworks"},
+    {"id": "meta-llama/Llama-2-7b", "org_id": "meta"},
+    # Together's own model, under its HF namespace and under the `together/`
+    # spelling an upstream harness uses for the same developer.
+    {"id": "togethercomputer/RedPajama-INCITE-7B-Base", "org_id": "togethercomputer"},
+    {"id": "together/redpajama-incite-7b", "org_id": "togethercomputer"},
 ]
 
 # (raw_value, canonical_id). The hosted spellings are aliases the way the
@@ -37,13 +42,25 @@ _ALIASES = [
     ("fireworks/ember-1", "fireworks/ember-1"),
     # No canonical_models row: the id's namespace is the developer on record.
     ("groq/unlisted", "Groq/Unlisted"),
+    ("meta-llama/Llama-2-7b", "meta-llama/Llama-2-7b"),
+    ("together/llama-2-7b", "meta-llama/Llama-2-7b"),
+    ("togethercomputer/RedPajama-INCITE-7B-Base", "togethercomputer/RedPajama-INCITE-7B-Base"),
+    ("RedPajama-INCITE-7B-Base", "togethercomputer/RedPajama-INCITE-7B-Base"),
+    ("together/redpajama-incite-7b", "together/redpajama-incite-7b"),
 ]
 
+# `canonical_org` is the developer org that operates the platform. The token
+# and the org id need not be spelled alike (`together/` vs `togethercomputer`).
 _PLATFORMS = [
-    {"id": "fireworks-ai", "aliases": ["Fireworks AI", "fireworks/"]},
-    {"id": "azure", "aliases": ["Azure", "azure/"]},
-    {"id": "groq", "aliases": ["Groq", "groq/"]},
-    {"id": "openrouter", "aliases": ["OpenRouter", "-openrouter"]},
+    {"id": "fireworks-ai", "aliases": ["Fireworks AI", "fireworks/"], "canonical_org": "fireworks"},
+    {"id": "azure", "aliases": ["Azure", "azure/"], "canonical_org": None},
+    {"id": "groq", "aliases": ["Groq", "groq/"], "canonical_org": "Groq"},
+    {"id": "openrouter", "aliases": ["OpenRouter", "-openrouter"], "canonical_org": None},
+    {
+        "id": "togetherai",
+        "aliases": ["Together AI", "together/", "-together"],
+        "canonical_org": "togethercomputer",
+    },
 ]
 
 
@@ -62,7 +79,7 @@ def resolver(tmp_path_factory) -> Resolver:
     pd.DataFrame(rows).to_parquet(root / "aliases.parquet")
     pd.DataFrame(_MODELS).to_parquet(root / "canonical_models.parquet")
     pd.DataFrame(
-        [{"id": p["id"], "aliases": json.dumps(p["aliases"])} for p in _PLATFORMS]
+        [{**p, "aliases": json.dumps(p["aliases"])} for p in _PLATFORMS]
     ).to_parquet(root / "canonical_inference_platforms.parquet")
     return Resolver.from_parquet(root)
 
@@ -101,6 +118,14 @@ def test_host_suffix_names_the_platform_on_an_exact_alias(resolver):
         ("fireworks/ember-1", "fireworks/ember-1", "exact"),
         ("fireworks/ember-1-fc", "fireworks/ember-1", "fuzzy"),
         ("groq/unlisted", "Groq/Unlisted", "exact"),
+        # The prefix `together` and the developer `togethercomputer` share no
+        # spelling; the platform row links them.
+        (
+            "together/RedPajama-INCITE-7B-Base",
+            "togethercomputer/RedPajama-INCITE-7B-Base",
+            "fuzzy",
+        ),
+        ("together/redpajama-incite-7b", "together/redpajama-incite-7b", "exact"),
     ],
 )
 def test_prefix_that_is_the_models_developer_is_not_a_host(
@@ -109,6 +134,19 @@ def test_prefix_that_is_the_models_developer_is_not_a_host(
     result = resolver.resolve(raw, "model")
     assert (result.canonical_id, result.strategy) == (canonical_id, strategy)
     assert result.inference_platform is None
+
+
+def test_dual_role_platform_serving_another_developers_model_is_a_host(resolver):
+    result = resolver.resolve("together/llama-2-7b", "model")
+    assert result.canonical_id == "meta-llama/Llama-2-7b"
+    assert result.inference_platform == "togetherai"
+
+
+def test_host_suffix_is_a_host_even_on_the_operators_own_model(resolver):
+    """A suffix is never a namespace, so it always names who served the run."""
+    result = resolver.resolve("togethercomputer/RedPajama-INCITE-7B-Base-together", "model")
+    assert result.canonical_id == "togethercomputer/RedPajama-INCITE-7B-Base"
+    assert result.inference_platform == "togetherai"
 
 
 def test_plain_id_has_no_platform(resolver):
