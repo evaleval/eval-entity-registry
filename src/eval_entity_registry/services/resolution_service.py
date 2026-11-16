@@ -102,7 +102,7 @@ _RESPONSE_FIELDS = (
     # `model_group_id` / `lineage_origin_model_org_id`, kept for older consumers.
     "model_group_id", "model_family_id", "lineage_origin_model_id",
     "lineage_origin_model_org_id", "inference_platform",
-    "reasoning_effort",
+    "reasoning_effort", "reasoning_tokens",
     "resolution_source", "resolution_granularity",
     "parents", "open_weights",
     "release_date", "params_billions",

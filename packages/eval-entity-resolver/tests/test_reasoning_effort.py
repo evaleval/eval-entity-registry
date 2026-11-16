@@ -23,9 +23,15 @@ _MODELS = [
     {"id": "mistralai/mistral-medium", "org_id": "mistralai"},
     {"id": "mistralai/mistral", "org_id": "mistralai"},
     {"id": "qwen/qwen3-max", "org_id": "qwen"},
-    # A source's effort tier the registry holds as its own model.
-    {"id": "openai/o3-mini-high", "org_id": "openai"},
+    # An effort tier the registry holds as a mode leaf of its base.
+    {"id": "openai/o3-mini-high", "org_id": "openai", "parents": json.dumps(
+        [{"id": "openai/o3-mini", "relationship": "variant", "axis": "mode"}])},
     {"id": "openai/o3-mini", "org_id": "openai"},
+    # A tier-named model with no link to the model its stem names.
+    {"id": "openai/o4-mini-high", "org_id": "openai"},
+    {"id": "openai/o4-mini", "org_id": "openai"},
+    {"id": "anthropic/claude-opus-4", "org_id": "anthropic"},
+    {"id": "anthropic/claude-opus-4-thinking", "org_id": "anthropic"},
 ]
 
 _ALIASES = [
@@ -38,6 +44,10 @@ _ALIASES = [
     ("qwen/qwen3-max", "qwen/qwen3-max"),
     ("openai/o3-mini-high", "openai/o3-mini-high"),
     ("openai/o3-mini", "openai/o3-mini"),
+    ("openai/o4-mini-high", "openai/o4-mini-high"),
+    ("openai/o4-mini", "openai/o4-mini"),
+    ("anthropic/claude-opus-4", "anthropic/claude-opus-4"),
+    ("anthropic/claude-opus-4-thinking", "anthropic/claude-opus-4-thinking"),
 ]
 
 
@@ -89,8 +99,8 @@ def test_effort_tier_is_reported_at_every_strategy(resolver, raw, strategy, effo
         ("mistralai/mistral-medium", "mistralai/mistral-medium"),
         # The stem names no model at all.
         ("qwen/qwen3-max", "qwen/qwen3-max"),
-        # The registry holds the tier as its own model, apart from the base.
-        ("openai/o3-mini-high", "openai/o3-mini-high"),
+        # The registry holds a tier-named model unlinked to the stem's model.
+        ("openai/o4-mini-high", "openai/o4-mini-high"),
         # No tier in the name.
         ("openai/o1-2024-12-17", "openai/o1-2024-12-17"),
     ],
@@ -105,3 +115,30 @@ def test_an_unresolved_name_reports_no_effort(resolver):
     result = resolver.resolve("nobody/unknown-model-high", "model")
     assert result.canonical_id is None
     assert result.reasoning_effort is None
+
+
+@pytest.mark.parametrize(
+    "raw, canonical_id, effort, tokens",
+    [
+        # The registry holds a thinking-mode model: the budget is run on it.
+        ("anthropic/claude-opus-4-thinking-16k", "anthropic/claude-opus-4-thinking", None, 16000),
+        # A tier after the budget: the fuzzy step lands on the plain model,
+        # and both conditions are still reported.
+        ("anthropic/claude-opus-4-thinking-120k-high", "anthropic/claude-opus-4", "high", 120000),
+        # No thinking-mode model: the budget is run on the plain model.
+        ("anthropic/claude-sonnet-5-thinking-8k", "anthropic/claude-sonnet-5", None, 8000),
+    ],
+)
+def test_thinking_budget_is_reported_with_the_model_it_ran_on(
+    resolver, raw, canonical_id, effort, tokens
+):
+    result = resolver.resolve(raw, "model")
+    assert result.canonical_id == canonical_id
+    assert (result.reasoning_effort, result.reasoning_tokens) == (effort, tokens)
+
+
+def test_effort_tier_held_as_a_mode_leaf_keeps_the_leaf_and_reports_the_tier(resolver):
+    result = resolver.resolve("openai/o3-mini-high", "model")
+    assert result.canonical_id == "openai/o3-mini-high"
+    assert result.parent_canonical_id == "openai/o3-mini"
+    assert result.reasoning_effort == "high"

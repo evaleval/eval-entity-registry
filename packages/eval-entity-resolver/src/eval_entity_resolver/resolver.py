@@ -31,7 +31,7 @@ from eval_entity_resolver.strategies.fuzzy import (
     _canon_org,
     fuzzy_match,
     host_platform_of,
-    reasoning_effort_suffix_of,
+    reasoning_run_condition_of,
 )
 
 # Strictly between exact (1.0) and fuzzy (`_STEM_CONFIDENCE`, 0.90) so the
@@ -762,23 +762,31 @@ class Resolver:
                 return None
         return host.platform_id
 
-    def _reasoning_effort(
-        self, raw_value: str, source_config: Optional[str], canonical_id: str
-    ) -> Optional[str]:
-        """The effort tier `raw_value` states in its name, or None.
+    def _reasoning_run_condition(
+        self,
+        raw_value: str,
+        source_config: Optional[str],
+        canonical_id: str,
+        variant_parent_id: Optional[str],
+    ) -> tuple[Optional[str], Optional[int]]:
+        """`(effort tier, thinking-token budget)` that `raw_value` states in
+        its name, each None when absent.
 
-        A run's effort and the model's identity are separate facts, and a
-        trailing `-low` / `-max` can be either. It is an effort tier exactly
-        when the id without it names the same model: `claude-sonnet-5-low`
-        and `claude-sonnet-5` are one model, `mistral-medium` and `mistral`
-        are not."""
-        suffix = reasoning_effort_suffix_of(raw_value)
-        if suffix is None:
-            return None
-        stem = self.resolve(suffix.stem, "model", source_config)
-        if stem.canonical_id is None or stem.canonical_id != canonical_id:
-            return None
-        return suffix.effort
+        How a run was configured and which model ran are separate facts, and
+        a trailing `-low` / `-max` can be either. It is a run condition
+        exactly when the id without it names the same model. The registry
+        holds that in two forms: the tier spelling is an alias of the model
+        (`claude-sonnet-5-low` and `claude-sonnet-5`), or it is a `variant`
+        leaf of it (`o3-2025-04-16-high` under `o3-2025-04-16`).
+        `mistral-medium` and `mistral` are neither."""
+        condition = reasoning_run_condition_of(raw_value)
+        if condition is None:
+            return None, None
+        same_model = {canonical_id, variant_parent_id} - {None}
+        for stem in condition.stems:
+            if self.resolve(stem, "model", source_config).canonical_id in same_model:
+                return condition.effort, condition.reasoning_tokens
+        return None, None
 
     def _enrich(
         self,
@@ -807,6 +815,10 @@ class Resolver:
 
         if entity_type == "model":
             fields = cs.model_metadata_fields(matched_canonical_id, matched_entity)
+            effort, reasoning_tokens = self._reasoning_run_condition(
+                raw_value, source_config, fields["canonical_id"],
+                cs.parent_canonical_id("model", matched_entity),
+            )
             # review_status must describe the canonical the response names.
             if fields["canonical_id"] != matched_canonical_id:
                 root_entity = cs.lookup("model", fields["canonical_id"])
@@ -830,9 +842,8 @@ class Resolver:
                 lineage_origin_model_id=fields.get("lineage_origin_model_id"),
                 lineage_origin_model_org_id=fields.get("lineage_origin_model_org_id"),
                 inference_platform=self._host_platform(raw_value, fields["canonical_id"]),
-                reasoning_effort=self._reasoning_effort(
-                    raw_value, source_config, fields["canonical_id"]
-                ),
+                reasoning_effort=effort,
+                reasoning_tokens=reasoning_tokens,
                 resolution_source=fields.get("resolution_source"),
                 resolution_granularity=fields.get("resolution_granularity"),
                 parents=fields["parents"],

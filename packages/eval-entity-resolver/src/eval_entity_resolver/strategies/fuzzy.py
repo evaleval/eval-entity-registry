@@ -341,25 +341,46 @@ def host_platform_of(
     return None
 
 
-class EffortSuffix(NamedTuple):
-    effort: str
-    # The raw id without the tier (and with any host suffix put back), which
-    # names the model the tier was run on.
-    stem: str
+class RunCondition(NamedTuple):
+    # Reasoning-effort tier (`low`, `xhigh`) the id states, or None.
+    effort: Optional[str]
+    # Thinking-token budget (`-thinking-16k` -> 16000) the id states, or None.
+    reasoning_tokens: Optional[int]
+    # The raw id without the condition (any host suffix put back): the names
+    # of the model the condition was run on, most specific first.
+    stems: tuple[str, ...]
 
 
-def reasoning_effort_suffix_of(raw_value: str) -> Optional[EffortSuffix]:
-    """The reasoning-effort tier a raw model id ends in (`…-low`,
-    `…-high-effort`, `…-medium-bedrock`), or None. A function of the raw id
-    alone. The suffix can also be part of a product name (`mistral-medium`),
-    so the caller confirms it against the model the stem resolves to."""
+_THINKING_BUDGET_RE = re.compile(r"^(.*)(-thinking)-(\d+)k$", re.IGNORECASE)
+
+
+def reasoning_run_condition_of(raw_value: str) -> Optional[RunCondition]:
+    """The reasoning-effort tier and thinking-token budget a raw model id
+    ends in (`…-low`, `…-high-effort`, `…-thinking-16k`,
+    `…-thinking-120k-high`, `…-medium-bedrock`), or None. A function of the
+    raw id alone. A tier word can also be part of a product name
+    (`mistral-medium`), so the caller confirms the condition against the
+    model a stem resolves to."""
     host = _strip_host_suffix(raw_value)
     body, host_suffix = (host[0], raw_value[len(host[0]):]) if host else (raw_value, "")
+    effort = None
     lower = body.lower()
-    for suffix, effort in _EFFORT_SUFFIXES.items():
+    for suffix, tier in _EFFORT_SUFFIXES.items():
         if lower.endswith(suffix) and len(body) > len(suffix):
-            return EffortSuffix(effort, body[: len(body) - len(suffix)] + host_suffix)
-    return None
+            effort, body = tier, body[: len(body) - len(suffix)]
+            break
+    budget = _THINKING_BUDGET_RE.match(body)
+    if budget is None:
+        if effort is None:
+            return None
+        return RunCondition(effort, None, (body + host_suffix,))
+    base, thinking, thousands = budget.groups()
+    # A thinking-mode model (`…-thinking`) is the closer match when the
+    # registry holds one; the plain model is the fallback.
+    return RunCondition(
+        effort, int(thousands) * 1000,
+        (base + thinking + host_suffix, base + host_suffix),
+    )
 
 
 # ``qwen-2-72b`` ↔ ``qwen2-72b``. Safe because distinguishing tokens sit on the
