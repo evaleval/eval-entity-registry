@@ -22,18 +22,30 @@ from eval_entity_resolver.normalization import normalize
 # shorter one cannot pre-empt a compound (`-int8` vs `-int8-awq`). Host
 # suffixes (`-together`, `-bedrock`, `-openrouter`) are deliberately absent:
 # they live in `_HOST_SUFFIXES`, which `host_platform_of` reads.
+# Reasoning-effort tiers a source welds onto the model name, mapped to the
+# tier they state. `-max` IS an effort tier (arc-agi's low/high/max ladder).
+# Longer spellings first so `-high-effort` is read before `-high`.
+_EFFORT_SUFFIXES: dict[str, str] = {
+    "-xhigh-effort": "xhigh",
+    "-high-effort": "high",
+    "-medium-effort": "medium",
+    "-low-effort": "low",
+    "-minimal-effort": "minimal",
+    "-xhigh": "xhigh",
+    "-high": "high",
+    "-medium": "medium",
+    "-low": "low",
+    "-minimal": "minimal",
+    "-max": "max",
+}
+
 _STRIP_SUFFIXES = [
     # Evaluation-mode suffixes (BFCL).
     "-fc",
     "-prompt",
-    # Reasoning-effort tiers. `-max` IS an effort tier (arc-agi's low/high/max
-    # ladder); genuine `-max` products (qwen3-max) are safe because
-    # exact/normalized matching wins before fuzzy ever strips.
-    "-xhigh-effort",
-    "-high-effort",
-    "-medium-effort",
-    "-low-effort",
-    "-minimal-effort",
+    # Genuine `-max` products (qwen3-max) are safe because exact/normalized
+    # matching wins before fuzzy ever strips.
+    *_EFFORT_SUFFIXES,
     "-non-reasoning",
     "-xhigh",
     "-high",
@@ -326,6 +338,27 @@ def host_platform_of(
         platform_id = host_token_platforms.get(f"{prefix[1]}/")
         if platform_id is not None:
             return HostPlatform(platform_id, prefix[1])
+    return None
+
+
+class EffortSuffix(NamedTuple):
+    effort: str
+    # The raw id without the tier (and with any host suffix put back), which
+    # names the model the tier was run on.
+    stem: str
+
+
+def reasoning_effort_suffix_of(raw_value: str) -> Optional[EffortSuffix]:
+    """The reasoning-effort tier a raw model id ends in (`…-low`,
+    `…-high-effort`, `…-medium-bedrock`), or None. A function of the raw id
+    alone. The suffix can also be part of a product name (`mistral-medium`),
+    so the caller confirms it against the model the stem resolves to."""
+    host = _strip_host_suffix(raw_value)
+    body, host_suffix = (host[0], raw_value[len(host[0]):]) if host else (raw_value, "")
+    lower = body.lower()
+    for suffix, effort in _EFFORT_SUFFIXES.items():
+        if lower.endswith(suffix) and len(body) > len(suffix):
+            return EffortSuffix(effort, body[: len(body) - len(suffix)] + host_suffix)
     return None
 
 

@@ -64,6 +64,9 @@ class ResolutionResult:
         `lineage_origin_model_org_id`; remove once no consumer reads it.
       - `lineage_origin_model_org_id`: that ancestor's org_id. Models only.
       - `inference_platform`: FK to inference_platforms.id. Models only.
+      - `reasoning_effort`: the effort tier the raw id states in its name
+        (`…-low`), when the id without the tier names the same model.
+        Models only.
       - `resolution_source`: {hf|models_dev|curated|inferred|none}.
       - `resolution_granularity`: {variant|group|family}.
       - `parents`: typed-edge list of the matched leaf. Models only.
@@ -91,6 +94,7 @@ class ResolutionResult:
     lineage_origin_model_id: Optional[str] = None
     lineage_origin_model_org_id: Optional[str] = None
     inference_platform: Optional[str] = None
+    reasoning_effort: Optional[str] = None
     resolution_source: Optional[str] = None
     resolution_granularity: Optional[str] = None
     parents: Optional[list[dict]] = None

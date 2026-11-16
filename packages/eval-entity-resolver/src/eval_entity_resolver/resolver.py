@@ -31,6 +31,7 @@ from eval_entity_resolver.strategies.fuzzy import (
     _canon_org,
     fuzzy_match,
     host_platform_of,
+    reasoning_effort_suffix_of,
 )
 
 # Strictly between exact (1.0) and fuzzy (`_STEM_CONFIDENCE`, 0.90) so the
@@ -761,6 +762,24 @@ class Resolver:
                 return None
         return host.platform_id
 
+    def _reasoning_effort(
+        self, raw_value: str, source_config: Optional[str], canonical_id: str
+    ) -> Optional[str]:
+        """The effort tier `raw_value` states in its name, or None.
+
+        A run's effort and the model's identity are separate facts, and a
+        trailing `-low` / `-max` can be either. It is an effort tier exactly
+        when the id without it names the same model: `claude-sonnet-5-low`
+        and `claude-sonnet-5` are one model, `mistral-medium` and `mistral`
+        are not."""
+        suffix = reasoning_effort_suffix_of(raw_value)
+        if suffix is None:
+            return None
+        stem = self.resolve(suffix.stem, "model", source_config)
+        if stem.canonical_id is None or stem.canonical_id != canonical_id:
+            return None
+        return suffix.effort
+
     def _enrich(
         self,
         raw_value: str,
@@ -811,6 +830,9 @@ class Resolver:
                 lineage_origin_model_id=fields.get("lineage_origin_model_id"),
                 lineage_origin_model_org_id=fields.get("lineage_origin_model_org_id"),
                 inference_platform=self._host_platform(raw_value, fields["canonical_id"]),
+                reasoning_effort=self._reasoning_effort(
+                    raw_value, source_config, fields["canonical_id"]
+                ),
                 resolution_source=fields.get("resolution_source"),
                 resolution_granularity=fields.get("resolution_granularity"),
                 parents=fields["parents"],

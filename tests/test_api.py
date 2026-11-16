@@ -52,7 +52,7 @@ _DROPPED_RESOLVE_FIELDS = {
     "parent_canonical_id", "resolved_leaf_id", "root_model_id",
     "lineage_origin_org_id", "model_group_id", "model_family_id",
     "lineage_origin_model_id", "lineage_origin_model_org_id",
-    "inference_platform", "resolution_granularity", "parents",
+    "inference_platform", "reasoning_effort", "resolution_granularity", "parents",
     "open_weights", "release_date", "params_billions",
     "family_key", "composite_keys", "category",
 }
