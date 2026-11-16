@@ -24,3 +24,9 @@
 #     this overrides the models.dev display back to the correct name.
 - id: abacusai/Dracarys-72B-Instruct
   display_name: Dracarys-72B-Instruct
+
+# MMLU-Pro leaderboard (TIGER-Lab results.csv) names o4-mini at high effort
+# "GPT-4-mini (high)". See the note on `openai/gpt-4-mini-high` in core.yaml
+# skip_source_ids for the evidence. REMOVE once the leaderboard row is renamed.
+- id: openai/o4-mini-high
+  aliases: ["openai/gpt-4-mini-high", "GPT-4-mini (high)"]

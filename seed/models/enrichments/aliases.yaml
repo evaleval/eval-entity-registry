@@ -963,6 +963,7 @@
   - nova-pro-v1-0
 - id: anthropic/claude-sonnet-3.7
   aliases:
+  - anthropic/claude-3.7
   - Claude 3.7 Sonnet
   - anthropic.claude-3-7-sonnet-20250219-v1:0
   - anthropic/claude-3-7-sonnet-latest
@@ -1082,6 +1083,7 @@
   - claude-4-opus-thinking
 - id: anthropic/claude-opus-4.1
   aliases:
+  - anthropic/Opus 4.1
   - anthropic/claude-opus-41
   - claude-4-1-opus
   - claude-opus-4-1-thinking
@@ -1096,6 +1098,7 @@
   - Claude Opus 4.1 (2025-08-05)
 - id: anthropic/claude-opus-4.5
   aliases:
+  - anthropic/Opus 4.5
   - Opus 4.5
   - anthropic--claude-4.5-opus
   - claude-4-5-opus
@@ -1104,6 +1107,7 @@
   - Claude Opus 4.5 (2025-11-01)
 - id: anthropic/claude-opus-4.6
   aliases:
+  - anthropic/Opus 4.6
   - Opus-4.6
   - anthropic-claude-4.6-opus
   - au.anthropic.claude-opus-4-6-v1
@@ -1147,6 +1151,7 @@
   - unknown/claude-sonnet-4-thinking
 - id: anthropic/claude-sonnet-4.5
   aliases:
+  - anthropic/Sonnet 4.5
   - claude-4.5-sonnet
   - sonnet-4
   - unknown/claudesonnet4

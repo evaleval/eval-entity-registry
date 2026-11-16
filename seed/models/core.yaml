@@ -10,6 +10,21 @@
 # value fill it.
 skip_ids: []
 skip_source_ids:
+# Display names and a bare family name that a generator minted as their own
+# models (`anthropic/Opus 4.6` from a source's display label, `claude-3.7`
+# for the only 3.7 model, Claude 3.7 Sonnet). Each is the model named in
+# enrichments/aliases.yaml, so the mint is dropped and the form bridged.
+- anthropic/Opus 4.1
+- anthropic/Opus 4.5
+- anthropic/Opus 4.6
+- anthropic/Sonnet 4.5
+- anthropic/claude-3.7
+# The MMLU-Pro leaderboard row "GPT-4-mini (high)" is o4-mini at high effort
+# with the "o" dropped: the board names o-series models "GPT-o1", "GPT-o3-mini",
+# has no other o4-mini row, added this one beside the April 2025 releases, and
+# its 0.830 matches o4-mini's 0.827. OpenAI has no GPT-4-mini. The raw is
+# bridged in enrichments/upstream_corrections.yaml.
+- openai/gpt-4-mini-high
 # Dashed/respelled twins of adopted OpenRouter family roots + bare enrichment
 # materializations of folded families — each one's surface forms are bridged
 # onto the surviving canonical in enrichments/aliases.yaml.

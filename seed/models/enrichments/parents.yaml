@@ -6390,10 +6390,6 @@
   - id: anthropic/claude-3.5-sonnet
     relationship: variant
     axis: version
-- id: anthropic/claude-3.7
-  parents:
-  - id: anthropic/claude-sonnet-3.7
-    relationship: finetune
 - id: anthropic/claude-3.7-sonnet-thinking
   parents:
   - id: anthropic/claude-sonnet-3.7
@@ -6583,7 +6579,7 @@
     axis: mode
 - id: anthropic/opus-4-6-max-effort
   parents:
-  - id: anthropic/Opus 4.6
+  - id: anthropic/claude-opus-4.6
     relationship: variant
     axis: mode
 - id: appvoid/arco-2-instruct

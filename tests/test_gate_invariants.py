@@ -903,6 +903,9 @@ def test_model_display_names_are_humanized(models_df):
 
 # Snapshot (id, parent_id) edges allowed not to land; any other lost edge fails.
 _ORACLE_EDGE_EXEMPT: frozenset = frozenset({
+    # "GPT-4-mini (high)" is the MMLU-Pro board's name for o4-mini at high
+    # effort (core.yaml skip_source_ids has the evidence), not a GPT-4 finetune.
+    ("openai/gpt-4-mini-high", "openai/gpt-4"),
     # An effort tier or thinking budget is the same model served differently:
     # the finetune edge is re-typed variant/mode (see the run-condition gate).
     ("anthropic/claude-3.7-thinking-16k", "anthropic/claude-3.7-sonnet-thinking"),
@@ -1044,6 +1047,10 @@ def test_resolve_surfaces_typed_edges_and_ancestry(resolver, models_df):
 # Snapshot (field, id) lineage memberships that cannot be preserved: the root is
 # no longer a distinct canonical, so the model is correctly a singleton root.
 _ORACLE_LINEAGE_EXEMPT: frozenset = frozenset({
+    # Minted as finetunes of the model they simply are (a bare family name,
+    # a mistyped board label); folded onto that model, so no lineage origin.
+    ("lineage_origin_model_id", "anthropic/claude-3.7"),
+    ("lineage_origin_model_id", "openai/gpt-4-mini-high"),
     # Effort-tier leaves re-typed finetune -> variant/mode: same identity as
     # the base, so no separate lineage origin.
     ("lineage_origin_model_id", "anthropic/claude-sonnet-4-6-max"),
