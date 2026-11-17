@@ -42,6 +42,10 @@ _MODELS = [
     {"id": "stabilityai/stable-diffusion-3", "org_id": "stabilityai",
      "tags": json.dumps(["open-weight", "image-gen", "diffusion"])},
     {"id": "acme/painter", "org_id": "acme", "output_modalities": json.dumps(["image"])},
+    {"id": "acme/renderer", "org_id": "acme",
+     "metadata": json.dumps({"pipeline_tag": "text-to-image"})},
+    # A chat model the Hub tags as something other than text generation: the
+    # tag does not say it produces no text.
     {"id": "acme/embedder", "org_id": "acme",
      "metadata": json.dumps({"pipeline_tag": "feature-extraction"})},
     # No evidence on its own row: its group root says what it produces.
@@ -76,6 +80,7 @@ _ALIASES = [
     ("unknown/sd-3-medium", "stabilityai/stable-diffusion-3"),
     ("acme/painter", "acme/painter"),
     ("acme/embedder", "acme/embedder"),
+    ("acme/renderer", "acme/renderer"),
     ("acme/painter-2024-01-01", "acme/painter-2024-01-01"),
     ("acme/writer", "acme/writer"),
     ("acme/writer-turbo", "acme/writer"),
@@ -214,7 +219,7 @@ def test_a_tier_after_a_budget_leaf_adds_to_what_the_leaf_states(resolver):
         ("sd-3-medium", "stabilityai/stable-diffusion-3", "fuzzy"),
         # Known by its output modalities, its pipeline tag, its group root.
         ("acme/painter-high", "acme/painter", "fuzzy"),
-        ("acme/embedder-low", "acme/embedder", "fuzzy"),
+        ("acme/renderer-low", "acme/renderer", "fuzzy"),
         ("acme/painter-2024-01-01-max", "acme/painter-2024-01-01", "fuzzy"),
     ],
 )
@@ -230,6 +235,15 @@ def test_a_text_model_keeps_the_tier_its_raw_id_states(resolver):
     result = resolver.resolve("acme/writer-high", "model")
     assert result.canonical_id == "acme/writer"
     assert result.reasoning_effort == "high"
+
+
+def test_a_hub_tag_other_than_text_generation_does_not_drop_the_tier(resolver):
+    """A chat model the Hub files under `feature-extraction` still generates
+    text. Only a tag that names an image, video, audio or 3D output is
+    evidence against a reasoning tier."""
+    result = resolver.resolve("acme/embedder-low", "model")
+    assert result.canonical_id == "acme/embedder"
+    assert result.reasoning_effort == "low"
 
 
 class _RecordingHfChecker:

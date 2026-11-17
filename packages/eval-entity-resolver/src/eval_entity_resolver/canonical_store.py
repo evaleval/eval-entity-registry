@@ -126,6 +126,14 @@ _TEXT_GENERATING_PIPELINES = frozenset({
     "text-generation", "text2text-generation", "image-text-to-text",
     "video-text-to-text", "audio-text-to-text", "image-to-text", "any-to-any",
 })
+# Hub pipeline tags of a model whose output is an image, a video, audio or a
+# 3D asset. Every other tag says nothing either way: a chat model can carry
+# `feature-extraction`, `translation` or `question-answering` on the Hub.
+_NON_TEXT_PIPELINES = frozenset({
+    "text-to-image", "image-to-image", "unconditional-image-generation",
+    "text-to-video", "image-to-video", "image-text-to-video",
+    "text-to-speech", "text-to-audio", "text-to-3d", "image-to-3d",
+})
 # Curated tags of a model whose output is an image.
 _NON_TEXT_TAGS = frozenset({"image-gen", "diffusion"})
 
@@ -145,8 +153,10 @@ def _row_generates_text(entity: dict) -> Optional[bool]:
         return "text" in list(modalities)
     metadata = _json_field(entity, "metadata")
     pipeline_tag = metadata.get("pipeline_tag") if isinstance(metadata, dict) else None
-    if pipeline_tag:
-        return pipeline_tag in _TEXT_GENERATING_PIPELINES
+    if pipeline_tag in _TEXT_GENERATING_PIPELINES:
+        return True
+    if pipeline_tag in _NON_TEXT_PIPELINES:
+        return False
     tags = _json_field(entity, "tags")
     if _is_list_like(tags) and _NON_TEXT_TAGS.intersection(tags):
         return False
