@@ -130,9 +130,11 @@ _TEXT_GENERATING_PIPELINES = frozenset({
 # 3D asset. Every other tag says nothing either way: a chat model can carry
 # `feature-extraction`, `translation` or `question-answering` on the Hub.
 _NON_TEXT_PIPELINES = frozenset({
-    "text-to-image", "image-to-image", "unconditional-image-generation",
-    "text-to-video", "image-to-video", "image-text-to-video",
-    "text-to-speech", "text-to-audio", "text-to-3d", "image-to-3d",
+    "text-to-image", "image-to-image", "image-text-to-image",
+    "unconditional-image-generation",
+    "text-to-video", "image-to-video", "image-text-to-video", "video-to-video",
+    "text-to-speech", "text-to-audio", "audio-to-audio",
+    "text-to-3d", "image-to-3d",
 })
 # Curated tags of a model whose output is an image.
 _NON_TEXT_TAGS = frozenset({"image-gen", "diffusion"})
