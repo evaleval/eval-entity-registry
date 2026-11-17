@@ -246,6 +246,28 @@ def test_a_hub_tag_other_than_text_generation_does_not_drop_the_tier(resolver):
     assert result.reasoning_effort == "low"
 
 
+@pytest.mark.parametrize(
+    "pipeline_tag, generates_text",
+    [
+        ("text-generation", True),
+        ("image-text-to-text", True),
+        ("text-to-image", False),
+        ("image-text-to-image", False),
+        ("video-to-video", False),
+        ("text-to-speech", False),
+        # Tags that say nothing either way.
+        ("feature-extraction", None),
+        ("audio-to-audio", None),
+        ("text-ranking", None),
+    ],
+)
+def test_what_a_hub_pipeline_tag_says_about_text_output(pipeline_tag, generates_text):
+    from eval_entity_resolver.canonical_store import _row_generates_text
+
+    row = {"id": "acme/x", "metadata": json.dumps({"pipeline_tag": pipeline_tag})}
+    assert _row_generates_text(row) is generates_text
+
+
 class _RecordingHfChecker:
     """An injected `hf_id_checker` that records each id it is asked about."""
 
