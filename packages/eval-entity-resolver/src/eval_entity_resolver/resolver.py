@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from eval_entity_resolver.alias_store import AliasStore
-from eval_entity_resolver.canonical_store import CanonicalStore, _hf_repo_id_of
+from eval_entity_resolver.canonical_store import (
+    CanonicalStore,
+    _hf_repo_id_of,
+    decode_parents,
+)
 from eval_entity_resolver.eee import (
     clean_eval_name,
     prepare_eval_name_segments,
@@ -31,6 +35,7 @@ from eval_entity_resolver.strategies.fuzzy import (
     _canon_org,
     fuzzy_match,
     host_platform_of,
+    mode_leaf_run_condition,
     reasoning_run_condition_of,
 )
 
@@ -767,26 +772,40 @@ class Resolver:
         raw_value: str,
         source_config: Optional[str],
         canonical_id: str,
-        variant_parent_id: Optional[str],
+        matched_entity: Optional[dict],
     ) -> tuple[Optional[str], Optional[int]]:
-        """`(effort tier, thinking-token budget)` that `raw_value` states in
-        its name, each None when absent.
+        """`(effort tier, thinking-token budget)` of the run `raw_value`
+        names, each None when absent.
 
         How a run was configured and which model ran are separate facts, and
-        a trailing `-low` / `-max` can be either. It is a run condition
-        exactly when the id without it names the same model. The registry
-        holds that in two forms: the tier spelling is an alias of the model
-        (`claude-sonnet-5-low` and `claude-sonnet-5`), or it is a `variant`
-        leaf of it (`o3-2025-04-16-high` under `o3-2025-04-16`).
-        `mistral-medium` and `mistral` are neither."""
-        condition = reasoning_run_condition_of(raw_value)
-        if condition is None:
-            return None, None
-        same_model = {canonical_id, variant_parent_id} - {None}
-        for stem in condition.stems:
+        a trailing `-low` / `-max` can be either. Two rules, in this order:
+
+        1. The matched entity. A mode leaf (`o3-2025-04-16-high`, a `variant`
+           of `o3-2025-04-16` on `axis: mode`) states the condition in its
+           own id, so every spelling that reaches the leaf reports it.
+        2. The raw id, for what the entity leaves unstated. The suffix is a
+           condition when the id without it names the same model: the
+           matched one (`claude-sonnet-5-low` and `claude-sonnet-5`) or the
+           one it is a variant of. `mistral-medium` and `mistral` are two
+           models. It is not read at all on a model the registry knows
+           produces no text: nothing reasons there, so the tier word is part
+           of the product name (Stable Diffusion 3 Medium)."""
+        cs = self.canonical_store
+        parents = decode_parents((matched_entity or {}).get("parents"))
+        leaf = mode_leaf_run_condition(canonical_id, parents)
+        effort, tokens = (leaf.effort, leaf.reasoning_tokens) if leaf else (None, None)
+
+        stated = reasoning_run_condition_of(raw_value)
+        if stated is None or cs.model_generates_text(matched_entity) is False:
+            return effort, tokens
+        if (effort or not stated.effort) and (tokens or not stated.reasoning_tokens):
+            return effort, tokens
+        same_model = {canonical_id, cs.parent_canonical_id("model", matched_entity)}
+        same_model.discard(None)
+        for stem in stated.stems:
             if self.resolve(stem, "model", source_config).canonical_id in same_model:
-                return condition.effort, condition.reasoning_tokens
-        return None, None
+                return effort or stated.effort, tokens or stated.reasoning_tokens
+        return effort, tokens
 
     def _enrich(
         self,
@@ -816,8 +835,7 @@ class Resolver:
         if entity_type == "model":
             fields = cs.model_metadata_fields(matched_canonical_id, matched_entity)
             effort, reasoning_tokens = self._reasoning_run_condition(
-                raw_value, source_config, fields["canonical_id"],
-                cs.parent_canonical_id("model", matched_entity),
+                raw_value, source_config, fields["canonical_id"], matched_entity
             )
             # review_status must describe the canonical the response names.
             if fields["canonical_id"] != matched_canonical_id:

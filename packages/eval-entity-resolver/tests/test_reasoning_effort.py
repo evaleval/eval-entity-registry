@@ -1,6 +1,7 @@
-"""A reasoning-effort tier welded onto a raw model id is reported whichever
-strategy matched the id, and only when the id without it names the same
-model."""
+"""A reasoning-effort tier or thinking budget is read off the entity a raw
+model id resolved to when that entity is a mode leaf, whichever spelling
+reached it. Otherwise it is read off the raw id, only when the id without it
+names the same model and the model is not known to produce no text."""
 from __future__ import annotations
 
 import json
@@ -32,6 +33,21 @@ _MODELS = [
     {"id": "openai/o4-mini", "org_id": "openai"},
     {"id": "anthropic/claude-opus-4", "org_id": "anthropic"},
     {"id": "anthropic/claude-opus-4-thinking", "org_id": "anthropic"},
+    # A budget leaf: a tier after the budget lands on it by the fuzzy step.
+    {"id": "anthropic/claude-opus-4-thinking-32k", "org_id": "anthropic",
+     "parents": json.dumps([{"id": "anthropic/claude-opus-4-thinking",
+                             "relationship": "variant", "axis": "mode"}])},
+    # Models the registry knows produce no text, each by a different column.
+    {"id": "stabilityai/stable-diffusion-3", "org_id": "stabilityai",
+     "tags": json.dumps(["open-weight", "image-gen", "diffusion"])},
+    {"id": "acme/painter", "org_id": "acme", "output_modalities": json.dumps(["image"])},
+    {"id": "acme/embedder", "org_id": "acme",
+     "metadata": json.dumps({"pipeline_tag": "feature-extraction"})},
+    # No evidence on its own row: its group root says what it produces.
+    {"id": "acme/painter-2024-01-01", "org_id": "acme", "model_group_id": "acme/painter"},
+    # A text model by its pipeline tag.
+    {"id": "acme/writer", "org_id": "acme",
+     "metadata": json.dumps({"pipeline_tag": "text-generation"})},
 ]
 
 _ALIASES = [
@@ -48,6 +64,19 @@ _ALIASES = [
     ("openai/o4-mini", "openai/o4-mini"),
     ("anthropic/claude-opus-4", "anthropic/claude-opus-4"),
     ("anthropic/claude-opus-4-thinking", "anthropic/claude-opus-4-thinking"),
+    ("anthropic/claude-opus-4-thinking-32k", "anthropic/claude-opus-4-thinking-32k"),
+    # Spellings of the o3-mini-high leaf whose stem names no model.
+    ("o3-mini-high", "openai/o3-mini-high"),
+    ("openai/gpt-3-mini-high", "openai/o3-mini-high"),
+    ("o3 mini (high reasoning)", "openai/o3-mini-high"),
+    ("stabilityai/stable-diffusion-3", "stabilityai/stable-diffusion-3"),
+    ("sd-3", "stabilityai/stable-diffusion-3"),
+    # Stable Diffusion 3 Medium: the tier word is the model size.
+    ("unknown/sd-3-medium", "stabilityai/stable-diffusion-3"),
+    ("acme/painter", "acme/painter"),
+    ("acme/embedder", "acme/embedder"),
+    ("acme/painter-2024-01-01", "acme/painter-2024-01-01"),
+    ("acme/writer", "acme/writer"),
 ]
 
 
@@ -141,4 +170,56 @@ def test_effort_tier_held_as_a_mode_leaf_keeps_the_leaf_and_reports_the_tier(res
     result = resolver.resolve("openai/o3-mini-high", "model")
     assert result.canonical_id == "openai/o3-mini-high"
     assert result.parent_canonical_id == "openai/o3-mini"
+    assert result.reasoning_effort == "high"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "openai/o3-mini-high",
+        # The bare alias: its stem `o3-mini` is not an alias of the base.
+        "o3-mini-high",
+        # A respelling whose stem names no model.
+        "openai/gpt-3-mini-high",
+        # A spelling with no tier suffix at all.
+        "o3 mini (high reasoning)",
+    ],
+)
+def test_a_mode_leaf_reports_its_condition_whichever_spelling_reached_it(resolver, raw):
+    result = resolver.resolve(raw, "model")
+    assert result.canonical_id == "openai/o3-mini-high"
+    assert result.reasoning_effort == "high"
+
+
+def test_a_tier_after_a_budget_leaf_adds_to_what_the_leaf_states(resolver):
+    result = resolver.resolve("anthropic/claude-opus-4-thinking-32k-low", "model")
+    assert result.canonical_id == "anthropic/claude-opus-4-thinking-32k"
+    assert (result.reasoning_effort, result.reasoning_tokens) == ("low", 32000)
+
+
+@pytest.mark.parametrize(
+    "raw, canonical_id, strategy",
+    [
+        # A curated alias of an image model: Medium is the model size.
+        ("unknown/sd-3-medium", "stabilityai/stable-diffusion-3", "exact"),
+        # The same name reached by the fuzzy suffix strip.
+        ("stabilityai/stable-diffusion-3-medium", "stabilityai/stable-diffusion-3", "fuzzy"),
+        ("sd-3-medium", "stabilityai/stable-diffusion-3", "fuzzy"),
+        # Known by its output modalities, its pipeline tag, its group root.
+        ("acme/painter-high", "acme/painter", "fuzzy"),
+        ("acme/embedder-low", "acme/embedder", "fuzzy"),
+        ("acme/painter-2024-01-01-max", "acme/painter-2024-01-01", "fuzzy"),
+    ],
+)
+def test_a_model_that_produces_no_text_has_no_reasoning_condition(
+    resolver, raw, canonical_id, strategy
+):
+    result = resolver.resolve(raw, "model")
+    assert (result.canonical_id, result.strategy) == (canonical_id, strategy)
+    assert (result.reasoning_effort, result.reasoning_tokens) == (None, None)
+
+
+def test_a_text_model_keeps_the_tier_its_raw_id_states(resolver):
+    result = resolver.resolve("acme/writer-high", "model")
+    assert result.canonical_id == "acme/writer"
     assert result.reasoning_effort == "high"

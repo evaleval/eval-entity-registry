@@ -1972,3 +1972,133 @@ def test_run_condition_gate_flags_an_unlinked_tier_id_and_a_stray_edge(tmp_path)
     unlinked, stray = run_condition_link_problems(models, Resolver.from_parquet(tmp_path))
     assert unlinked == [("acme/alpha-high", "acme/alpha")]
     assert stray == [("acme/beta-low", [("acme/family", "finetune")])]
+
+
+# ---------------------------------------------------------------------------
+# A tier an alias states is a run condition only on a reviewed model
+# ---------------------------------------------------------------------------
+# An alias can end in a tier word and point at a model whose own id states no
+# condition (`openai/gpt-5-2025-08-07-high` -> `openai/gpt-5-2025-08-07`). The
+# resolver then reads the tier off the alias, and the alias alone cannot say
+# whether the word is an effort or a size (`unknown/sd-3-medium` is Stable
+# Diffusion 3 Medium). So each model reached this way is listed here with the
+# reason its tier words are run conditions. A size name is not listed: its
+# model gets its own canonical instead, as `stabilityai/stable-diffusion-3.5-medium` has.
+_ALIAS_TIER_IS_A_RUN_CONDITION: dict[str, str] = {
+    "openai/gpt-5-2025-08-07": "arc-agi runs GPT-5 at each reasoning_effort (minimal to high)",
+    "openai/o3-pro-2025-06-10": "arc-agi runs o3-pro at each reasoning_effort (low to high)",
+    "openai/o3-mini": "multi-swe-bench labels its o3-mini run `OpenAI-o3-mini-high`: the effort",
+    "openai/gpt-5.1-thinking": "GPT-5.1 Thinking takes a reasoning_effort; it has no size ladder",
+    "Qwen/Qwen3-235B-A22B": "the 235B size is already in the name; the tier is a thinking setting",
+}
+
+
+def alias_route_run_conditions(aliases_df, resolver) -> list[tuple[str, str, str]]:
+    """`(alias, canonical_id, condition)` for every model alias whose tier or
+    budget the resolver reports off the alias spelling, not off a mode leaf."""
+    from eval_entity_resolver.strategies.fuzzy import (
+        mode_leaf_run_condition,
+        reasoning_run_condition_of,
+    )
+
+    found: list[tuple[str, str, str]] = []
+    models = aliases_df[aliases_df["entity_type"] == "model"]
+    for raw, source_config in zip(models["raw_value"], models["source_config"]):
+        if reasoning_run_condition_of(str(raw)) is None:
+            continue
+        result = resolver.resolve(
+            str(raw), "model", None if pd.isna(source_config) else source_config
+        )
+        if not (result.reasoning_effort or result.reasoning_tokens):
+            continue
+        leaf = mode_leaf_run_condition(result.canonical_id, result.parents or [])
+        if leaf and (leaf.effort, leaf.reasoning_tokens) == (
+            result.reasoning_effort, result.reasoning_tokens
+        ):
+            continue
+        found.append((
+            str(raw), result.canonical_id,
+            str(result.reasoning_effort or result.reasoning_tokens),
+        ))
+    return found
+
+
+def test_a_tier_read_off_an_alias_is_on_a_reviewed_model(resolver):
+    aliases = pd.read_parquet(FIXTURES_DIR / "aliases.parquet")
+    unreviewed = [
+        hit for hit in alias_route_run_conditions(aliases, resolver)
+        if hit[1] not in _ALIAS_TIER_IS_A_RUN_CONDITION
+    ]
+    assert unreviewed == [], (
+        "alias(es) end in a tier word or thinking budget that the resolver "
+        "reports as a run condition of a model not reviewed for it. If the "
+        "word is an effort, add the model to _ALIAS_TIER_IS_A_RUN_CONDITION "
+        "with the reason. If it is a size or product name, the alias folds "
+        "two models into one: the named model needs its own canonical "
+        f"(operator decision). {unreviewed}"
+    )
+
+
+def test_alias_tier_gate_flags_a_size_name_aliased_onto_its_base(tmp_path):
+    """Bad input: `unknown/widget-medium` aliased onto `acme/widget`, a model
+    with nothing on record about what it produces. The resolver reports
+    `medium`, and the gate lists the alias. The same alias on a model tagged
+    as an image generator is refused by the resolver, so it is not listed."""
+    from eval_entity_resolver import Resolver
+
+    models = pd.DataFrame([
+        {"id": "acme/widget", "org_id": "acme", "parents": "[]", "tags": "[]"},
+        {"id": "acme/canvas", "org_id": "acme", "parents": "[]",
+         "tags": json.dumps(["image-gen"])},
+        {"id": "acme/base", "org_id": "acme", "parents": "[]", "tags": "[]"},
+        {"id": "acme/base-high", "org_id": "acme", "tags": "[]", "parents": json.dumps(
+            [{"id": "acme/base", "relationship": "variant", "axis": "mode"}])},
+    ])
+    pairs = [
+        ("acme/widget", "acme/widget"), ("unknown/widget", "acme/widget"),
+        ("unknown/widget-medium", "acme/widget"),
+        ("acme/canvas", "acme/canvas"), ("unknown/canvas", "acme/canvas"),
+        ("unknown/canvas-medium", "acme/canvas"),
+        ("acme/base", "acme/base"), ("acme/base-high", "acme/base-high"),
+        # A respelling of a mode leaf: read off the leaf, so not listed.
+        ("unknown/base-v1-high", "acme/base-high"),
+    ]
+    aliases = pd.DataFrame([
+        {"id": f"a{i}", "raw_value": raw, "entity_type": "model",
+         "canonical_id": cid, "source_config": None, "source_field": None,
+         "status": "confirmed", "strategy": "seed", "confidence": 1.0,
+         "notes": None, "created_at": None, "updated_at": None}
+        for i, (raw, cid) in enumerate(pairs)
+    ])
+    aliases.to_parquet(tmp_path / "aliases.parquet")
+    models.to_parquet(tmp_path / "canonical_models.parquet")
+    pd.DataFrame([{
+        "id": "openrouter", "aliases": json.dumps(["OpenRouter", "-openrouter"]),
+        "canonical_org": None,
+    }]).to_parquet(tmp_path / "canonical_inference_platforms.parquet")
+
+    bad = Resolver.from_parquet(tmp_path)
+    assert bad.resolve("unknown/canvas-medium", "model").reasoning_effort is None
+    assert bad.resolve("unknown/base-v1-high", "model").reasoning_effort == "high"
+    assert alias_route_run_conditions(aliases, bad) == [
+        ("unknown/widget-medium", "acme/widget", "medium"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "raw, canonical_id, effort",
+    [
+        # Stable Diffusion 3 Medium is a model size, on every route.
+        ("unknown/sd-3-medium", "stabilityai/stable-diffusion-3", None),
+        ("sd-3-medium", "stabilityai/stable-diffusion-3", None),
+        # Every spelling of a mode leaf reports the leaf's tier.
+        ("google/gemini-3-1-pro-preview-high", "google/gemini-3-1-pro-preview-high", "high"),
+        ("gemini-3-1-pro-preview-high", "google/gemini-3-1-pro-preview-high", "high"),
+        ("o4-mini-high", "openai/o4-mini-high", "high"),
+        ("openai/gpt-4-mini-high", "openai/o4-mini-high", "high"),
+    ],
+)
+def test_run_condition_follows_the_entity_not_the_spelling(resolver, raw, canonical_id, effort):
+    result = resolver.resolve(raw, "model")
+    assert result.canonical_id == canonical_id
+    assert result.reasoning_effort == effort

@@ -13,7 +13,7 @@ reported quantization; consumers needing that precision must read the original
 from __future__ import annotations
 
 import re
-from typing import Mapping, NamedTuple, Optional
+from typing import Mapping, NamedTuple, Optional, Sequence
 
 from eval_entity_resolver.normalization import normalize
 
@@ -361,7 +361,7 @@ def reasoning_run_condition_of(raw_value: str) -> Optional[RunCondition]:
     `…-thinking-120k-high`, `…-medium-bedrock`), or None. A function of the
     raw id alone. A tier word can also be part of a product name
     (`mistral-medium`), so the caller confirms the condition against the
-    model a stem resolves to."""
+    model a stem resolves to (`Resolver._reasoning_run_condition`)."""
     host = _strip_host_suffix(raw_value)
     body, host_suffix = (host[0], raw_value[len(host[0]):]) if host else (raw_value, "")
     effort = None
@@ -382,6 +382,23 @@ def reasoning_run_condition_of(raw_value: str) -> Optional[RunCondition]:
         effort, int(thousands) * 1000,
         (base + thinking + host_suffix, base + host_suffix),
     )
+
+
+def mode_leaf_run_condition(
+    canonical_id: str, parents: Sequence[Mapping]
+) -> Optional[RunCondition]:
+    """The run condition a canonical model states in its own id
+    (`openai/o3-mini-high`), when the registry holds it as a mode leaf: a
+    `variant` of a base model on `axis: mode`. ``parents`` is the canonical's
+    decoded edge list. A tier-named canonical with no such edge is its own
+    product (`qwen/qwen3-max`), so it states no condition."""
+    is_mode_leaf = any(
+        isinstance(edge, Mapping)
+        and edge.get("relationship") == "variant"
+        and edge.get("axis") == "mode"
+        for edge in parents
+    )
+    return reasoning_run_condition_of(canonical_id) if is_mode_leaf else None
 
 
 # ``qwen-2-72b`` ↔ ``qwen2-72b``. Safe because distinguishing tokens sit on the

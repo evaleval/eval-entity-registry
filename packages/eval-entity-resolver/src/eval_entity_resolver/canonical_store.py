@@ -121,6 +121,38 @@ def variant_parent_id(parents: list[dict]) -> Optional[str]:
     return None
 
 
+# Hub pipeline tags of a model whose output is generated text.
+_TEXT_GENERATING_PIPELINES = frozenset({
+    "text-generation", "text2text-generation", "image-text-to-text",
+    "video-text-to-text", "audio-text-to-text", "image-to-text", "any-to-any",
+})
+# Curated tags of a model whose output is an image.
+_NON_TEXT_TAGS = frozenset({"image-gen", "diffusion"})
+
+
+def _json_field(entity: dict, key: str) -> Any:
+    """A JSON-encoded column decoded, or None; a pre-decoded value as is."""
+    value = entity.get(key)
+    return _safe_json_load(value) if isinstance(value, str) else value
+
+
+def _row_generates_text(entity: dict) -> Optional[bool]:
+    """Whether one canonical model row says its model generates text, or
+    None when the row does not say. Most specific statement first: the
+    output modalities, then the Hub pipeline tag, then the curated tags."""
+    modalities = _json_field(entity, "output_modalities")
+    if _is_list_like(modalities) and len(modalities):
+        return "text" in list(modalities)
+    metadata = _json_field(entity, "metadata")
+    pipeline_tag = metadata.get("pipeline_tag") if isinstance(metadata, dict) else None
+    if pipeline_tag:
+        return pipeline_tag in _TEXT_GENERATING_PIPELINES
+    tags = _json_field(entity, "tags")
+    if _is_list_like(tags) and _NON_TEXT_TAGS.intersection(tags):
+        return False
+    return None
+
+
 def _kwarg_for(entity_type: str) -> str:
     """Constructor kwarg for an entity_type (English plurals, so no `<type>s_df`
     rule: `harnesses_df`, `families_df`)."""
@@ -552,6 +584,22 @@ class CanonicalStore:
         if not field:
             return None
         return _na_to_none(entity.get(field))
+
+    def model_generates_text(self, entity: Optional[dict]) -> Optional[bool]:
+        """Whether the registry says this model generates text: True, False,
+        or None when it does not say. Read off the model's own row, then off
+        its group root, which is the same model in another version,
+        precision or mode."""
+        if not entity:
+            return None
+        own = _row_generates_text(entity)
+        if own is not None:
+            return own
+        group_id = _na_to_none(entity.get("model_group_id"))
+        if not group_id or group_id == entity.get("id"):
+            return None
+        root = self.lookup("model", group_id)
+        return _row_generates_text(root) if root else None
 
     def model_metadata_fields(
         self, matched_canonical_id: str, matched_entity: Optional[dict]
