@@ -803,7 +803,11 @@ class Resolver:
         same_model = {canonical_id, cs.parent_canonical_id("model", matched_entity)}
         same_model.discard(None)
         for stem in stated.stems:
-            if self.resolve(stem, "model", source_config).canonical_id in same_model:
+            # The stem is synthesized here, not asked about by the caller, so
+            # it draws no live HF lookup, and an HF repo that happens to carry
+            # its name cannot stand in for what the aliases say it names.
+            named = self.resolve(stem, "model", source_config, check_hf=False)
+            if named.canonical_id in same_model:
                 return effort or stated.effort, tokens or stated.reasoning_tokens
         return effort, tokens
 

@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from eval_entity_resolver import Resolver
+from eval_entity_resolver.models import HfIdHit
 
 _ALIAS_COLUMNS = (
     "id", "raw_value", "entity_type", "canonical_id", "source_config",
@@ -77,11 +78,12 @@ _ALIASES = [
     ("acme/embedder", "acme/embedder"),
     ("acme/painter-2024-01-01", "acme/painter-2024-01-01"),
     ("acme/writer", "acme/writer"),
+    ("acme/writer-turbo", "acme/writer"),
 ]
 
 
 @pytest.fixture(scope="module")
-def resolver(tmp_path_factory) -> Resolver:
+def snapshot(tmp_path_factory) -> Path:
     root: Path = tmp_path_factory.mktemp("snapshot")
     rows = []
     for i, (raw, canonical_id) in enumerate(_ALIASES):
@@ -98,7 +100,12 @@ def resolver(tmp_path_factory) -> Resolver:
         "id": "openrouter", "aliases": json.dumps(["OpenRouter", "-openrouter"]),
         "canonical_org": None,
     }]).to_parquet(root / "canonical_inference_platforms.parquet")
-    return Resolver.from_parquet(root)
+    return root
+
+
+@pytest.fixture(scope="module")
+def resolver(snapshot) -> Resolver:
+    return Resolver.from_parquet(snapshot)
 
 
 @pytest.mark.parametrize(
@@ -221,5 +228,41 @@ def test_a_model_that_produces_no_text_has_no_reasoning_condition(
 
 def test_a_text_model_keeps_the_tier_its_raw_id_states(resolver):
     result = resolver.resolve("acme/writer-high", "model")
+    assert result.canonical_id == "acme/writer"
+    assert result.reasoning_effort == "high"
+
+
+class _RecordingHfChecker:
+    """An injected `hf_id_checker` that records each id it is asked about."""
+
+    def __init__(self, hits: dict[str, HfIdHit] | None = None):
+        self.hits = hits or {}
+        self.calls: list[str] = []
+
+    def __call__(self, raw_value: str):
+        self.calls.append(raw_value)
+        return self.hits.get(raw_value)
+
+
+def test_confirming_a_tier_checks_no_synthesized_stem_against_hf(snapshot):
+    """Only the id the caller asked about may draw a live HF lookup."""
+    checker = _RecordingHfChecker()
+    resolver = Resolver.from_parquet(snapshot)
+    resolver.hf_id_checker = checker
+    result = resolver.resolve("anthropic/claude-opus-4-thinking-120k-high", "model")
+    assert (result.reasoning_effort, result.reasoning_tokens) == ("high", 120000)
+    assert checker.calls == ["anthropic/claude-opus-4-thinking-120k-high"]
+
+
+def test_an_hf_repo_named_like_the_stem_does_not_drop_the_tier(snapshot):
+    """`acme/writer-turbo` is an alias of `acme/writer`. An HF repo that
+    happens to carry the stem's name is not what the tiered id resolved to."""
+    checker = _RecordingHfChecker({
+        "acme/writer-turbo": HfIdHit(
+            hf_id="acme/Writer-Turbo", verbatim=True, source="hf_live"),
+    })
+    resolver = Resolver.from_parquet(snapshot)
+    resolver.hf_id_checker = checker
+    result = resolver.resolve("acme/writer-turbo-high", "model")
     assert result.canonical_id == "acme/writer"
     assert result.reasoning_effort == "high"
