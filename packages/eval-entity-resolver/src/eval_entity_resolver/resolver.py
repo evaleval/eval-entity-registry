@@ -137,11 +137,14 @@ class Resolver:
         config: Optional[ResolverConfig] = None,
     ) -> "Resolver":
         """Fully-enriching resolver over `<path>/*.parquet` (alias + canonical
-        tables)."""
+        tables). Raises ValueError when the snapshot carries no host-token
+        platform map."""
+        canonical_store = CanonicalStore.from_parquet(path)
+        canonical_store.require_host_token_platforms(str(path))
         return cls(
             AliasStore.from_parquet(path),
             config=config,
-            canonical_store=CanonicalStore.from_parquet(path),
+            canonical_store=canonical_store,
         )
 
     @classmethod
@@ -150,11 +153,14 @@ class Resolver:
         repo_id: str,
         config: Optional[ResolverConfig] = None,
     ) -> "Resolver":
-        """Fully-enriching resolver over a HF Dataset repo."""
+        """Fully-enriching resolver over a HF Dataset repo. Raises ValueError
+        when the snapshot carries no host-token platform map."""
+        canonical_store = CanonicalStore.from_hf(repo_id)
+        canonical_store.require_host_token_platforms(repo_id)
         return cls(
             AliasStore.from_hf(repo_id),
             config=config,
-            canonical_store=CanonicalStore.from_hf(repo_id),
+            canonical_store=canonical_store,
         )
 
     def resolve(
@@ -224,6 +230,10 @@ class Resolver:
         canonical_id, confidence, inferred_platform = fuzzy_match(
             raw_value, entity_type, self.config.threshold, self.store, source_config,
             org_dev_map=self._org_fold_map(), known_orgs=self._known_orgs(),
+            host_token_platforms=(
+                self.canonical_store.host_token_platforms()
+                if self.canonical_store is not None else {}
+            ),
         )
         if canonical_id is not None:
             result = self._enrich(

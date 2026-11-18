@@ -11,8 +11,8 @@ import yaml
 from typer.testing import CliRunner
 
 from eval_entity_registry.cli import app
-from eval_entity_registry.lib.inference_platforms_map import get_host_token_platform
 from eval_entity_registry.store import hf_store
+from eval_entity_resolver import CanonicalStore
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SEED_DIR = REPO_ROOT / "seed"
@@ -107,12 +107,16 @@ def test_eee_host_tokens_resolve(seeded_store):
     data = json.loads(PROPOSAL_JSON.read_text())
     eee = data["eee_host_tokens"]
     assert len(eee) == 8, f"expected 8 EEE host tokens, got {len(eee)}"
-    seeded_ids = set(seeded_store.table("canonical_inference_platforms")["id"])
+    platforms = seeded_store.table("canonical_inference_platforms")
+    seeded_ids = set(platforms["id"])
+    host_token_platforms = CanonicalStore(
+        inference_platforms_df=platforms
+    ).host_token_platforms()
     for token_name, info in eee.items():
         expected_platform = info["platform"]
         for form in info["forms"]:
             raw = _strip_marker(form)
-            resolved = get_host_token_platform(raw)
+            resolved = host_token_platforms.get(raw.lower())
             assert resolved == expected_platform, (
                 f"host token {raw!r} ({token_name}) resolved to {resolved!r}, "
                 f"expected {expected_platform!r}"
@@ -120,10 +124,6 @@ def test_eee_host_tokens_resolve(seeded_store):
             assert resolved in seeded_ids, (
                 f"resolved platform {resolved!r} not in seeded table"
             )
-
-
-def test_unknown_sentinel_maps_to_none():
-    assert get_host_token_platform("unknown") is None
 
 
 def test_seed_yaml_author_lab_org_consistency():
@@ -139,23 +139,13 @@ def test_seed_yaml_author_lab_org_consistency():
             )
 
 
-def test_fuzzy_captured_platforms_are_seeded(seeded_store):
-    """Every platform_id the fuzzy strategy can capture exists in the seeded
-    table; a miss means the resolver's map and the seed have drifted."""
-    from eval_entity_resolver.strategies.fuzzy import (
-        _HOST_PREFIXES_TO_STRIP,
-        _SUFFIX_PLATFORM_MAP,
-    )
+def test_every_host_suffix_the_fuzzy_strategy_strips_is_attributed(seeded_store):
+    """A host suffix is stripped only to capture its platform, so each one
+    needs a spelling in the seeded table."""
+    from eval_entity_resolver.strategies.fuzzy import _HOST_SUFFIXES
 
-    seeded_ids = set(seeded_store.table("canonical_inference_platforms")["id"])
-    captured = {
-        p
-        for p in list(_HOST_PREFIXES_TO_STRIP.values())
-        + list(_SUFFIX_PLATFORM_MAP.values())
-        if p is not None
-    }
-    assert captured, "fuzzy captured no platforms — single-source loader failed"
-    missing = captured - seeded_ids
-    assert not missing, (
-        f"fuzzy captures platform ids absent from the seed table: {sorted(missing)}"
-    )
+    host_token_platforms = CanonicalStore(
+        inference_platforms_df=seeded_store.table("canonical_inference_platforms")
+    ).host_token_platforms()
+    missing = [s for s in _HOST_SUFFIXES if s not in host_token_platforms]
+    assert not missing, f"host suffixes with no platform in the seed: {missing}"
