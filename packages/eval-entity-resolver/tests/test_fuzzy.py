@@ -14,6 +14,7 @@ from eval_entity_resolver.strategies.fuzzy import (
     _normalize_org,
     _strip_host_suffix,
     fuzzy_match,
+    host_platform_of,
 )
 
 
@@ -599,62 +600,40 @@ class TestStripHostSuffix:
         assert _strip_host_suffix("llama-3-8b-fp8") is None
 
 
-class TestFuzzyMatchPlatformCapture:
-    """`fuzzy_match` returns ``(canonical_id, confidence, inference_platform)``.
-    Capture happens once, suffix beats prefix, and the platform never
-    changes the resolved id."""
+class TestHostPlatformOf:
+    """`host_platform_of` reads the platform off the raw id alone. A suffix
+    beats a prefix, and the platform never changes the resolved id."""
 
-    def test_returns_three_tuple_on_match(self):
-        # Bare alias so the suffix-stripped stem matches.
-        store = _store_with_aliases(
-            ("gpt-4o", "model", "openai/gpt-4o", None, "confirmed")
-        )
-        result = fuzzy_match(
-            "gpt-4o-openrouter", "model", 0.85, store, host_token_platforms=_PLATFORMS
-        )
-        assert len(result) == 3
-        canonical_id, confidence, platform = result
-        assert canonical_id == "openai/gpt-4o"
-        assert platform == "openrouter"
+    def test_suffix_names_the_platform(self):
+        assert host_platform_of("gpt-4o-openrouter", _PLATFORMS) == ("openrouter", None)
 
-    def test_returns_three_tuple_on_no_match(self):
-        store = _store_with_aliases()
-        assert fuzzy_match(
-            "nonexistent-model-xyz", "model", 0.85, store, host_token_platforms=_PLATFORMS
-        ) == (
-            None,
-            0.0,
-            None,
+    def test_prefix_names_the_platform_and_reports_its_token(self):
+        assert host_platform_of("together/meta/llama-3-8b", _PLATFORMS) == (
+            "togetherai", "together",
         )
 
-    def test_non_model_entity_returns_three_tuple(self):
-        store = _store_with_aliases()
-        assert fuzzy_match(
-            "anything", "benchmark", 0.85, store, host_token_platforms=_PLATFORMS
-        ) == (None, 0.0, None)
+    def test_suffix_beats_prefix(self):
+        assert host_platform_of("fireworks/meta/llama-3-8b-bedrock", _PLATFORMS) == (
+            "amazon-bedrock", None,
+        )
 
-    def test_prefix_host_captured_when_no_suffix(self):
+    def test_suffix_without_a_spelling_falls_back_to_the_prefix(self):
+        assert host_platform_of(
+            "fireworks/meta/llama-3-8b-bedrock", {"fireworks/": "fireworks-ai"}
+        ) == ("fireworks-ai", "fireworks")
+
+    @pytest.mark.parametrize("raw", ["gpt-4o-fc", "openai/gpt-4o", "fireworks-pro/x"])
+    def test_no_host_token_is_none(self, raw):
+        assert host_platform_of(raw, _PLATFORMS) is None
+
+    def test_fuzzy_match_strips_host_tokens_to_reach_the_stem(self):
         store = _store_with_aliases(
             ("meta/llama-3-8b", "model", "meta/llama-3-8b", None, "confirmed")
         )
-        canonical_id, _, platform = fuzzy_match(
-            "together/meta/llama-3-8b", "model", 0.85, store,
-            host_token_platforms=_PLATFORMS,
-        )
-        assert canonical_id == "meta/llama-3-8b"
-        assert platform == "togetherai"
-
-    def test_suffix_beats_prefix_capture(self):
-        # Prefix and suffix both present: the suffix wins.
-        store = _store_with_aliases(
-            ("meta/llama-3-8b", "model", "meta/llama-3-8b", None, "confirmed")
-        )
-        canonical_id, _, platform = fuzzy_match(
-            "fireworks/meta/llama-3-8b-bedrock", "model", 0.85, store,
-            host_token_platforms=_PLATFORMS,
-        )
-        assert canonical_id == "meta/llama-3-8b"
-        assert platform == "amazon-bedrock"
+        assert fuzzy_match(
+            "fireworks/meta/llama-3-8b-bedrock", "model", 0.85, store
+        ) == ("meta/llama-3-8b", 0.90)
+        assert fuzzy_match("anything", "benchmark", 0.85, store) == (None, 0.0)
 
     def test_capture_does_not_change_canonical(self):
         # Full resolver chain: the plain id hits exact match, which fuzzy
@@ -667,18 +646,9 @@ class TestFuzzyMatchPlatformCapture:
         hosted = resolver.resolve("gpt-4o-openrouter", "model").canonical_id
         assert plain == hosted == "openai/gpt-4o"
 
-    def test_no_host_token_captures_none(self):
-        store = _store_with_aliases(
-            ("gpt-4o", "model", "openai/gpt-4o", None, "confirmed")
-        )
-        _, _, platform = fuzzy_match(
-            "gpt-4o-fc", "model", 0.85, store, host_token_platforms=_PLATFORMS
-        )
-        assert platform is None
-
 
 class TestResolverThreadsPlatform:
-    """`Resolver.resolve` threads the fuzzy-captured platform onto the result."""
+    """`Resolver.resolve` puts the host token's platform on the result."""
 
     def test_resolve_sets_inference_platform_on_host_suffix(self):
         store = _store_with_aliases(
@@ -693,7 +663,6 @@ class TestResolverThreadsPlatform:
         store = _store_with_aliases(
             ("openai/gpt-4o", "model", "openai/gpt-4o", None, "confirmed")
         )
-        # Exact match runs no fuzzy capture.
         result = Resolver(store).resolve("openai/gpt-4o", "model")
         assert result.inference_platform is None
 

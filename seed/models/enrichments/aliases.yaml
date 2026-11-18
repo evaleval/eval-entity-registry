@@ -1457,6 +1457,7 @@
   aliases:
   - DeepSeek-V3.2-chat
   - deepseek-3.2
+  - fireworks/deepseek-v3p2
   - deepseek-ai/deepseek-v3.2-maas
   - deepseek-v3-2-251201
   - deepseek-v3-2-maas
@@ -1520,6 +1521,7 @@
   - deepseek-v3-1-maas
   - deepseek/deepseek-v3-1-maas
   - fireworks-ai/deepseek-v3p1
+  - fireworks/deepseek-v3p1
   - deepseek-3.1
   - DeepSeek V3.1
   - TEE/deepseek-v3.1
@@ -1540,6 +1542,7 @@
   aliases:
   - DeepSeek V3.2 Reasoning
   - deepseek/deepseek-v3.2-thinking
+  - fireworks/deepseek-v3p2-thinking
   - DeepSeek-V3.2-reasoner
 - id: deepseek/deepseek-v3-2-reasoning-0925
   aliases:
@@ -2013,6 +2016,9 @@
   aliases:
   - llama4-maverick
   - meta/llama4-maverick
+- id: meta-llama/Llama-4-Maverick-17B-128E-Instruct
+  aliases:
+  - fireworks/llama4-maverick-instruct-basic
 - id: meta-llama/Llama-4-Scout-17B-16E
   aliases:
   - llama4-scout
@@ -3077,13 +3083,35 @@
   - unknown/falcon-mamba-7b-instruct
   - unknown/falcon7b-instruct
   - tiiuae/Falcon-Instruct-7B
-- id: together/redpajama-incite-7b
+# `together/` is the prefix HELM-style ids put on Together's own models; the
+# canonical ids are the Hugging Face repos under `togethercomputer/`.
+- id: togethercomputer/redpajama-incite-7b
+  aliases:
+  - together/redpajama-incite-7b
+# HELM's 7B names. HELM lists them unversioned with release date 2023-05-05,
+# the date of the v0.1 preview; its 3B names say v1. The final 7B models are
+# separate entities, and these are linked to them by version.
+- id: togethercomputer/RedPajama-INCITE-Base-7B-v0.1
   aliases:
   - redpajama-incite-base-7b
+  - together/redpajama-incite-base-7b
+- id: togethercomputer/RedPajama-INCITE-Instruct-7B-v0.1
+  aliases:
   - redpajama-incite-instruct-7b
+  - together/redpajama-incite-instruct-7b
 - id: togethercomputer/RedPajama-INCITE-7B-Instruct
   aliases:
   - unknown/redpajama-instruct-7b
+- id: togethercomputer/RedPajama-INCITE-Base-3B-v1
+  aliases:
+  - together/RedPajama-INCITE-Base-v1-3B
+- id: togethercomputer/RedPajama-INCITE-Instruct-3B-v1
+  aliases:
+  - together/RedPajama-INCITE-Instruct-v1-3B
+  - together/redpajama-incite-3b-instruct
+- id: togethercomputer/RedPajama-INCITE-Chat-3B-v1
+  aliases:
+  - together/redpajama-incite-3b-chat
 - id: uiuc-oumi/coalm-70b
   aliases:
   - CoALM 70B

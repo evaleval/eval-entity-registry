@@ -13,7 +13,7 @@ reported quantization; consumers needing that precision must read the original
 from __future__ import annotations
 
 import re
-from typing import Mapping, Optional
+from typing import Mapping, NamedTuple, Optional
 
 from eval_entity_resolver.normalization import normalize
 
@@ -21,7 +21,7 @@ from eval_entity_resolver.normalization import normalize
 # Stripped only from the end of the raw value; longer suffixes first so a
 # shorter one cannot pre-empt a compound (`-int8` vs `-int8-awq`). Host
 # suffixes (`-together`, `-bedrock`, `-openrouter`) are deliberately absent:
-# they live in `_HOST_SUFFIXES` so the platform is captured, not lost.
+# they live in `_HOST_SUFFIXES`, which `host_platform_of` reads.
 _STRIP_SUFFIXES = [
     # Evaluation-mode suffixes (BFCL).
     "-fc",
@@ -112,13 +112,13 @@ def _strip_run_config_tokens(value: str) -> str | None:
 
 def _benchmark_stem_match(
     raw_value: str, alias_store, source_config: Optional[str]
-) -> tuple[Optional[str], float, None]:
+) -> tuple[Optional[str], float]:
     """One candidate, built by removing run-configuration tokens. Runs after
     exact and normalized, so a canonical whose name genuinely carries such a
     token still wins on its own spelling."""
     candidate = _strip_run_config_tokens(raw_value)
     if candidate is None:
-        return None, 0.0, None
+        return None, 0.0
     canonical_id = (
         alias_store.lookup(candidate, "benchmark", source_config)
         or alias_store.get_normalized_lookup("benchmark", source_config).get(
@@ -126,8 +126,8 @@ def _benchmark_stem_match(
         )
     )
     if canonical_id is None:
-        return None, 0.0, None
-    return canonical_id, _STEM_CONFIDENCE, None
+        return None, 0.0
+    return canonical_id, _STEM_CONFIDENCE
 
 from eval_entity_resolver.fold import _ORG_ALIASES, _norm_org_key, dev_org_of_prefix  # noqa: E402,F401
 
@@ -169,8 +169,7 @@ def _orgs_agree(
 # Hosting platforms, gateways and missing-developer placeholders: dropped as a
 # prefix so the bare model body is tried, since they are not developers.
 # Deliberately broader than the registry's platform table: stripping for
-# matching is independent of platform attribution, which `fuzzy_match` reads
-# from the snapshot's host-token map.
+# matching is independent of platform attribution (`host_platform_of`).
 _HOST_PREFIX_TOKENS: tuple[str, ...] = (
     "unknown",
     "bedrock", "amazon-bedrock", "aws-bedrock",
@@ -191,7 +190,7 @@ _HOST_PREFIX_TOKENS: tuple[str, ...] = (
 
 _HOST_PREFIXES_TO_STRIP = frozenset(_HOST_PREFIX_TOKENS)
 
-# Host suffixes: captured as the platform side-value rather than discarded.
+# Host suffixes: stripped as a unit so the stem can match.
 _HOST_SUFFIXES: tuple[str, ...] = ("-together", "-bedrock", "-openrouter")
 
 
@@ -299,6 +298,37 @@ def _strip_host_suffix(value: str) -> tuple[str, str] | None:
     return None
 
 
+class HostPlatform(NamedTuple):
+    platform_id: str
+    # The leading host token (`fireworks`) when the platform was read off a
+    # prefix; None for a suffix capture, which can never be a developer.
+    prefix_token: Optional[str]
+
+
+def host_platform_of(
+    raw_value: str, host_token_platforms: Mapping[str, str]
+) -> Optional[HostPlatform]:
+    """The serving platform a raw model id names through a host token
+    (`together/…`, `bedrock.…`, `…-bedrock`), or None. A function of the raw
+    id alone, so it holds whichever strategy matched the id.
+
+    ``host_token_platforms`` maps a host-token spelling to a platform id
+    (``CanonicalStore.host_token_platforms``). A suffix beats a prefix: a host
+    token in the model name is the stronger per-run signal.
+    """
+    suffix = _strip_host_suffix(raw_value)
+    if suffix:
+        platform_id = host_token_platforms.get(suffix[1])
+        if platform_id is not None:
+            return HostPlatform(platform_id, None)
+    prefix = _drop_host_prefix(raw_value)
+    if prefix:
+        platform_id = host_token_platforms.get(f"{prefix[1]}/")
+        if platform_id is not None:
+            return HostPlatform(platform_id, prefix[1])
+    return None
+
+
 # ``qwen-2-72b`` ↔ ``qwen2-72b``. Safe because distinguishing tokens sit on the
 # other side of a separator (``gpt-4`` vs ``gpt-4-mini`` keeps ``-mini``).
 _LETTER_DIGIT_DASH = re.compile(r"([a-zA-Z])-(\d)")
@@ -399,30 +429,18 @@ def fuzzy_match(
     source_config: Optional[str] = None,
     org_dev_map: Optional[dict] = None,
     known_orgs: Optional[frozenset] = None,
-    *,
-    host_token_platforms: Mapping[str, str],
-) -> tuple[Optional[str], float, Optional[str]]:
-    """Returns ``(canonical_id, confidence, inference_platform)``; canonical_id
-    is None on no match.
-
-    ``inference_platform`` is a SIDE VALUE captured from a host token and never
-    embedded in the matched candidate, so capture cannot alter the canonical_id.
-    ``host_token_platforms`` attributes a host token spelling (``together/``,
-    ``-bedrock``) to a platform id; it comes from the registry snapshot
-    (``CanonicalStore.host_token_platforms``).
-    A suffix capture (`-bedrock`) takes priority over a prefix capture
-    (`together/`): a host token in the model name is the stronger per-run signal.
-    """
+) -> tuple[Optional[str], float]:
+    """Returns ``(canonical_id, confidence)``; canonical_id is None on no
+    match."""
     if entity_type == "benchmark":
         return _benchmark_stem_match(raw_value, alias_store, source_config)
 
     # The rewrites below are model-specific; on metrics/harnesses they would
     # merge unrelated entities that merely share a host-like prefix or tail.
     if entity_type != "model":
-        return None, 0.0, None
+        return None, 0.0
 
     candidates_to_try: list[str] = []
-    captured_platform: Optional[str] = None
 
     # Tried before the generic strip so an aliased thinking-mode canonical
     # (`model-thinking`) wins over the drop-thinking stem (`model`).
@@ -430,13 +448,12 @@ def fuzzy_match(
     if preserve_match:
         candidates_to_try.append(preserve_match.group(1))
 
-    # Before the generic strip so the host suffix is captured, not discarded;
-    # the stem is re-stripped (`model-fc-together` → capture, then drop `-fc`).
+    # Before the generic strip; the stem is re-stripped (`model-fc-together`
+    # → drop `-together`, then `-fc`).
     suffix_capture = _strip_host_suffix(raw_value)
     if suffix_capture:
-        stem, host_suffix = suffix_capture
+        stem, _ = suffix_capture
         candidates_to_try.append(stem)
-        captured_platform = host_token_platforms.get(host_suffix)
         stem_stripped = _strip_suffix(stem)
         if stem_stripped:
             candidates_to_try.append(stem_stripped)
@@ -451,10 +468,8 @@ def fuzzy_match(
     for val in [raw_value] + candidates_to_try[:]:
         host = _drop_host_prefix(val)
         if host:
-            bare, host_token = host
+            bare, _ = host
             candidates_to_try.append(bare)
-            if captured_platform is None:
-                captured_platform = host_token_platforms.get(f"{host_token}/")
             stripped_bare = _strip_suffix(bare)
             if stripped_bare:
                 candidates_to_try.append(stripped_bare)
@@ -487,11 +502,11 @@ def fuzzy_match(
         # (`together/meta-llama/Llama-3-8B`) carries the host as its prefix.
         exact_id = alias_store.lookup(candidate, entity_type, source_config)
         if exact_id is not None and _orgs_agree(candidate, exact_id, org_dev_map, known_orgs):
-            return exact_id, _STEM_CONFIDENCE, captured_platform
+            return exact_id, _STEM_CONFIDENCE
 
         norm = normalize(candidate)
         canonical_id = norm_lookup.get(norm)
         if canonical_id is not None and _orgs_agree(candidate, canonical_id, org_dev_map, known_orgs):
-            return canonical_id, _STEM_CONFIDENCE, captured_platform
+            return canonical_id, _STEM_CONFIDENCE
 
-    return None, 0.0, None
+    return None, 0.0

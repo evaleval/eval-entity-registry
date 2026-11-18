@@ -26,7 +26,12 @@ from eval_entity_resolver.models import (
 )
 from eval_entity_resolver.strategies.exact import exact_match
 from eval_entity_resolver.strategies.normalized import normalized_match
-from eval_entity_resolver.strategies.fuzzy import fuzzy_match
+from eval_entity_resolver.fold import _norm_org_key
+from eval_entity_resolver.strategies.fuzzy import (
+    _canon_org,
+    fuzzy_match,
+    host_platform_of,
+)
 
 # Strictly between exact (1.0) and fuzzy (`_STEM_CONFIDENCE`, 0.90) so the
 # tier is recoverable from the confidence alone.
@@ -227,24 +232,15 @@ class Resolver:
                 confidence=0.0,
             )
 
-        canonical_id, confidence, inferred_platform = fuzzy_match(
+        canonical_id, confidence = fuzzy_match(
             raw_value, entity_type, self.config.threshold, self.store, source_config,
             org_dev_map=self._org_fold_map(), known_orgs=self._known_orgs(),
-            host_token_platforms=(
-                self.canonical_store.host_token_platforms()
-                if self.canonical_store is not None else {}
-            ),
         )
         if canonical_id is not None:
-            result = self._enrich(
+            return self._enrich(
                 raw_value, entity_type, source_config,
                 canonical_id, "fuzzy", confidence,
             )
-            # An explicit host token in the raw id (`together/`, `-bedrock`) is
-            # the strongest per-run platform fact; absent one, leave the field.
-            if inferred_platform is not None:
-                result.inference_platform = inferred_platform
-            return result
 
         return self._no_match_or_harness_retry(
             raw_value, entity_type, source_config, mode
@@ -737,6 +733,34 @@ class Resolver:
         knows (bypassing the strategy chain); same enrichment as `resolve()`."""
         return self._enrich(raw_value, entity_type, source_config, canonical_id, strategy, confidence)
 
+    def _host_platform(self, raw_value: str, canonical_id: str) -> Optional[str]:
+        """The platform a host token in `raw_value` names, or None.
+
+        Who served a run and who developed the model are separate facts. The
+        developer comes from the matched model, never from the token. A prefix
+        token is ambiguous only when the platform it names is operated by that
+        same developer (the platform row's `canonical_org`): `together/` on a
+        Together-developed model, `Groq/Llama-3-Groq-8B-Tool-Use`,
+        `fireworks/ember-1`. That prefix may be a namespace, so no platform is
+        claimed."""
+        cs = self.canonical_store
+        host = host_platform_of(raw_value, cs.host_token_platforms())
+        if host is None:
+            return None
+        operator = cs.platform_developer_org(host.platform_id)
+        if host.prefix_token is not None and operator is not None:
+            # An alias can point at an id with no canonical row; its namespace
+            # is then the only developer on record.
+            developer = (cs.lookup("model", canonical_id) or {}).get("org_id") or (
+                canonical_id.split("/", 1)[0] if "/" in canonical_id else None
+            )
+            fold = self._org_fold_map()
+            if developer and _norm_org_key(
+                _canon_org(operator, fold)
+            ) == _norm_org_key(_canon_org(developer, fold)):
+                return None
+        return host.platform_id
+
     def _enrich(
         self,
         raw_value: str,
@@ -786,7 +810,7 @@ class Resolver:
                 model_family_id=fields.get("model_family_id"),
                 lineage_origin_model_id=fields.get("lineage_origin_model_id"),
                 lineage_origin_model_org_id=fields.get("lineage_origin_model_org_id"),
-                inference_platform=fields.get("inference_platform"),
+                inference_platform=self._host_platform(raw_value, fields["canonical_id"]),
                 resolution_source=fields.get("resolution_source"),
                 resolution_granularity=fields.get("resolution_granularity"),
                 parents=fields["parents"],
