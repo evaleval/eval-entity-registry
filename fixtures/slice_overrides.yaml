@@ -1,4 +1,4 @@
-# Slice grouping overrides. With suffix stripping disabled (2026-05),
+# Slice grouping overrides. With suffix stripping disabled,
 # this list only needs entries that override a registry-authored
 # parent_benchmark_id — i.e. cases where benchmarks.yaml sets a parent
 # but the benchmark should actually be standalone.

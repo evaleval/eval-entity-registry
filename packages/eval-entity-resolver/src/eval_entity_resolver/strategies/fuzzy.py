@@ -13,7 +13,7 @@ reported quantization; consumers needing that precision must read the original
 from __future__ import annotations
 
 import re
-from typing import Mapping, NamedTuple, Optional
+from typing import Mapping, NamedTuple, Optional, Sequence
 
 from eval_entity_resolver.normalization import normalize
 
@@ -22,18 +22,31 @@ from eval_entity_resolver.normalization import normalize
 # shorter one cannot pre-empt a compound (`-int8` vs `-int8-awq`). Host
 # suffixes (`-together`, `-bedrock`, `-openrouter`) are deliberately absent:
 # they live in `_HOST_SUFFIXES`, which `host_platform_of` reads.
+# Reasoning-effort tiers a source welds onto the model name, mapped to the
+# tier they state. `-max` IS an effort tier (arc-agi's low/high/max ladder).
+# Longer spellings first so `-high-effort` is read before `-high`.
+_EFFORT_SUFFIXES: dict[str, str] = {
+    "-xhigh-effort": "xhigh",
+    "-max-effort": "max",
+    "-high-effort": "high",
+    "-medium-effort": "medium",
+    "-low-effort": "low",
+    "-minimal-effort": "minimal",
+    "-xhigh": "xhigh",
+    "-high": "high",
+    "-medium": "medium",
+    "-low": "low",
+    "-minimal": "minimal",
+    "-max": "max",
+}
+
 _STRIP_SUFFIXES = [
     # Evaluation-mode suffixes (BFCL).
     "-fc",
     "-prompt",
-    # Reasoning-effort tiers. `-max` IS an effort tier (arc-agi's low/high/max
-    # ladder); genuine `-max` products (qwen3-max) are safe because
-    # exact/normalized matching wins before fuzzy ever strips.
-    "-xhigh-effort",
-    "-high-effort",
-    "-medium-effort",
-    "-low-effort",
-    "-minimal-effort",
+    # Genuine `-max` products (qwen3-max) are safe because exact/normalized
+    # matching wins before fuzzy ever strips.
+    *_EFFORT_SUFFIXES,
     "-non-reasoning",
     "-xhigh",
     "-high",
@@ -327,6 +340,65 @@ def host_platform_of(
         if platform_id is not None:
             return HostPlatform(platform_id, prefix[1])
     return None
+
+
+class RunCondition(NamedTuple):
+    # Reasoning-effort tier (`low`, `xhigh`) the id states, or None.
+    effort: Optional[str]
+    # Thinking-token budget (`-thinking-16k` -> 16000) the id states, or None.
+    reasoning_tokens: Optional[int]
+    # The raw id without the condition (any host suffix put back): the names
+    # of the model the condition was run on, most specific first.
+    stems: tuple[str, ...]
+
+
+_THINKING_BUDGET_RE = re.compile(r"^(.*)(-thinking)-(\d+)k$", re.IGNORECASE)
+
+
+def reasoning_run_condition_of(raw_value: str) -> Optional[RunCondition]:
+    """The reasoning-effort tier and thinking-token budget a raw model id
+    ends in (`…-low`, `…-high-effort`, `…-thinking-16k`,
+    `…-thinking-120k-high`, `…-medium-bedrock`), or None. A function of the
+    raw id alone. A tier word can also be part of a product name
+    (`mistral-medium`), so the caller confirms the condition against the
+    model a stem resolves to (`Resolver._reasoning_run_condition`)."""
+    host = _strip_host_suffix(raw_value)
+    body, host_suffix = (host[0], raw_value[len(host[0]):]) if host else (raw_value, "")
+    effort = None
+    lower = body.lower()
+    for suffix, tier in _EFFORT_SUFFIXES.items():
+        if lower.endswith(suffix) and len(body) > len(suffix):
+            effort, body = tier, body[: len(body) - len(suffix)]
+            break
+    budget = _THINKING_BUDGET_RE.match(body)
+    if budget is None:
+        if effort is None:
+            return None
+        return RunCondition(effort, None, (body + host_suffix,))
+    base, thinking, thousands = budget.groups()
+    # A thinking-mode model (`…-thinking`) is the closer match when the
+    # registry holds one; the plain model is the fallback.
+    return RunCondition(
+        effort, int(thousands) * 1000,
+        (base + thinking + host_suffix, base + host_suffix),
+    )
+
+
+def mode_leaf_run_condition(
+    canonical_id: str, parents: Sequence[Mapping]
+) -> Optional[RunCondition]:
+    """The run condition a canonical model states in its own id
+    (`openai/o3-mini-high`), when the registry holds it as a mode leaf: a
+    `variant` of a base model on `axis: mode`. ``parents`` is the canonical's
+    decoded edge list. A tier-named canonical with no such edge is its own
+    product (`qwen/qwen3-max`), so it states no condition."""
+    is_mode_leaf = any(
+        isinstance(edge, Mapping)
+        and edge.get("relationship") == "variant"
+        and edge.get("axis") == "mode"
+        for edge in parents
+    )
+    return reasoning_run_condition_of(canonical_id) if is_mode_leaf else None
 
 
 # ``qwen-2-72b`` ↔ ``qwen2-72b``. Safe because distinguishing tokens sit on the
