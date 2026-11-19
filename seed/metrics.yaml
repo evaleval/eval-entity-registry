@@ -4792,3 +4792,32 @@
   max_score: .inf
   metadata: '{"unit": "points"}'
   review_status: reviewed
+
+# --- SMB Bench (dataset oro-agents/smb-bench) ---
+# Both are US-dollar amounts for one simulated 90-day quarter, so they are
+# unbounded on both sides by definition. display_name is benchmark-scoped:
+# the seed auto-aliases display_name, and a generic "Profit" alias would
+# claim other sources' raw profit fields. It is also kept to three words so
+# the keyword extractor leaves it whole instead of routing it to `score`
+# ("gain" is the dataset's own name for profit minus the fixed buying rule). Minted for the pending
+# EEE_datastore submission; datastore records reference the metrics by id.
+# review_status draft -> maintainer promotes after review.
+- id: smb-bench.mean-profit-usd
+  display_name: SMB Bench Profit
+  aliases: []
+  score_type: continuous
+  lower_is_better: false
+  min_score: -.inf
+  max_score: .inf
+  metadata: '{"unit": "usd", "definition": "Mean over tasks of the mean of a model''s scored runs on that task, where a run''s score is the graded change in the simulated business''s net value over a 90-day quarter, in US dollars.", "source": "https://huggingface.co/datasets/oro-agents/smb-bench"}'
+  review_status: draft
+
+- id: smb-bench.mean-profit-vs-fixed-rule-usd
+  display_name: SMB Bench Gain
+  aliases: []
+  score_type: continuous
+  lower_is_better: false
+  min_score: -.inf
+  max_score: .inf
+  metadata: '{"unit": "usd", "definition": "Mean over tasks of the model''s mean profit on a task minus the profit of the benchmark''s scripted fixed buying rule on the same task, in US dollars.", "source": "https://huggingface.co/datasets/oro-agents/smb-bench"}'
+  review_status: draft

@@ -126,3 +126,14 @@
   fork_url: null
   metadata: '{"org": "cordademocracy", "code_repo": "https://github.com/cordademocracy/Polistemics"}'
   review_status: draft
+
+# SMB Bench's own buyer loop (ORO AI; agent "smb-bench-buyer" in the dataset's
+# published job configs). The EEE adapter publishes this slug as
+# eval_library.name. Minted for the pending EEE_datastore submission;
+# review_status draft -> maintainer promotes.
+- id: smb-bench
+  display_name: SMB Bench
+  version: null
+  fork_url: null
+  metadata: '{"org": "ORO AI", "dataset_repo": "oro-agents/smb-bench", "code_repo": "https://github.com/ORO-AI/smb-bench"}'
+  review_status: draft
