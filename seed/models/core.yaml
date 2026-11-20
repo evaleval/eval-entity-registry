@@ -178,6 +178,25 @@ skip_source_ids:
 - swiss-ai-initiative/apertus-8b
 - swiss-ai-initiative/apertus-70b-instruct
 - swiss-ai-initiative/apertus-8b-instruct
+# Bare models.dev mints whose developer is known. MAI Code 2 is Microsoft's
+# (github-copilot lists it without a namespace) and Clairic Flash is the HF
+# repo Cloudflare/clairic-flash (Workers AI's `@cf/cloudflare/` prefix reads
+# as the serving host); both are curated below. MAI Code 1.1 Flash is the
+# same case and moves under Microsoft with them.
+- mai-code-1-1-flash
+- mai-code-2
+- mai-code-2-flash
+- clairic-flash
+# Neuralwatt's own product names for models it also lists under their real
+# names: each nw-* record equals the named record in every models.dev field
+# but the display name. The raw forms are aliases of those models in
+# enrichments/aliases.yaml.
+- nw-small
+- nw-small-flex
+- nw-flash
+- nw-flash-flex
+- nw-large
+- nw-large-flex
 entries:
 # HF-true canonical; the lowercase models.dev spelling folds in via
 # collision_overrides.yaml `prefer:`.
@@ -13927,3 +13946,71 @@ entries:
   aliases:
   - EuroLLM-22B-Instruct
   - EuroLLM-22B-it
+- id: microsoft/mai-code-1.1-flash
+  display_name: MAI Code 1.1 Flash
+  org_id: microsoft
+  family: null
+  architecture: null
+  params_billions: null
+  parents: []
+  open_weights: false
+  release_date: '2026-08-11'
+  input_modalities: null
+  output_modalities: null
+  tags: null
+  metadata: null
+  review_status: reviewed
+  aliases:
+  - mai-code-1.1-flash
+- id: microsoft/mai-code-2
+  display_name: MAI Code 2
+  org_id: microsoft
+  family: null
+  architecture: null
+  params_billions: null
+  parents: []
+  open_weights: false
+  release_date: '2026-11-17'
+  input_modalities: null
+  output_modalities: null
+  tags: null
+  metadata: null
+  review_status: reviewed
+  aliases:
+  - mai-code-2
+- id: microsoft/mai-code-2-flash
+  display_name: MAI Code 2 Flash
+  org_id: microsoft
+  family: null
+  architecture: null
+  params_billions: null
+  parents: []
+  open_weights: false
+  release_date: '2026-11-17'
+  input_modalities: null
+  output_modalities: null
+  tags: null
+  metadata: null
+  review_status: reviewed
+  aliases:
+  - mai-code-2-flash
+- id: Cloudflare/clairic-flash
+  resolution_source: hf
+  display_name: Clairic Flash
+  org_id: cloudflare
+  family: clairic
+  architecture: null
+  params_billions: 9.65
+  parents:
+  - id: Qwen/Qwen3.5-9B
+    relationship: finetune
+  open_weights: true
+  release_date: '2026-11-12'
+  input_modalities: null
+  output_modalities: null
+  tags:
+  - open-weight
+  metadata: '{"hf_id": "Cloudflare/clairic-flash"}'
+  review_status: reviewed
+  aliases:
+  - clairic-flash

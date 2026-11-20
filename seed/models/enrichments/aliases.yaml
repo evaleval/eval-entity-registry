@@ -3504,3 +3504,23 @@
   aliases:
   - kimi/kimi-k2-0905
   - moonshotai/kimi-k2-0905
+# Neuralwatt's product names for models it serves (the nw-* mints are dropped
+# in core.yaml skip_source_ids).
+- id: Qwen/Qwen3.8-27B
+  aliases:
+  - nw-small
+- id: alibaba/qwen-3-8-27b-flex
+  aliases:
+  - nw-small-flex
+- id: deepseek-ai/DeepSeek-V4.1-Flash
+  aliases:
+  - nw-flash
+- id: deepseek/deepseek-v4-1-flash-flex
+  aliases:
+  - nw-flash-flex
+- id: moonshotai/Kimi-K3.1-Pro
+  aliases:
+  - nw-large
+- id: moonshotai/kimi-k3-1-pro-flex
+  aliases:
+  - nw-large-flex
