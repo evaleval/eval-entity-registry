@@ -28509,3 +28509,15 @@
     - vectara-hallucination-leaderboard
     - vectara_hallucination_leaderboard
     - hallucination-leaderboard
+
+- id: ec2-bench
+  display_name: EC²-Bench
+  description: Edge–cloud collaboration benchmark with 128 executable digital-workspace tasks for long-horizon LLM agents. It measures task performance, resource use, and privacy exposure.
+  dataset_repo: chengpingan/EC2-Bench
+  parent_benchmark_id: null
+  tags: '["agentic"]'
+  metadata: '{"paper": "https://arxiv.org/abs/2610.17816v2", "doi": "10.48550/arXiv.2610.17816", "code_repo": "https://github.com/OpenBMB/EC2-Bench", "hf_config": "default", "hf_split": "test", "samples": 128}'
+  review_status: draft
+  aliases:
+    - EC2Bench
+    - Edge–Cloud Collaborative Agent Benchmark
