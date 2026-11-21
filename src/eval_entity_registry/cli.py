@@ -1168,9 +1168,16 @@ def seed(
                 )
             if source_config is not None:
                 source_scope_keys.add(source_config)
-            # A scoped self-fold is a pure published-scale conversion; an
-            # unscoped one carries no information.
-            if fm == tm and source_config is None:
+            # The benchmark's own direction for `to_metric`, overriding the
+            # metric's registry default.
+            direction = e.get("lower_is_better")
+            if direction is not None and not isinstance(direction, bool):
+                raise typer.BadParameter(
+                    f"metric_folds ({b}): lower_is_better must be true or false, got {direction!r}"
+                )
+            # A self-row renames nothing: it carries a published-scale
+            # conversion (scoped only) or the benchmark's direction.
+            if fm == tm and source_config is None and direction is None:
                 raise typer.BadParameter(f"metric_folds ({b}): self-fold {fm!r}")
             row_key = (b, fm, source_config)
             if row_key in seen_rows:
@@ -1220,10 +1227,14 @@ def seed(
                 "to_metric_id": tm, "source_config": source_config,
                 "scale_factor": factor, "scale_offset": offset,
                 "note": e.get("note"),
+                "lower_is_better": direction,
             })
-        # A scoped row is either the per-source conversion of a benchmark-wide
-        # fold (and must name that fold's target, or one source's metric would
-        # mean something else) or a standalone conversion that renames nothing.
+        # A scoped row is the per-source conversion of a benchmark-wide fold
+        # (and must name that fold's target, or one source's metric would mean
+        # something else), a standalone published-scale conversion
+        # (from == to), or a standalone rename for that source alone: one
+        # source's metric is a rubric another source's same-named metric is
+        # not. A scoped self-row with no conversion carries nothing.
         for row in fold_rows:
             source_config = row["source_config"]
             if source_config is None:
@@ -1235,20 +1246,39 @@ def seed(
                     raise typer.BadParameter(
                         f"metric_folds ({pair[0]}): scoped to_metric must match unscoped row"
                     )
-            elif not (
-                row["to_metric_id"] == row["from_metric_id"]
-                and (row["scale_factor"] is not None or row["scale_offset"] is not None)
+            elif row["to_metric_id"] == row["from_metric_id"] and (
+                row["scale_factor"] is None and row["scale_offset"] is None
+                and row["lower_is_better"] is None
             ):
                 raise typer.BadParameter(
-                    f"metric_folds ({pair[0]}): scoped row requires unscoped row for "
-                    f"{pair[1]!r}, unless it is a pure published-scale conversion "
-                    "(from_metric == to_metric with scale_factor/scale_offset)"
+                    f"metric_folds ({pair[0]}): scoped self-fold {pair[1]!r} for "
+                    f"{source_config!r} renames nothing and converts nothing"
                 )
-        # No chains: a fold target must not itself be folded on the same benchmark.
-        targets = {(r["benchmark_id"], r["to_metric_id"]) for r in fold_rows}
-        chained = sorted(targets & set(unscoped_pairs))
+        # No chains: a rename target must not itself be renamed on the same
+        # benchmark by a row that applies to the same rows (either row
+        # benchmark-wide, or both scoped to one source).
+        renames = [r for r in fold_rows if r["to_metric_id"] != r["from_metric_id"]]
+        chained = sorted({
+            (a["benchmark_id"], a["to_metric_id"], a["source_config"] or b["source_config"])
+            for a in renames for b in renames
+            if a["benchmark_id"] == b["benchmark_id"]
+            and a["to_metric_id"] == b["from_metric_id"]
+            and (a["source_config"] is None or b["source_config"] is None
+                 or a["source_config"] == b["source_config"])
+        }, key=str)
         if chained:
             raise typer.BadParameter(f"metric_folds: chained folds {chained}")
+        # One direction per (benchmark, metric, scope): rows naming the same
+        # target there may not disagree.
+        directions: dict[tuple, bool] = {}
+        for row in fold_rows:
+            if row["lower_is_better"] is None:
+                continue
+            key = (row["benchmark_id"], row["to_metric_id"], row["source_config"])
+            if directions.setdefault(key, row["lower_is_better"]) != row["lower_is_better"]:
+                raise typer.BadParameter(
+                    f"metric_folds: conflicting lower_is_better for {key}"
+                )
         folds_df = pd.DataFrame(
             fold_rows, columns=list(schemas._SCHEMAS["benchmark_metric_folds"].keys())
         )
