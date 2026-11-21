@@ -152,6 +152,8 @@ _SCHEMAS: dict[str, dict] = {
         "scale_factor": "float64",
         "scale_offset": "float64",
         "note": pd.StringDtype(),
+        # The benchmark's own direction for to_metric_id; null = the metric's.
+        "lower_is_better": pd.BooleanDtype(),
     },
     "eval_harnesses": {
         "id": pd.StringDtype(),

@@ -123,6 +123,17 @@ def _is_aggregate_marker(segment: str) -> bool:
     return lowered == "overall" or lowered.endswith("_overall")
 
 
+@dataclass
+class DatasetMatch:
+    """A row placed by its own stated dataset (`match_benchmark_in_dataset`):
+    the benchmark, the dataset's benchmark, and the evidence (`name_exact`,
+    `name_normalized`, `description`)."""
+
+    canonical_id: str
+    dataset_id: str
+    evidence: str
+
+
 class Resolver:
     def __init__(
         self,
@@ -388,6 +399,7 @@ class Resolver:
         self,
         raw_name: Optional[str],
         source_config: Optional[str] = None,
+        row_metric_id: Optional[str] = None,
     ) -> Optional["StructuredBenchmark"]:
         """Positionless structural resolution for a dotted `evaluation_name`
         (`bbq.bbq.overall`, `MMLU.MMLU-Pro.overall`, `vals_ai.mmlu_pro.biology`).
@@ -418,6 +430,12 @@ class Resolver:
         `subset_is_identity` distinguishes a real subset (the segment hit won)
         from trailing segments that belong to the identity (the joined form
         won). Returns None when no segment resolves.
+
+        `row_metric_id` is the metric the row itself resolved to. With it, a
+        trailing segment that only an alias makes a metric is dropped just
+        when that alias names the row's metric: `xstest.CD` on a row whose
+        metric is `score` keeps `CD` (an XSTest category, not Chamfer
+        Distance) as its subset.
         """
         segments = prepare_eval_name_segments(raw_name)
         if segments is None:
@@ -438,12 +456,202 @@ class Resolver:
             depth = self.eval_name_layout(source_config) or 0
             if depth and len(probe_segments) > depth:
                 probe_segments = probe_segments[depth:]
-        match = self._probe_benchmark_segments(probe_segments, source_config)
+        match = self._probe_benchmark_segments(
+            probe_segments, source_config, row_metric_id=row_metric_id
+        )
         if match is None and dropped_source:
             match = self._probe_benchmark_segments(
-                [segments[0], *probe_segments], source_config, alias_tiers_only_at=0
+                [segments[0], *probe_segments], source_config,
+                alias_tiers_only_at=0, row_metric_id=row_metric_id,
             )
         return match
+
+    def resolve_benchmark_in_dataset(
+        self,
+        row_name: Optional[str],
+        dataset_name: Optional[str],
+        source_config: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> Optional[str]:
+        """Canonical id of `match_benchmark_in_dataset`, or None."""
+        match = self.match_benchmark_in_dataset(
+            row_name, dataset_name, source_config, description
+        )
+        return match.canonical_id if match is not None else None
+
+    def match_benchmark_in_dataset(
+        self,
+        row_name: Optional[str],
+        dataset_name: Optional[str],
+        source_config: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> Optional["DatasetMatch"]:
+        """The benchmark a result row names, read inside the dataset the row
+        itself states (`source_data.dataset_name`), with the evidence that
+        placed it; None for no opinion.
+
+        A short row name (`Safety`) is only unambiguous next to its dataset:
+        RewardBench and RewardBench 2 both have a `Safety` part, and one
+        folder (`source_config`) can hold both datasets' records. When the
+        dataset name resolves (exact or normalized tier) to a registered
+        benchmark D:
+
+        1. Within D's tree (D and its descendants), the benchmarks the row
+           name names: by a global alias, an alias scoped to this row's own
+           `source_config`, the id, the display name, or a descendant's
+           display name with D's display name removed from its front
+           (`RewardBench 2 Safety` under `RewardBench 2` is `Safety`).
+           Aliases scoped to other sources are never read: their equivalence
+           was stated for that source only. Exactly one such benchmark is
+           the answer; two is no opinion.
+        2. Otherwise, a row whose name resolves to a benchmark R outside D's
+           tree is placed on D only when the row's own description names R
+           and names D, as whole tokens, by a strictly longer span that
+           contains R's (`Overall RewardBench 2 Score`: `RewardBench 2`
+           around `RewardBench`). The description then corrects the row
+           name rather than merely mentioning the dataset. A description
+           that names only R (`MMLU accuracy` in dataset MMLU-Pro), or only
+           D (an aggregator's name beside its own index), is no opinion.
+
+        `evidence` says which: `name_exact` when the row name is, byte for
+        byte, one of those names (an identity statement, like an exact
+        alias); `name_normalized` when it matches only after
+        normalization; `description` for rule 2."""
+        if (
+            not row_name or not dataset_name
+            or not isinstance(row_name, str) or not isinstance(dataset_name, str)
+            or self.canonical_store is None
+        ):
+            return None
+        dataset_id = exact_match(
+            dataset_name, "benchmark", source_config, self.store
+        ) or normalized_match(dataset_name, "benchmark", self.store, source_config)
+        if dataset_id is None:
+            return None
+        row_key = normalize(row_name)
+        if not row_key:
+            return None
+
+        subtree = self._benchmark_subtree(dataset_id)
+        names = self._benchmark_names(source_config)
+        dataset_display = self._benchmark_display(dataset_id) or ""
+        dataset_display_key = normalize(dataset_display)
+        exact_hits: set[str] = set()
+        hits: set[str] = set()
+        stripped = row_name.strip()
+        for bench in subtree:
+            spellings = list(names.get(bench, ()))
+            if bench != dataset_id and dataset_display_key:
+                display = self._benchmark_display(bench) or ""
+                if normalize(display).startswith(dataset_display_key + " ") and (
+                    display.startswith(dataset_display + " ")
+                ):
+                    spellings.append(display[len(dataset_display) + 1:])
+                elif normalize(display).startswith(dataset_display_key + " "):
+                    spellings.append(
+                        normalize(display)[len(dataset_display_key) + 1:]
+                    )
+            for spelling in spellings:
+                if normalize(spelling) == row_key:
+                    hits.add(bench)
+                    if spelling == stripped:
+                        exact_hits.add(bench)
+        if len(hits) == 1:
+            bench = next(iter(hits))
+            evidence = "name_exact" if bench in exact_hits else "name_normalized"
+            return DatasetMatch(bench, dataset_id, evidence)
+        if hits:
+            return None
+
+        if not description or not isinstance(description, str):
+            return None
+        row_id = self.resolve(
+            row_name, "benchmark", source_config, check_hf=False
+        ).canonical_id
+        if row_id is None or row_id in subtree:
+            return None
+        desc_tokens = normalize(description).split()
+        d_spans = self._spans_named_in(desc_tokens, names.get(dataset_id, ()))
+        r_spans = self._spans_named_in(desc_tokens, names.get(row_id, ()))
+        if not r_spans:
+            return None
+        # Every mention of R must sit inside a longer mention of D.
+        for r_start, r_end in r_spans:
+            if not any(
+                d_start <= r_start and r_end <= d_end
+                and (d_end - d_start) > (r_end - r_start)
+                for d_start, d_end in d_spans
+            ):
+                return None
+        return DatasetMatch(dataset_id, dataset_id, "description")
+
+    @staticmethod
+    def _spans_named_in(tokens: list[str], spellings) -> list[tuple[int, int]]:
+        """`[start, end)` token spans where a spelling appears in `tokens` as a
+        contiguous run of whole tokens."""
+        spans: set[tuple[int, int]] = set()
+        for spelling in spellings:
+            needle = normalize(spelling).split()
+            n = len(needle)
+            if not n:
+                continue
+            for i in range(len(tokens) - n + 1):
+                if tokens[i:i + n] == needle:
+                    spans.add((i, i + n))
+        return sorted(spans)
+
+    def _benchmark_display(self, canonical_id: str) -> Optional[str]:
+        row = self.canonical_store.lookup("benchmark", canonical_id) or {}
+        display = row.get("display_name")
+        return display if isinstance(display, str) else None
+
+    def _benchmark_children(self) -> dict[str, list[str]]:
+        cached = getattr(self, "_benchmark_children_cache", None)
+        if cached is not None:
+            return cached
+        children: dict[str, list[str]] = {}
+        df = self.canonical_store._tables.get("benchmark")
+        if df is not None and not df.empty and "parent_benchmark_id" in df.columns:
+            for cid, parent in zip(df["id"], df["parent_benchmark_id"]):
+                if isinstance(cid, str) and isinstance(parent, str) and parent != cid:
+                    children.setdefault(parent, []).append(cid)
+        self._benchmark_children_cache = children
+        return children
+
+    def _benchmark_subtree(self, canonical_id: str) -> set[str]:
+        children = self._benchmark_children()
+        seen = {canonical_id}
+        stack = [canonical_id]
+        while stack:
+            for child in children.get(stack.pop(), ()):
+                if child not in seen:
+                    seen.add(child)
+                    stack.append(child)
+        return seen
+
+    def _benchmark_names(self, source_config: Optional[str]) -> dict[str, set[str]]:
+        """canonical id -> spellings as written: the id, the display name, and
+        every non-rejected global alias plus those scoped to `source_config`.
+        Cached per source."""
+        cache = getattr(self, "_benchmark_names_cache", None)
+        if cache is None:
+            cache = self._benchmark_names_cache = {}
+        if source_config in cache:
+            return cache[source_config]
+        names: dict[str, set[str]] = {}
+        for raw, cid in self.store.get_all_for_type("benchmark", source_config):
+            if isinstance(raw, str) and isinstance(cid, str):
+                names.setdefault(cid, set()).add(raw)
+        df = self.canonical_store._tables.get("benchmark")
+        if df is not None and not df.empty:
+            displays = df["display_name"] if "display_name" in df.columns else [None] * len(df)
+            for cid, display in zip(df["id"], displays):
+                if isinstance(cid, str):
+                    names.setdefault(cid, set()).add(cid)
+                    if isinstance(display, str):
+                        names[cid].add(display)
+        cache[source_config] = names
+        return names
 
     def eval_name_layout(self, source_config: Optional[str]) -> Optional[int]:
         """The source's declared dotted-name layout (registry composites
@@ -478,6 +686,7 @@ class Resolver:
         source_config: Optional[str],
         *,
         alias_tiers_only_at: int = -1,
+        row_metric_id: Optional[str] = None,
     ) -> Optional["StructuredBenchmark"]:
         """Probe every segment against the benchmark vocabulary and spell the
         winner (see `resolve_structured_benchmark`). The segment at
@@ -485,7 +694,9 @@ class Resolver:
         takes the exact/normalized tiers only: fuzzy run-configuration stripping
         on a source folder name would be a new inference surface. `-1` gives
         every segment the full chain."""
-        if len(segments) > 1 and self._segment_is_metric(segments[-1], source_config):
+        if len(segments) > 1 and self._segment_is_metric(
+            segments[-1], source_config, row_metric_id
+        ):
             segments = segments[:-1]
 
         hits: list[tuple[int, str]] = []
@@ -592,18 +803,32 @@ class Resolver:
             normalize(segment) + " "
         )
 
-    def _segment_is_metric(self, segment: str, source_config: Optional[str]) -> bool:
+    def _segment_is_metric(
+        self,
+        segment: str,
+        source_config: Optional[str],
+        row_metric_id: Optional[str] = None,
+    ) -> bool:
         """True when a trailing segment resolves as a metric or reads as one to
         the metric extractor (`bfcl.live.live_accuracy`), so a metric tail is
-        never mistaken for a subset."""
-        if exact_match(segment, "metric", source_config, self.store):
-            return True
+        never mistaken for a subset.
+
+        An alias alone is a weak claim: a short code is as likely a category
+        (`xstest.CD`) as a metric (`CD`, Chamfer Distance). When the caller
+        says which metric the row resolved to, an alias naming a different
+        metric makes the segment a metric tail only if it also reads as one
+        (`F1` on a row that resolved to `macro-f1`)."""
+        alias = exact_match(segment, "metric", source_config, self.store)
+        if not alias and len(segment) >= _MIN_METRIC_SEGMENT_LEN:
+            alias = normalized_match(segment, "metric", self.store, source_config)
+        if alias:
+            if row_metric_id is None or alias == row_metric_id:
+                return True
+            return segment_reads_as_metric(segment)
         if len(segment) < _MIN_METRIC_SEGMENT_LEN:
             # A two-character tail is ambiguous (`mr` is a Marathi slice as much
             # as the mean-recall alias `mR`): only a byte-exact alias may claim it.
             return False
-        if normalized_match(segment, "metric", self.store, source_config):
-            return True
         return segment_reads_as_metric(segment)
 
     # ------------------------------------------------------------------

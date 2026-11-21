@@ -1614,6 +1614,7 @@
 
 - id: arc-agi
   display_name: ARC-AGI
+  aliases: ["ARC-AGI-1"]
   description: Abstraction and Reasoning Corpus — tests general fluid intelligence.
   dataset_repo: null
   parent_benchmark_id: null
@@ -9311,6 +9312,7 @@
     - emma
 
 - id: emobench
+  preferred_metric: quasi-exact-match
   display_name: EmoBench
   dataset_repo: null
   parent_benchmark_id: null
@@ -25018,15 +25020,17 @@
     - wmt23
 
 - id: wmt24
-  display_name: Wmt24
-  dataset_repo: null
+  display_name: WMT24++
+  dataset_repo: google/wmt24pp
   parent_benchmark_id: null
   tags: '["multilingual"]'
-  metadata: '{}'
+  metadata: '{"note": "WMT24++: llm-stats publishes raw_benchmark_id wmt24++ and the EEE adapter strips the plus signs, so its wmt24 rows are this benchmark."}'
   review_status: reviewed
   aliases:
     - Wmt24
     - llm_stats_wmt24
+    - WMT24++
+    - wmt24pp
 
 - id: worldgenbench
   display_name: WorldGenBench
@@ -28257,6 +28261,10 @@
 
 - id: programbench
   display_name: ProgramBench
+  # BenchPress files the fully-resolved rate under its own slug; it is the
+  # same benchmark, and the metric (resolution-rate) carries the difference.
+  scoped_aliases:
+    benchpress: ["program-bench-fully-resolved"]
   description: ProgramBench — reconstruct a program so it passes hidden behavioural tests; strict / lenient / almost-resolved scoring variants are reported as subsets.
   dataset_repo: null
   parent_benchmark_id: null
@@ -28497,6 +28505,7 @@
     - health_orsc_bench
 
 - id: vectara-hallucination-leaderboard
+  preferred_metric: hallucination-rate
   display_name: Vectara Hallucination Leaderboard
   description: Vectara's HHEM-scored summarisation hallucination benchmark; topic categories and text-complexity cuts are reported as subsets of the one benchmark.
   dataset_repo: null
@@ -28509,3 +28518,143 @@
     - vectara-hallucination-leaderboard
     - vectara_hallucination_leaderboard
     - hallucination-leaderboard
+- id: dochop
+  display_name: DocHop
+  dataset_repo: zhuoranyu336/dochop
+  parent_benchmark_id: null
+  tags: '[]'
+  metadata: '{"note": "As the OpenEval records state it: benchmark_name dochop, paper https://icml.cc/virtual/2026/poster/64260."}'
+  review_status: draft
+  aliases:
+    - dochop
+
+# Benchmarks other sources already report but the registry did not know.
+# Each entry states what the source records say; draft until reviewed.
+
+- id: critpt
+  display_name: CritPt
+  description: "CritPt: research-level physics problems with machine-verifiable answers; the public test set has 70 challenges."
+  dataset_repo: CritPt-Benchmark/CritPt
+  parent_benchmark_id: null
+  tags: '["science", "reasoning"]'
+  metadata: '{"paper": "https://arxiv.org/abs/2509.26574", "source_urls": ["https://github.com/CritPt-Benchmark/CritPt", "https://critpt.com/"], "note": "As the BenchPress and Papers with Code records state it. llm-stats spells it CritPT."}'
+  review_status: draft
+  aliases:
+    - CritPt
+    - critpt
+
+- id: parsebench
+  preferred_metric: parsebench-overall
+  display_name: ParseBench
+  description: "ParseBench: document parsing scored on five dimensions (tables, charts, content faithfulness, semantic formatting, visual grounding) and their mean."
+  dataset_repo: llamaindex/ParseBench
+  parent_benchmark_id: null
+  tags: '["multimodal"]'
+  metadata: '{"paper": "https://arxiv.org/abs/2604.08538", "source_urls": ["https://github.com/run-llama/parsebench"], "note": "As the Papers with Code records state it; the source names the mean of the five dimensions Overall."}'
+  review_status: draft
+  aliases:
+    - ParseBench
+    - parsebench
+
+- id: omniparsebench
+  preferred_metric: omniparsebench-overall
+  display_name: OmniParseBench
+  description: "OmniParseBench: document parsing scored as the share of text, table-cell and layout tests passed, and the mean of the three."
+  dataset_repo: datalab-to/omni_parse_bench
+  parent_benchmark_id: null
+  tags: '["multimodal"]'
+  metadata: '{"source_urls": ["https://paperswithcode.com/dataset/omniparsebench"], "note": "As the Papers with Code records state it; the source names the mean of the three families Overall."}'
+  review_status: draft
+  aliases:
+    - OmniParseBench
+    - omniparsebench
+
+- id: strongreject
+  display_name: StrongREJECT
+  scoped_aliases:
+    benchpress: ["strongreject-compliance"]
+  description: "StrongREJECT: 313 forbidden prompts for measuring jailbreak compliance."
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["safety"]'
+  metadata: '{"paper": "https://arxiv.org/abs/2402.10260", "note": "As the BenchPress record states it (StrongREJECT 313-prompt suite, compliance rate, lower is better, reported in the SpaceXAI model card)."}'
+  review_status: draft
+  aliases:
+    - StrongREJECT
+    - strongreject
+
+- id: xai-general-refusal-compliance
+  display_name: SpaceXAI General Refusal Compliance
+  description: "SpaceXAI internal multilingual general-refusal suite; a multilingual should-refuse grader marks compliance. Lower is better."
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["safety", "proprietary"]'
+  metadata: '{"source_urls": ["https://media.x.ai/v1/website/card-4p6-4cd2dc57.pdf"], "note": "As the BenchPress record states it. Vendor-internal: the task count is undisclosed and there is no public dataset or paper."}'
+  review_status: draft
+  aliases:
+    - xai-general-refusal-compliance
+
+- id: xai-standard-jailbreak-compliance
+  display_name: SpaceXAI Standard Jailbreaks
+  description: "SpaceXAI internal standard jailbreak suite; a should-refuse grader marks compliance. Lower is better."
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["safety", "proprietary"]'
+  metadata: '{"source_urls": ["https://media.x.ai/v1/website/card-4p6-4cd2dc57.pdf"], "note": "As the BenchPress record states it. Vendor-internal: the task count is undisclosed and there is no public dataset or paper."}'
+  review_status: draft
+  aliases:
+    - xai-standard-jailbreak-compliance
+
+- id: xai-long-horizon-jailbreak-compliance
+  display_name: SpaceXAI Long-Horizon Jailbreaks
+  description: "SpaceXAI internal long-horizon jailbreak suite (multi-turn, Crescendo and malicious-use attacks); a should-refuse grader marks compliance. Lower is better."
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["safety", "proprietary"]'
+  metadata: '{"source_urls": ["https://media.x.ai/v1/website/card-4p6-4cd2dc57.pdf"], "note": "As the BenchPress record states it. Vendor-internal: the task count is undisclosed and there is no public dataset or paper."}'
+  review_status: draft
+  aliases:
+    - xai-long-horizon-jailbreak-compliance
+
+- id: xai-self-harm-compliance
+  display_name: SpaceXAI Self-Harm Compliance
+  description: "SpaceXAI internal self-harm suite; the grader marks self-harm assistance or a failed redirection as compliance. Lower is better."
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["safety", "proprietary"]'
+  metadata: '{"source_urls": ["https://media.x.ai/v1/website/card-4p6-4cd2dc57.pdf"], "note": "As the BenchPress record states it. Vendor-internal: the task count is undisclosed and there is no public dataset or paper."}'
+  review_status: draft
+  aliases:
+    - xai-self-harm-compliance
+
+- id: xai-child-safety-compliance
+  display_name: SpaceXAI Child Safety Compliance
+  description: "SpaceXAI internal CSAM and child-safety suite (multi-turn); a child-safety grader marks compliance. Lower is better."
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["safety", "proprietary"]'
+  metadata: '{"source_urls": ["https://media.x.ai/v1/website/card-4p6-4cd2dc57.pdf"], "note": "As the BenchPress record states it. Vendor-internal: the task count is undisclosed and there is no public dataset or paper."}'
+  review_status: draft
+  aliases:
+    - xai-child-safety-compliance
+- id: hackerbench-v0-2-benign-refusal
+  display_name: HackerBench v0.2 Benign Refusal
+  description: "HackerBench v0.2, benign split: share of benign security requests the model refuses under standard safeguards. Lower is better."
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["safety", "cybersecurity", "proprietary"]'
+  metadata: '{"source_urls": ["https://media.x.ai/v1/website/card-4p6-4cd2dc57.pdf"], "note": "As the BenchPress record states it. Vendor-internal: the task count is undisclosed. The harmful and dual-use split is a separate BenchPress slug, not registered."}'
+  review_status: draft
+  aliases:
+    - hackerbench-v0-2-benign-refusal
+
+- id: legal-agent-benchmark-harvey-held-out
+  display_name: "Legal Agent Benchmark: Harvey Held-Out"
+  description: "Harvey's Legal Agent Benchmark, the separate proprietary held-out set, scored all-pass per task."
+  dataset_repo: null
+  parent_benchmark_id: null
+  tags: '["professional-services", "legal", "agentic", "proprietary"]'
+  metadata: '{"source_urls": ["https://www.anthropic.com/claude-opus-5-system-card", "https://www.harvey.ai/blog/introducing-harveys-legal-agent-benchmark"], "note": "As the BenchPress record states it: a held-out set separate from the public Legal Agent Benchmark (hlab); the task count is not disclosed."}'
+  review_status: draft
+  aliases:
+    - legal-agent-benchmark-harvey-held-out
