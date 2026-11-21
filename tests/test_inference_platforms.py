@@ -38,20 +38,29 @@ def _strip_marker(form: str) -> str:
     return form
 
 
-@pytest.fixture
-def seeded_store(tmp_path, monkeypatch):
-    fixtures_dir = tmp_path / "fixtures"
+@pytest.fixture(scope="module")
+def seeded_fixtures_dir(tmp_path_factory):
+    """One real `seed --local` for the whole module. Every test here only reads
+    the seeded tables, so they share it instead of reseeding (about 25s each)."""
+    fixtures_dir = tmp_path_factory.mktemp("inference_platforms") / "fixtures"
     fixtures_dir.mkdir()
-
-    monkeypatch.setenv("LOCAL_MODE", "true")
-    monkeypatch.setenv("FIXTURES_PATH", str(fixtures_dir))
-    hf_store._store = None
-
-    result = CliRunner().invoke(
-        app, ["seed", "--local", "--seed-dir", str(SEED_DIR)]
-    )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("LOCAL_MODE", "true")
+        mp.setenv("FIXTURES_PATH", str(fixtures_dir))
+        hf_store._store = None
+        result = CliRunner().invoke(
+            app, ["seed", "--local", "--seed-dir", str(SEED_DIR)]
+        )
+        hf_store._store = None
     assert result.exit_code == 0, result.output
+    return fixtures_dir
 
+
+@pytest.fixture
+def seeded_store(seeded_fixtures_dir, monkeypatch):
+    """A fresh store loaded from the shared seed, so no test sees another's state."""
+    monkeypatch.setenv("LOCAL_MODE", "true")
+    monkeypatch.setenv("FIXTURES_PATH", str(seeded_fixtures_dir))
     hf_store._store = None
     store = hf_store.get_store()
     store.load()
@@ -155,28 +164,17 @@ def test_every_host_suffix_the_fuzzy_strategy_strips_is_attributed(seeded_store)
 
 
 @pytest.fixture(scope="module")
-def seeded_snapshot(tmp_path_factory):
-    """One `seed --local` for the module: `(resolver, tables)`. Seeding takes most of a minute, so the cases below share it."""
+def seeded_snapshot(seeded_fixtures_dir):
+    """`(resolver, tables)` from the module's shared seed."""
     import pandas as pd
 
-    fixtures_dir = tmp_path_factory.mktemp("provider_vs_developer") / "fixtures"
-    fixtures_dir.mkdir()
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("LOCAL_MODE", "true")
-        mp.setenv("FIXTURES_PATH", str(fixtures_dir))
-        hf_store._store = None
-        result = CliRunner().invoke(
-            app, ["seed", "--local", "--seed-dir", str(SEED_DIR)]
-        )
-        hf_store._store = None
-    assert result.exit_code == 0, result.output
     tables = {
-        name: pd.read_parquet(fixtures_dir / f"canonical_{name}.parquet")
+        name: pd.read_parquet(seeded_fixtures_dir / f"canonical_{name}.parquet")
         for name in ("models", "inference_platforms", "orgs")
     }
     from eval_entity_resolver import Resolver
 
-    return Resolver.from_parquet(str(fixtures_dir)), tables
+    return Resolver.from_parquet(str(seeded_fixtures_dir)), tables
 
 
 def _prefix_token_platforms(platforms) -> dict[str, dict]:
