@@ -6462,3 +6462,10 @@
   tags: '[]'
   metadata: '{}'
   review_status: reviewed
+- id: meituan-longcat
+  display_name: meituan-longcat
+  hf_org: meituan-longcat
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
