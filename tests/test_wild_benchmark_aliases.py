@@ -220,3 +220,34 @@ def test_byte_exact_short_metric_tail_is_still_a_metric(resolver):
     # case-insensitive tiers need >= 3 chars.
     assert resolver._segment_is_metric("F1", None)
     assert not resolver._segment_is_metric("mr", None)
+
+
+def test_alias_only_tail_must_name_the_rows_metric(resolver):
+    # `CD` is the Chamfer Distance alias and an XSTest category code. On a
+    # row whose metric is `score` it is the category.
+    plain = resolver.resolve_structured_benchmark("xstest.CD", "aixamine_over_refusal")
+    assert (plain.canonical_id, plain.subset) == ("xstest", None)
+    told = resolver.resolve_structured_benchmark(
+        "xstest.CD", "aixamine_over_refusal", row_metric_id="score"
+    )
+    assert (told.canonical_id, told.benchmark_raw, told.subset) == ("xstest", "xstest CD", "CD")
+    agreed = resolver.resolve_structured_benchmark(
+        "xstest.CD", "aixamine_over_refusal", row_metric_id="chamfer-distance"
+    )
+    assert agreed.subset is None
+
+
+@pytest.mark.parametrize(
+    "raw,row_metric,expected",
+    [
+        # The tail reads as a metric to the extractor: dropped whatever the
+        # row resolved to.
+        ("bfcl.live.live_accuracy", "score", ("bfcl-live", "bfcl live", "live")),
+        # `F1` is an alias of a different metric than the row's, and reads as
+        # a metric too: still a tail.
+        ("xstest.F1", "macro-f1", ("xstest", "xstest", None)),
+    ],
+)
+def test_metric_tail_is_dropped_on_any_row(resolver, raw, row_metric, expected):
+    m = resolver.resolve_structured_benchmark(raw, None, row_metric_id=row_metric)
+    assert (m.canonical_id, m.benchmark_raw, m.subset) == expected

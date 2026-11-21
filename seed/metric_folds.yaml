@@ -1,20 +1,28 @@
 # Per-benchmark metric naming folds (merged-benchmark-view spec, R2).
 # An entry states: `from_metric` reported on `benchmark` IS the same
-# measurement as `to_metric`, published under a generic name. Folds apply
-# to every source reporting from_metric on that benchmark — so an entry is
-# only valid when NO source uses that metric name for a different
-# measurement on the same benchmark (that conflict is why hle needed a
+# measurement as `to_metric`, published under a generic name. An unscoped
+# fold applies to every source reporting from_metric on that benchmark — so
+# it is only valid when NO source uses that metric name for a different
+# measurement on the same benchmark; otherwise scope it to the sources it
+# describes (see `source_config` below). (That conflict is why hle needed a
 # producer hotfix first, and why alpacaeval-2-0 / math / truthfulqa /
 # scicode carry no score fold at all).
 # NAMING FOLDS ONLY — protocol variants (cot-correct, exact-match under a
 # different elicitation) never fold.
 #
 # A row with no `source_config` is the benchmark-wide naming fold and never
-# carries a conversion. A row WITH `source_config` carries the published-scale
-# conversion for that one source: affine, canonical = published *
-# scale_factor + scale_offset. A scoped row may leave the metric unchanged
-# (from_metric == to_metric) when a source differs only in scale; otherwise it
-# must name the same to_metric as the benchmark-wide row.
+# carries a conversion. A row WITH `source_config` applies to that one source
+# and wins over the benchmark-wide row for it. It may carry the published-scale
+# conversion for that source (affine, canonical = published * scale_factor +
+# scale_offset), leave the metric unchanged (from_metric == to_metric) when a
+# source differs only in scale, or rename for that source alone when other
+# sources use the same metric name for a different measurement. Beside a
+# benchmark-wide row it must name the same to_metric.
+#
+# `lower_is_better` (optional) is the benchmark's own direction for
+# `to_metric` on that benchmark (for that source, if scoped), overriding the
+# metric's registry default. A row with from_metric == to_metric may carry
+# only that.
 #
 # `source_config` is the UPSTREAM DATASET CONFIG NAME as published in the EEE
 # datastore (`data/<config>/`) — `openeval`, `llm-stats`, `helm_capabilities`,
@@ -74,10 +82,15 @@
 
 # HELM safety_metrics.py: score is the mean of GPT-4o and Llama-3.1-405B judge
 # ratings on [0,1], higher is better; OpenEval publishes the two per-judge components.
+# Scoped to those two sources where another source reports its own `score` on
+# the benchmark (aiXamine's 0-100 pass rates, llm-stats' XSTest score).
 - {benchmark: harmbench, from_metric: score, to_metric: harmbench-refusal-score}
-- {benchmark: xstest, from_metric: score, to_metric: xstest-appropriateness-score}
-- {benchmark: simplesafetytests, from_metric: score, to_metric: simplesafetytests-safety-score}
-- {benchmark: anthropic-red-team, from_metric: score, to_metric: anthropic-red-team-harmlessness-score}
+- {benchmark: xstest, from_metric: score, to_metric: xstest-appropriateness-score, source_config: helm_safety}
+- {benchmark: xstest, from_metric: score, to_metric: xstest-appropriateness-score, source_config: openeval}
+- {benchmark: simplesafetytests, from_metric: score, to_metric: simplesafetytests-safety-score, source_config: helm_safety}
+- {benchmark: simplesafetytests, from_metric: score, to_metric: simplesafetytests-safety-score, source_config: openeval}
+- {benchmark: anthropic-red-team, from_metric: score, to_metric: anthropic-red-team-harmlessness-score, source_config: helm_safety}
+- {benchmark: anthropic-red-team, from_metric: score, to_metric: anthropic-red-team-harmlessness-score, source_config: openeval}
 
 # WildBench: OpenEval's raw 1-10 judge channels → (x-1)/9; BenchPress
 # (OpenCompass) single-answer WB-Score on -100..100 → s/180 + 4/9.
@@ -91,3 +104,52 @@
 # and llm-stats `score` are both the HealthBench overall score:
 - {benchmark: healthbench, from_metric: bootstrap-score, to_metric: healthbench-score}
 - {benchmark: healthbench, from_metric: score, to_metric: healthbench-score}
+
+
+# OR-Bench prompts are benign but look harmful, so a refusal there is
+# over-refusal (lower is better), not refusal-rate.
+- {benchmark: or-bench, from_metric: refusal-rate, to_metric: over-refusal-rate}
+- {benchmark: health-orsc-bench, from_metric: refusal-rate, to_metric: over-refusal-rate,
+   note: "Health-ORSC-Bench (arXiv:2601.17642) is built from benign boundary prompts, so a refusal there is over-refusal, the same reading as OR-Bench."}
+
+# Vending-Bench 2 `score` is the end-of-run bank balance in US dollars
+# (BenchPress labels it `dollars`, llm-stats gives unit usd; Papers with Code
+# names it "Bank Balance ($)" and resolves there directly).
+- {benchmark: vending-bench-2, from_metric: score, to_metric: bank-balance}
+
+# llm-stats states no metric name (every label is "<Benchmark> score"); on
+# these benchmarks its description or the benchmark name states the metric.
+- {benchmark: qwenwebbench, from_metric: score, to_metric: elo, source_config: llm-stats,
+   note: "description: scores are reported as BT/Elo ratings"}
+- {benchmark: terminal-bench-science, from_metric: score, to_metric: accuracy, source_config: llm-stats,
+   note: "description: reported as accuracy; the other sources on this benchmark report accuracy"}
+- {benchmark: translation-set1-en-spbleu, from_metric: score, to_metric: bleu, source_config: llm-stats}
+- {benchmark: translation-en-set1-spbleu, from_metric: score, to_metric: bleu, source_config: llm-stats}
+- {benchmark: translation-set1-en-comet22, from_metric: score, to_metric: comet-22, source_config: llm-stats}
+- {benchmark: translation-en-set1-comet22, from_metric: score, to_metric: comet-22, source_config: llm-stats}
+
+# BenchPress publishes percentages. On these benchmarks some of its values
+# are below 1.5, which a consumer cannot tell from a fraction, so the
+# conversion is stated here instead of detected.
+- {benchmark: arc-agi-2, from_metric: accuracy, to_metric: accuracy, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: matharena-apex, from_metric: accuracy, to_metric: accuracy, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: arc-agi-3, from_metric: task-success-rate, to_metric: task-success-rate, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: exploitgym, from_metric: task-success-rate, to_metric: task-success-rate, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: critpt, from_metric: accuracy, to_metric: accuracy, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: arc-agi, from_metric: accuracy, to_metric: accuracy, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: strongreject, from_metric: fulfillment-rate, to_metric: fulfillment-rate, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: xai-general-refusal-compliance, from_metric: fulfillment-rate, to_metric: fulfillment-rate, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: xai-standard-jailbreak-compliance, from_metric: fulfillment-rate, to_metric: fulfillment-rate, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: xai-long-horizon-jailbreak-compliance, from_metric: fulfillment-rate, to_metric: fulfillment-rate, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: xai-self-harm-compliance, from_metric: fulfillment-rate, to_metric: fulfillment-rate, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: hackerbench-v0-2-benign-refusal, from_metric: over-refusal-rate, to_metric: over-refusal-rate, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: legal-agent-benchmark-harvey-held-out, from_metric: all-rules-pass-rate, to_metric: all-rules-pass-rate, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: xai-child-safety-compliance, from_metric: fulfillment-rate, to_metric: fulfillment-rate, source_config: benchpress, scale_factor: 0.01}
+- {benchmark: programbench, from_metric: resolution-rate, to_metric: resolution-rate, source_config: benchpress, scale_factor: 1.0,
+   note: "BenchPress publishes the fully-resolved rate as a percentage, which is this metric's scale; its values are all below 1, which would otherwise be read as fractions and multiplied by 100."}
+
+# llm-stats' LMArena Text description says the leaderboard "ranks models ...
+# uses Elo ratings"; the extractor reads "ranks" first and the 1465-1483
+# values land on `rank`, lower-is-better. They are Arena Elo ratings, the same
+# quantity the `arena` source publishes as `elo` on this benchmark.
+- {benchmark: lmarena-text, from_metric: rank, to_metric: elo, source_config: llm-stats}
