@@ -1,5 +1,5 @@
 {
-  "parquet_sha256": "9cccee41a55de4f02310719c4072608c0086f88d1e3fc7c5883197cb1d0bba2a",
+  "parquet_sha256": "54b652236c126fd7c92ddd01f93fd13f48f1d7425bab10a67f705a6f798e2f35",
   "rows_checked_at_sha256": [
     "0-hero/Matter-0.1-7B-DPO-preview",
     "0-hero/Matter-0.1-7B-boost-DPO-preview",
@@ -1971,6 +1971,7 @@
     "WizardLMTeam/WizardLM-13B-V1.2",
     "WizardLMTeam/WizardLM-70B-V1.0",
     "Wladastic/Mini-Think-Base-1B",
+    "X-Ai/Grok-4-Fast-Non-Reasoning",
     "X-PLUG/mPLUG-Owl",
     "X-PLUG/mPLUG-Owl2",
     "X-PLUG/mPLUG-Owl3",
@@ -12152,6 +12153,7 @@
     "theprint/phi-3-mini-4k-python",
     "thinkcoder/llama3-8b-instruct-lora-8-sft",
     "thinkingmachines/Inkling",
+    "thinkingmachines/Inkling-2-Mini",
     "thinkingmachines/Inkling-2-Small",
     "thinkingmachines/Inkling-Small",
     "thinkingmachines/inkling",
