@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: write
-  # `gh workflow run seed.yml` needs actions:write; the default token has read.
+  # Dispatching seed.yml needs actions:write; the default token has read.
   actions: write
   issues: write
 
@@ -136,36 +136,17 @@ jobs:
             echo "needed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Pins seed.yml to pushed_sha (or origin/main on a beacon retry) and polls
+      # run completion across read-replica lag; see scripts/ci_dispatch_seed.py.
       - name: Publish and wait for verified completion
         if: steps.deploy.outputs.needed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          # Pin the child to the commit this run pushed, so a stale branch
-          # resolution of --ref main cannot make it publish someone else's tree.
-          expected="${{ steps.commit.outputs.pushed_sha }}"
-          # Beacon-retry path: nothing was committed today, so publish whatever
-          # main currently holds.
-          [ -n "$expected" ] || expected="$(git ls-remote origin refs/heads/main | cut -f1)"
-          correlation="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          title="Seed + publish (${correlation})"
-          dispatch=$(gh workflow run seed.yml --ref main -f source_run_id="${correlation}" -f expected_sha="$expected" 2>&1 | tee /dev/stderr)
-          url=$(printf '%s\n' "$dispatch" | grep -oE 'actions/runs/[0-9]+' | head -n 1 || true)
-          run_id="${url##*/}"
-          if [ -z "$run_id" ]; then
-            # Fallback for a gh build that prints no run URL: correlate by title.
-            for attempt in $(seq 1 30); do
-              run_id=$(gh run list --workflow seed.yml --event workflow_dispatch --branch main --limit 50 --json databaseId,displayTitle --jq ".[] | select(.displayTitle == \"$title\") | .databaseId" | head -n 1)
-              [ -n "$run_id" ] && break
-              sleep 5
-            done
-          fi
-          if [ -z "$run_id" ]; then
-            echo "::error::could not locate the correlated seed.yml run"
-            exit 1
-          fi
-          gh run watch "$run_id" --exit-status
+          EXPECTED_SHA: ${{ steps.commit.outputs.pushed_sha }}
+        run: >-
+          uv run python scripts/ci_dispatch_seed.py
+          --source-run-id "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          --expected-sha "${EXPECTED_SHA}"
 
       # Stall beacon: one sticky issue keyed by label, never one per run. Any
       # failure or cancellation opens-or-comments it; it is cleared only after
