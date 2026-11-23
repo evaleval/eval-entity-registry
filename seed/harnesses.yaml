@@ -126,3 +126,13 @@
   fork_url: null
   metadata: '{"org": "cordademocracy", "code_repo": "https://github.com/cordademocracy/Polistemics"}'
   review_status: draft
+
+# Laya — Phocinae local typed-decision runtime. Minted for the
+# Phocinae-Largha-150M-v1 typed-decisions EEE_datastore submission (published
+# as eval_library `laya` 0.3.20); review_status draft -> maintainer promotes.
+- id: laya
+  display_name: Laya
+  version: null
+  fork_url: null
+  metadata: '{"org": "phocinae", "note": "Phocinae local typed-decision runtime; eval_library published by the Phocinae-Largha-150M-v1 typed-decisions EEE records (laya 0.3.20)"}'
+  review_status: draft
