@@ -2509,3 +2509,28 @@ def test_fresh_entry_on_a_committed_id_is_never_renamed_to_another_committed_id(
     assert claims["google/veo-3.1-fast"] == "google/veo-3.1-fast"
     again, _ = mod._carry_forward_committed([dict(e) for e in fresh], batch)
     assert {e["id"] for e in again if "display_name" in e} == ids
+
+
+def test_carry_forward_preserves_reviewed_status_on_full_entries(cf_mod):
+    """A full committed entry that was already reviewed must not downgrade to
+    draft when its first-party lab drops it while routers still list it;
+    alias-only enrich records must never gain a review_status key."""
+    committed = [
+        dict(_cf_entry("openai/gpt-4-cftest", ["gpt-4-cftest"]), review_status="reviewed"),
+        dict(_cf_entry("openai/o1-cftest", ["o1-cftest"]), review_status="reviewed"),
+        dict(_cf_entry("openai/enrich-cftest", ["enrich-cftest"]), review_status="reviewed"),
+    ]
+    fresh = [
+        dict(_cf_entry("openai/gpt-4-cftest", ["gpt-4-cftest"]), review_status="draft"),
+        dict(_cf_entry("openai/o1_cftest", ["o1_cftest"]), review_status="draft"),
+        {"id": "openai/enrich-cftest", "aliases": ["enrich-cftest-new"]},
+    ]
+    batch, _ = cf_mod._carry_forward_committed([dict(e) for e in fresh], committed)
+    by_id = {e["id"]: e for e in batch}
+    assert by_id["openai/gpt-4-cftest"]["review_status"] == "reviewed"
+    assert by_id["openai/o1-cftest"]["review_status"] == "reviewed"
+    assert "review_status" not in by_id["openai/enrich-cftest"]
+    again, _ = cf_mod._carry_forward_committed([dict(e) for e in fresh], batch)
+    assert {e["id"]: e.get("review_status") for e in again} == {
+        e["id"]: e.get("review_status") for e in batch
+    }

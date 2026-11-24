@@ -54,9 +54,14 @@ skip_source_ids:
 - together/redpajama-incite-3b-chat
 - together/redpajama-incite-3b-instruct
 - together/redpajama-incite-7b
-# Stale tier3 name-inference twin of the models.dev mint mistralai/mistral-large-2402;
-# its alias claim on that id stalled the refresh-models cron (alias-collision abort).
+# Stale tier3 name-inference twins of models.dev mistralai/* canonicals;
+# raw forms are bridged in enrichments/aliases.yaml.
 - mistral/mistral-large-2402
+- mistral/ministral-14b-latest
+# Name-derived roots superseded by the id-keyed openai/gpt-daybreak-* families
+# once rolling -latest pointers keep their id stem; bridged in aliases.yaml.
+- openai/daybreak-blue
+- openai/daybreak-red
 # Bare fresh mint shadowing the committed arcee-ai/trinity-large-preview
 # (identity break caught by the adoption-regression gate); surface form
 # bridged back onto the arcee entity in enrichments/aliases.yaml.

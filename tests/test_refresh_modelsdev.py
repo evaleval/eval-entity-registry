@@ -67,6 +67,118 @@ def test_family_for_strips_latest_suffix(mod):
     assert mod._family_for({"id": "claude-3-5-haiku-latest"}) == "claude-3-5-haiku"
 
 
+def test_family_for_latest_pointer_keeps_id_stem_when_name_rotates(mod):
+    """A rolling `-latest` pointer uses its `id` stem when the lab's marketing
+    `name` diverges, while still keeping dotted spellings when stems agree."""
+    assert mod._family_for({
+        "id": "ministral-14b-latest",
+        "name": "Ministral 3 14B (latest)",
+    }) == "ministral-14b"
+    assert mod._family_for({
+        "id": "gpt-daybreak-blue-latest",
+        "name": "Daybreak Blue",
+    }) == "gpt-daybreak-blue"
+    assert mod._family_for({
+        "id": "claude-3-5-haiku-latest",
+        "name": "Claude 3.5 Haiku (latest)",
+    }) == "claude-3.5-haiku"
+
+
+def test_generate_latest_pointer_with_rotated_name_stays_under_id_family(mod, monkeypatch):
+    """Rotating a `-latest` record's display name must keep the pointer under
+    its `id` family and never emit a childless root under the new name."""
+    api = {
+        "mistral": {
+            "id": "mistral", "name": "Mistral", "models": {
+                "ministral-14b-2512": {
+                    "id": "ministral-14b-2512", "name": "Ministral 3 14B",
+                    "family": "ministral", "release_date": "2025-12-02",
+                    "open_weights": True,
+                    "canonical_model_id": "mistral/ministral-3-14b-instruct-2512",
+                },
+                "ministral-14b-latest": {
+                    "id": "ministral-14b-latest", "name": "Ministral 3 14B (latest)",
+                    "family": "ministral", "release_date": "2025-12-02",
+                    "open_weights": True,
+                    "canonical_model_id": "mistral/ministral-3-14b-instruct-2512",
+                },
+            },
+        },
+    }
+    monkeypatch.setattr(
+        mod, "_HF_AUTHORITY",
+        {"mistralai": {"ministral 3 14b instruct 2512": "mistralai/Ministral-3-14B-Instruct-2512"}},
+    )
+    out, missing = mod._generate_models(api, {"mistralai"})
+    assert missing == []
+    out = mod._finalize_entries(out)
+    by_id = {e["id"]: e for e in out}
+    assert "mistralai/ministral-3-14b" not in by_id
+    assert "mistralai/ministral-14b" in by_id
+    latest = by_id["mistralai/ministral-14b-latest"]
+    assert latest["parents"] == [{
+        "id": "mistralai/ministral-14b",
+        "relationship": "variant",
+        "axis": "version",
+    }]
+    assert "ministral-14b-latest" in latest["aliases"]
+    assert "Ministral 3 14B" in by_id["mistralai/Ministral-3-14B-Instruct-2512"]["aliases"]
+
+
+def test_generate_dotted_id_latest_preserves_child_for_matching_and_divergent_names(mod):
+    """Dotted snapshot/latest ids match their dotted family root during prefix
+    extraction so the child canonical is emitted for both matching and rotated
+    marketing names."""
+    api = {
+        "openai": {
+            "id": "openai", "name": "OpenAI", "models": {
+                "foo-1.2-latest": {
+                    "id": "foo-1.2-latest", "name": "Bar 2",
+                    "family": "foo", "open_weights": False,
+                },
+                "baz-3.4-latest": {
+                    "id": "baz-3.4-latest", "name": "Baz 3.4 (latest)",
+                    "family": "baz", "open_weights": False,
+                },
+            },
+        },
+    }
+    out, missing = mod._generate_models(api, KNOWN_ORGS)
+    assert missing == []
+    by_id = {e["id"]: e for e in mod._finalize_entries(out)}
+    assert "openai/foo-1.2" in by_id
+    assert by_id["openai/foo-1.2-latest"]["parents"] == [{
+        "id": "openai/foo-1.2", "relationship": "variant", "axis": "version",
+    }]
+    assert "foo-1.2-latest" in by_id["openai/foo-1.2-latest"]["aliases"]
+    assert "openai/baz-3.4" in by_id
+    assert by_id["openai/baz-3.4-latest"]["parents"] == [{
+        "id": "openai/baz-3.4", "relationship": "variant", "axis": "version",
+    }]
+    assert "baz-3.4-latest" in by_id["openai/baz-3.4-latest"]["aliases"]
+
+
+def test_seeded_ministral_and_daybreak_latest_resolutions():
+    """Seeded fixtures preserve the retired tier3/name-root forms as aliases on
+    the new -latest families and keep Ministral 3 14B on the HF Instruct repo."""
+    from pathlib import Path
+    from eval_entity_resolver import Resolver
+
+    fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+    if not (fixtures / "aliases.parquet").exists():
+        pytest.skip("fixtures not built; run `eval-entity-registry seed --local`")
+    r = Resolver.from_parquet(str(fixtures))
+    assert r.resolve("Ministral 3 14B", "model").canonical_id == "mistralai/Ministral-3-14B-Instruct-2512"
+    assert r.resolve("ministral-14b-latest", "model").canonical_id == "mistralai/ministral-14b-latest"
+    assert r.resolve("mistral/ministral-14b-latest", "model").canonical_id == "mistralai/ministral-14b-latest"
+    assert r.resolve("gpt-daybreak-blue-latest", "model").canonical_id == "openai/gpt-daybreak-blue-latest"
+    assert r.resolve("Daybreak Blue", "model").canonical_id == "openai/gpt-daybreak-blue-latest"
+    assert r.resolve("openai/daybreak-blue", "model").canonical_id == "openai/gpt-daybreak-blue"
+    assert r.resolve("gpt-daybreak-red-latest", "model").canonical_id == "openai/gpt-daybreak-red-latest"
+    assert r.resolve("Daybreak Red", "model").canonical_id == "openai/gpt-daybreak-red-latest"
+    assert r.resolve("openai/daybreak-red", "model").canonical_id == "openai/gpt-daybreak-red"
+
+
 def test_family_for_strips_training_stage_suffixes(mod):
     """Training-stage suffixes fold into the family."""
     assert mod._family_for({"id": "qwen3-30b-instruct"}) == "qwen3-30b"

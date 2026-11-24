@@ -5468,7 +5468,8 @@
 - id: alibaba/qwen-3-6-max-preview
   parents:
   - id: alibaba/qwen3.6-max
-    relationship: finetune
+    relationship: variant
+    axis: version
 - id: alibaba/qwen-3-80b-instruct
   parents:
   - id: alibaba/qwen-turbo

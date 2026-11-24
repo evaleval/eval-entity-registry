@@ -568,16 +568,7 @@ def _slugify(value: str) -> str:
     return s.strip("-")
 
 
-def _family_for(model: dict) -> str:
-    """Group key for a model record (the lineage canonical slug).
-
-    Built from `name` rather than `id` because models.dev ids mangle separators
-    (`qwen2-5-14b-instruct` for `Qwen2.5-14B-Instruct`). Date/preview/latest
-    and training-stage suffixes are stripped, mirroring the resolver's fuzzy
-    stem. models.dev's own `family` field is too coarse (every Claude Opus
-    major under one slug).
-    """
-    raw = _slugify(model.get("name") or model.get("id", ""))
+def _strip_family_suffixes(raw: str) -> str:
     # Suffixes stack (`-preview-05-06-instruct`); each strip shrinks, so the
     # fixpoint terminates.
     while True:
@@ -591,6 +582,28 @@ def _family_for(model: dict) -> str:
         if raw == before:
             break
     return raw
+
+
+def _family_for(model: dict) -> str:
+    """Group key for a model record (the lineage canonical slug).
+
+    Built from `name` rather than `id` because models.dev ids mangle separators
+    (`qwen2-5-14b-instruct` for `Qwen2.5-14B-Instruct`). Date/preview/latest
+    and training-stage suffixes are stripped, mirroring the resolver's fuzzy
+    stem. models.dev's own `family` field is too coarse (every Claude Opus
+    major under one slug).
+
+    A rolling `-latest` pointer keeps its `id` stem when its marketing `name`
+    diverges, so rotating what `-latest` serves neither orphans the family nor
+    drops the pointer at `_build_family_entries`'s prefix check.
+    """
+    id_slug = _slugify(model.get("id", ""))
+    name_stem = _strip_family_suffixes(_slugify(model.get("name") or id_slug))
+    if id_slug.endswith("-latest"):
+        id_stem = _strip_family_suffixes(id_slug)
+        if re.sub(r"\.", "-", name_stem) != re.sub(r"\.", "-", id_stem):
+            return id_stem
+    return name_stem
 
 
 # --- Suffix → (relationship, axis) classification --------------------------
@@ -792,10 +805,11 @@ def _build_family_entries(
     family_slug_dashed = re.sub(r"\.", "-", family_slug)
 
     for m in models:
-        snap_dashed = _slugify(m.get("id", ""))
-        if not snap_dashed:
+        snap_raw = _slugify(m.get("id", ""))
+        if not snap_raw:
             continue
-        if snap_dashed == family_slug_dashed or snap_dashed == family_slug:
+        snap_dashed = re.sub(r"\.", "-", snap_raw)
+        if snap_dashed == family_slug_dashed or snap_raw == family_slug:
             continue
         # A non-prefix snapshot id (mirror entry) would emit a malformed child.
         if not snap_dashed.startswith(family_slug_dashed + "-"):
@@ -818,7 +832,7 @@ def _build_family_entries(
                 current_id = new_id
                 continue
 
-            # Leaf: source metadata plus the dashed models.dev id as an alias
+            # Leaf: source metadata plus the models.dev id as an alias
             # (resolves even when the canonical is dotted). Intermediates are
             # anchor-only.
             child_aliases: list[str] = []
@@ -827,7 +841,7 @@ def _build_family_entries(
             child_input_modalities: list[str] | None = None
             child_output_modalities: list[str] | None = None
             if is_leaf:
-                child_aliases = sorted({snap_dashed, f"{org_id}/{snap_dashed}"})
+                child_aliases = sorted({snap_raw, snap_dashed, f"{org_id}/{snap_raw}", f"{org_id}/{snap_dashed}"})
                 if m.get("release_date"):
                     child_release = m["release_date"]
                 child_open_weights = bool(m.get("open_weights")) or open_weights
@@ -2404,6 +2418,12 @@ def _carry_forward_committed(
             if back:
                 cur["aliases"] = sorted(set(cur.get("aliases") or []) | back)
                 _union_alias_platforms(cur, _entry_alias_platforms(c))
+            if (
+                c.get("review_status") == "reviewed"
+                and "display_name" in c
+                and "display_name" in cur
+            ):
+                cur["review_status"] = "reviewed"
             continue
         if cid in skip:
             scalars = _donor_scalars(c)
@@ -2428,6 +2448,12 @@ def _carry_forward_committed(
                 back.add(dn)
             twin["aliases"] = sorted(set(twin.get("aliases") or []) | back)
             _union_alias_platforms(twin, _entry_alias_platforms(c))
+            if (
+                c.get("review_status") == "reviewed"
+                and "display_name" in c
+                and "display_name" in twin
+            ):
+                twin["review_status"] = "reviewed"
             absorbed += 1
             continue
         rc = dict(c)

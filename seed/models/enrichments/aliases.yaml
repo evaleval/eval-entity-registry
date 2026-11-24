@@ -3524,3 +3524,16 @@
 - id: moonshotai/kimi-k3-1-pro-flex
   aliases:
   - nw-large-flex
+# Tier3 draft superseded by the first-party models.dev entry (dropped in
+# core.yaml skip_source_ids).
+- id: mistralai/ministral-14b-latest
+  aliases:
+  - mistral/ministral-14b-latest
+# Name-derived Daybreak roots retired in core.yaml skip_source_ids once the
+# rolling -latest pointers keep their id-derived families.
+- id: openai/gpt-daybreak-blue
+  aliases:
+  - openai/daybreak-blue
+- id: openai/gpt-daybreak-red
+  aliases:
+  - openai/daybreak-red

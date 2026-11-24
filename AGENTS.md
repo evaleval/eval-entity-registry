@@ -10,6 +10,7 @@ datastore) to stable **canonical ids**, and stores resolved results.
 | Skill | Use when |
 |---|---|
 | [`registry-entity-aliases`](.claude/skills/registry-entity-aliases/SKILL.md) | A slug lands on `no_match`/`draft`; adding aliases or a new canonical to the seed; an EEE adapter's ids won't resolve |
+| [`registry-refresh-triage`](.agents/skills/registry-refresh-triage/SKILL.md) | A scheduled refresh cron (`refresh-models`, `refresh-hub-stats`, `seed + publish`) fails, opens a stall beacon, or breaks a gate/fixpoint check |
 
 ## Layout
 - `seed/` — the seed data. Curated layers: `models/core.yaml`,
