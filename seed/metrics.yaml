@@ -16,6 +16,7 @@
 - id: accuracy
   display_name: Accuracy
   aliases: ["Acc", "Top-1 Accuracy", "Multiple-Choice Accuracy", "Accuracy on Multiple-Choice Questions"]
+  scoped_aliases: {openeval: ['openeval.visfactor.correct'], benchpress: ['% correct', '% correct (pass@1)', '% exact-answer accuracy', 'overall answer accuracy (%)', 'average accuracy (%)', 'mean accuracy (%)', 'micro accuracy (%)', 'aggregate accuracy (%)', 'correct (%)', 'five-choice accuracy (%)', 'multiple-choice temporal-reasoning accuracy (%)', 'mean per-application accuracy (%)', 'overall accuracy (%)'], aisi-the-last-ones: ['Full Completion Rate @ 1M tokens', 'Full Completion Rate @ 3M tokens', 'Full Completion Rate @ 10M tokens', 'Full Completion Rate @ 30M tokens', 'Full Completion Rate @ 100M tokens']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -46,6 +47,7 @@
 - id: exact-match
   display_name: Exact Match
   aliases: ["EM", "EM-1", "exact"]
+  scoped_aliases: {benchpress: ['% exact-match accuracy', 'exact-match accuracy (%)']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -66,6 +68,7 @@
 - id: pass-at-1
   display_name: Pass@1
   aliases: ["Pass@1"]
+  scoped_aliases: {benchpress: ['mean pass@1 (%)', 'functional pass@1 (%)', 'sampled pass@1 %', 'pass@1 / mean pass@1 (%)']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -262,6 +265,7 @@
 - id: total-cost
   display_name: Total Cost
   aliases: ["total_cost", "Total Cost"]
+  scoped_aliases: {cocoabench: ['total_cost_usd', 'Total evaluation cost']}
   score_type: continuous
   lower_is_better: true
   min_score: 0.0
@@ -289,11 +293,10 @@
   metadata: '{"note": "rank aggregated across tasks by mean; a different aggregation than a single rank position", "role": "diagnostic"}'
   review_status: draft
 
-# A refusal rate is one consistent metric concept; only its direction is
-# context-dependent (refusing harmful prompts = higher-better; over-refusing
-# benign prompts = lower-better). So: one global canonical, but lower_is_better
-# is left unset so the per-row source (eee_record) drives direction per
-# benchmark (metric_meta_hotfix chain registry -> eee_record -> default).
+# Refusal of harmful requests (higher is better). Refusal of benign prompts
+# that only look harmful is over-refusal, a different quantity with the
+# opposite direction: `over-refusal-rate`, which the or-bench fold row in
+# metric_folds.yaml renames this metric to on that benchmark.
 - id: refusal-rate
   display_name: Refusal Rate
   aliases: ["Refusal Rate", "refusal"]
@@ -302,12 +305,12 @@
   # `helm_capabilities`, … They are not registry ids, and they are matched
   # verbatim: `llm-stats` and `llm_stats` name different configs. An alias
   # under a key resolves only when the caller passes that same source_config.
-  scoped_aliases: {openeval: ['openeval.harmbench.refusal-strings', 'openeval.advbench.refusal-strings', 'openeval.health-orsc-bench.refusal-strings']}
+  scoped_aliases: {openeval: ['openeval.harmbench.refusal-strings', 'openeval.advbench.refusal-strings'], benchpress: ['severity-5 refusal rate (%)']}
   score_type: continuous
-  lower_is_better: null
+  lower_is_better: false
   min_score: 0.0
   max_score: 1.0
-  metadata: '{"note": "OpenEval refusal-strings = keyword-matched refusal detector, no judge; direction depends on the benchmark (refusing is desired on HarmBench, undesired on over-refusal suites), hence lower_is_better null."}'
+  metadata: '{"note": "OpenEval refusal-strings = keyword-matched refusal detector, no judge.", "direction_basis": "refusing a harmful request is the desired behaviour; refusals of benign prompts are over-refusal-rate"}'
   review_status: reviewed
 
 # Namespaced placeholders for vague/malformed metric labels the source emits
@@ -489,6 +492,7 @@
   display_name: AP50
   aliases:
   - AP50
+  - 'AP@0.5'
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -642,6 +646,8 @@
   display_name: Pearson/Spearman Correlation
   aliases:
   - Pearson/Spearman Correlation
+  - 'PLCC'
+  scoped_aliases: {benchpress: ['Spearman correlation']}
   score_type: continuous
   lower_is_better: false
   min_score: -1.0
@@ -755,6 +761,7 @@
   aliases:
   - CD
   - Chamfer Distance
+  - 'Chamfer Distance (normalized cube, 16K points)'
   score_type: continuous
   lower_is_better: true
   min_score: 0.0
@@ -825,6 +832,7 @@
   display_name: Edit Distance
   aliases:
   - Edit Distance
+  scoped_aliases: {benchpress: ['normalized edit distance (lower=better)', 'edit distance (lower=better)']}
   score_type: continuous
   lower_is_better: true
   min_score: 0.0
@@ -885,6 +893,7 @@
   display_name: ATE
   aliases:
   - ATE
+  - 'ATE RMSE (m)'
   score_type: continuous
   lower_is_better: true
   min_score: 0.0
@@ -946,6 +955,8 @@
   aliases:
   - Mean Recall@1
   - R@1
+  - 'Recall@1'
+  scoped_aliases: {paperswithcode: ['recall_1']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -1645,7 +1656,11 @@
   lower_is_better: false
   min_score: 0.0
   max_score: 1.0
-  metadata: '{"kind": "dataset_specific", "confidence": "low"}'
+  # catch_all: "Average" names the aggregate row of whatever benchmark it sits
+  # in (Global MMLU Lite's mean over languages, a Papers with Code leaderboard's
+  # average column), never one measurement. Like `score`, it yields to
+  # anything more specific the record states and to per-benchmark folds.
+  metadata: '{"kind": "dataset_specific", "confidence": "low", "catch_all": true}'
   review_status: draft
 - id: dover
   display_name: DOVER
@@ -1755,6 +1770,7 @@
   display_name: recall
   aliases:
   - CntR
+  scoped_aliases: {benchpress: ['validation recall (%)']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -1775,6 +1791,7 @@
   display_name: bleu
   aliases:
   - spBLEU
+  scoped_aliases: {benchpress: ['CorpusBLEU', 'macro CorpusBLEU', 'corpus BLEU']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -1882,6 +1899,7 @@
   display_name: Precision
   aliases:
   - Precision
+  scoped_aliases: {benchpress: ['claim-level precision (%)']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -2504,6 +2522,7 @@
   display_name: fid
   aliases:
   - FID
+  - 'FD (Inception-v3)'
   score_type: continuous
   lower_is_better: true
   min_score: 0.0
@@ -4137,6 +4156,7 @@
   display_name: 'Resolution Rate'
   aliases:
   - 'Resolution Rate'
+  scoped_aliases: {paperswithcode: ['Resolved'], benchpress: ['fully resolved tasks (%)']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -4297,12 +4317,12 @@
   review_status: draft
 - id: attack-success-rate
   display_name: Attack Success Rate
-  scoped_aliases: {openeval: ['openeval.harmbench.haiku-llm-judge']}
+  scoped_aliases: {openeval: ['openeval.harmbench.haiku-llm-judge', 'openeval.salad-bench.attack-success']}
   score_type: continuous
   lower_is_better: true
   min_score: 0.0
   max_score: 1.0
-  metadata: '{"kind": "real", "confidence": "medium", "definition": "Fraction of harmful requests where the model produced the requested harmful behaviour, as judged by an LLM classifier (HarmBench convention).", "note": "Mapped from OpenEval''s harmbench haiku-llm-judge channel on the basis of (a) HarmBench''s official classifier convention (attack success, harmful=1), (b) the channel''s `behavior_used` artifact, and (c) its \u22120.86 correlation with the judged refusal score across 65 models (2026-09-13 corpus). No source code for the channel was available; verify before promoting to reviewed."}'
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Fraction of harmful requests where the model produced the requested harmful behaviour, as judged by a classifier.", "note": "Mapped from OpenEval''s harmbench haiku-llm-judge channel on the basis of (a) HarmBench''s official classifier convention (attack success, harmful=1), (b) the channel''s `behavior_used` artifact, and (c) its \u22120.86 correlation with the judged refusal score across 65 models (2026-09-13 corpus). No source code for the channel was available; verify before promoting to reviewed."}'
   review_status: draft
 - id: harmbench-refusal-score
   display_name: HarmBench Refusal Score
@@ -4437,7 +4457,8 @@
   review_status: reviewed
 - id: task-success-rate
   display_name: Task Success Rate
-  aliases: ["Task success rate", "task_success_rate"]
+  aliases: ["Task success rate", "task_success_rate", "Task Success Rate (TSR)"]
+  scoped_aliases: {paperswithcode: ['Binary'], benchpress: ['% success', '% tasks passed', '% passed (8-trial average)', 'macro task success (%)', '% passed (pass@1)', '% passed', '% task success', '% success (pass@1)', 'task success (%)', 'live task completion rate (%)', '% tasks completed', 'binary success (%)', 'pass@1 task success rate (%)']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -4459,6 +4480,7 @@
 - id: normalized-accuracy
   display_name: Normalized Accuracy
   aliases: ["acc_norm", "normalized_accuracy", "Normalized accuracy", "acc-norm", "accuracy_norm", "accuracy-norm", "length-normalized accuracy", "Length-normalized accuracy"]
+  scoped_aliases: {benchpress: ['% normalized multiple-choice accuracy']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -4486,6 +4508,7 @@
 - id: prompt-level-strict-accuracy
   display_name: Prompt-Level Strict Accuracy
   aliases: ["prompt_level_strict_acc"]
+  scoped_aliases: {IFEval: ['prompt_strict_acc']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -4495,6 +4518,7 @@
 - id: inst-level-strict-accuracy
   display_name: Instruction-Level Strict Accuracy
   aliases: ["inst_level_strict_acc"]
+  scoped_aliases: {IFEval: ['inst_strict_acc']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -4504,6 +4528,7 @@
 - id: prompt-level-loose-accuracy
   display_name: Prompt-Level Loose Accuracy
   aliases: ["prompt_level_loose_acc"]
+  scoped_aliases: {IFEval: ['prompt_loose_acc']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -4513,6 +4538,7 @@
 - id: inst-level-loose-accuracy
   display_name: Instruction-Level Loose Accuracy
   aliases: ["inst_level_loose_acc"]
+  scoped_aliases: {IFEval: ['inst_loose_acc']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -4773,6 +4799,7 @@
 - id: aisi-mean-progress-score
   display_name: Mean Progress Score
   aliases: ["Mean Progress Score", "aisi_inference_scaling.mean_progress_score"]
+  scoped_aliases: {aisi-the-last-ones: ['Mean Partial Progress @ 1M tokens', 'Mean Partial Progress @ 3M tokens', 'Mean Partial Progress @ 10M tokens', 'Mean Partial Progress @ 30M tokens', 'Mean Partial Progress @ 100M tokens']}
   score_type: continuous
   lower_is_better: false
   min_score: 0.0
@@ -4792,6 +4819,1493 @@
   max_score: .inf
   metadata: '{"unit": "points"}'
   review_status: reviewed
+
+# TruthfulQA generation metrics as OpenEval publishes them (BLEU / ROUGE
+# against the true and false reference answers; the BLEURT family above).
+- id: bleu-accuracy
+  display_name: BLEU Accuracy
+  aliases: ["bleu_acc"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of questions where the answer''s maximum sentence BLEU against the true reference answers strictly exceeds its maximum against the false ones (ties count 0).", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+- id: bleu-diff
+  display_name: BLEU Diff
+  score_type: continuous
+  lower_is_better: false
+  min_score: -100.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Maximum sentence BLEU of the answer against the true reference answers minus its maximum against the false ones.", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+- id: bleu-max
+  display_name: BLEU Max
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Maximum sentence BLEU of the answer against the true reference answers.", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+- id: rouge-1-accuracy
+  display_name: ROUGE-1 Accuracy
+  aliases: ["rouge1_acc"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of questions where the answer''s maximum ROUGE-1 F-measure against the true reference answers strictly exceeds its maximum against the false ones (ties count 0).", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+- id: rouge-1-diff
+  display_name: ROUGE-1 Diff
+  aliases: ["rouge1_diff"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: -100.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Maximum ROUGE-1 F-measure (x100) of the answer against the true reference answers minus its maximum against the false ones.", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+- id: rouge-1-max
+  display_name: ROUGE-1 Max
+  aliases: ["rouge1_max"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Maximum ROUGE-1 F-measure (x100) of the answer against the true reference answers.", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+- id: rouge-2-accuracy
+  display_name: ROUGE-2 Accuracy
+  aliases: ["rouge2_acc"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of questions where the answer''s maximum ROUGE-2 F-measure against the true reference answers strictly exceeds its maximum against the false ones (ties count 0).", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+- id: rouge-2-diff
+  display_name: ROUGE-2 Diff
+  aliases: ["rouge2_diff"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: -100.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Maximum ROUGE-2 F-measure (x100) of the answer against the true reference answers minus its maximum against the false ones.", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+- id: rouge-2-max
+  display_name: ROUGE-2 Max
+  aliases: ["rouge2_max"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Maximum ROUGE-2 F-measure (x100) of the answer against the true reference answers.", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+- id: rouge-l-accuracy
+  display_name: ROUGE-L Accuracy
+  aliases: ["rougeL_acc"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of questions where the answer''s maximum ROUGE-L F-measure against the true reference answers strictly exceeds its maximum against the false ones (ties count 0).", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+- id: rouge-l-diff
+  display_name: ROUGE-L Diff
+  aliases: ["rougeL_diff"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: -100.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Maximum ROUGE-L F-measure (x100) of the answer against the true reference answers minus its maximum against the false ones.", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+- id: rouge-l-max
+  display_name: ROUGE-L Max
+  aliases: ["rougeL_max"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Maximum ROUGE-L F-measure (x100) of the answer against the true reference answers.", "paper": "https://arxiv.org/abs/2109.07958"}'
+  review_status: draft
+
+# OpenEval safety and HELM-derived channels.
+- id: fulfillment-rate
+  display_name: Fulfillment Rate
+  aliases: ["fulfilment rate"]
+  scoped_aliases: {openeval: ['openeval.sorry-bench.ft-mistral-7b-sorrybench', 'openeval.do-not-answer.longformer-action-ro'], benchpress: ['harmful/dual-use compliance rate (%)', 'compliance rate (%)']}
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Share of unsafe or risky requests the model complies with instead of refusing (per-response 0/1 classifier verdict).", "note": "Not refusal-rate (its complement) and not attack-success-rate."}'
+  review_status: draft
+- id: self-bleu
+  display_name: Self-BLEU
+  scoped_aliases: {openeval: ['openeval.disinformation.self-bleu']}
+  score_type: continuous
+  lower_is_better: null
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "HELM disinformation _self_bleu: mean sentence BLEU of each sampled generation against the other generations for the same prompt.", "role": "diagnostic"}'
+  review_status: draft
+- id: monte-carlo-entropy
+  display_name: Entropy (Monte Carlo)
+  scoped_aliases: {openeval: ['openeval.disinformation.monte-carlo-entropy']}
+  score_type: continuous
+  lower_is_better: null
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "high", "definition": "HELM disinformation Monte Carlo estimate of the entropy of the sampled generations.", "unit": "nats", "role": "diagnostic"}'
+  review_status: draft
+- id: logprob
+  display_name: Log Probability
+  scoped_aliases: {openeval: ['openeval.bold.logprob']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: -.inf
+  max_score: 0.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Sum of the token log probabilities of the first completion, averaged over instances (HELM basic_metrics).", "role": "diagnostic"}'
+  review_status: draft
+- id: moralbench-human-weighted-score
+  display_name: MoralBench Human-Weighted Score
+  scoped_aliases: {openeval: ['openeval.moralbench.human-weighted-score', 'human_weighted_score']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: null
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "MoralBench score with each answer weighted by the human agreement for it."}'
+  review_status: draft
+- id: quasi-postfix-exact-match
+  display_name: Postfix Quasi-Exact Match
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "low", "note": "Matching rule inferred from the name: the postfix counterpart of the quasi-exact-match normalisation. Distinct from quasi-prefix-exact-match."}'
+  review_status: draft
+
+# tau-bench: pass^k counts a task solved only when ALL k trials succeed, so it
+# is not pass@k. `Pass^k` normalises to the same form as `Pass@k`, so the
+# aliases are scoped to tau-bench and the display names spell the trials out.
+- id: pass-hat-2
+  display_name: Pass^2 (all 2 trials)
+  scoped_aliases: {tau-bench: ['Pass^2']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of tasks solved in all 2 trials (tau-bench pass^k); not pass@k."}'
+  review_status: draft
+- id: pass-hat-3
+  display_name: Pass^3 (all 3 trials)
+  scoped_aliases: {tau-bench: ['Pass^3'], paperswithcode: ['Pass^3', 'pass_3'], benchpress: ['all-three-pass rate (%)', 'Pass^3 average (%)']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of tasks solved in all 3 trials (tau-bench pass^k); not pass@k."}'
+  review_status: draft
+- id: pass-hat-4
+  display_name: Pass^4 (all 4 trials)
+  scoped_aliases: {tau-bench: ['Pass^4']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of tasks solved in all 4 trials (tau-bench pass^k); not pass@k."}'
+  review_status: draft
+# tau-bench voice interaction metrics.
+- id: voice-response-latency
+  display_name: Voice Response Latency (mean)
+  aliases: ["response_latency_mean"]
+  scoped_aliases: {tau-bench: ['Response latency (mean)']}
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"definition": "Mean time before the agent responds when it should (tau-bench voice).", "unit": "seconds", "role": "diagnostic"}'
+  review_status: draft
+- id: voice-yield-latency
+  display_name: Voice Yield Latency (mean)
+  aliases: ["yield_latency_mean"]
+  scoped_aliases: {tau-bench: ['Yield latency (mean)']}
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"definition": "Mean time before the agent yields the floor when it should (tau-bench voice).", "unit": "seconds", "role": "diagnostic"}'
+  review_status: draft
+- id: voice-response-rate
+  display_name: Voice Response Rate
+  scoped_aliases: {tau-bench: ['Response rate', 'response_rate']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"definition": "Share of turns where the agent responds when it should (tau-bench voice)."}'
+  review_status: draft
+- id: voice-yield-rate
+  display_name: Voice Yield Rate
+  scoped_aliases: {tau-bench: ['Yield rate', 'yield_rate']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"definition": "Share of turns where the agent yields the floor when it should (tau-bench voice)."}'
+  review_status: draft
+- id: agent-interruption-rate
+  display_name: Agent Interruption Rate
+  aliases: ["Agent interruption rate"]
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"definition": "Share of turns where the agent interrupts the user (tau-bench voice)."}'
+  review_status: draft
+- id: backchannel-selectivity
+  display_name: Backchannel Selectivity
+  aliases: ["Backchannel selectivity", "selectivity_backchannel"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"definition": "How rarely the agent takes the floor on a user backchannel (tau-bench voice)."}'
+  review_status: draft
+- id: non-directed-speech-selectivity
+  display_name: Non-Directed-Speech Selectivity
+  aliases: ["Non-directed-speech selectivity", "selectivity_non_directed"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"definition": "How rarely the agent responds to speech not directed at it (tau-bench voice)."}'
+  review_status: draft
+- id: vocal-tic-selectivity
+  display_name: Vocal-Tic Selectivity
+  aliases: ["Vocal-tic selectivity", "selectivity_vocal_tic"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"definition": "How rarely the agent takes the floor on a user vocal tic (tau-bench voice)."}'
+  review_status: draft
+
+# Dispersion of a per-sample score. No standard-error entry: "Standard Error"
+# would resolve to it and pool IFEval's five <variant>_stderr rows into one
+# cell, since the variant lives only in the evaluation name.
+- id: standard-deviation
+  display_name: Standard Deviation
+  aliases: ["Standard Deviation"]
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"definition": "Standard deviation of the per-sample score.", "role": "diagnostic", "direction_basis": "a spread of results: less spread is a more consistent result"}'
+  review_status: draft
+
+# Over-refusal: refusal of benign prompts that only look harmful (OR-Bench,
+# XSTest's safe half). Lower is better, the opposite of refusal-rate.
+- id: over-refusal-rate
+  display_name: Over-Refusal Rate
+  scoped_aliases: {openeval: ['openeval.or-bench.orbench-refusal', 'openeval.health-orsc-bench.refusal-strings'], benchpress: ['benign refusal rate (%)']}
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of benign prompts that only look harmful which the model refuses.", "direction_basis": "OR-Bench reports over-refusal as a rate to minimise", "paper": "https://arxiv.org/abs/2405.20947"}'
+  review_status: draft
+
+# OpenEval channels that measure one labelled part of a benchmark: separate
+# entries keep each apart from the benchmark's plain metric.
+- id: emobench-emotion-quasi-exact-match
+  display_name: EmoBench Emotion Quasi-Exact Match
+  scoped_aliases: {openeval: ['emotion_quasi_exact_match', 'openeval.emobench.emotion-quasi-exact-match']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Quasi-exact match of the predicted emotion label on EmoBench Emotional Understanding items.", "note": "Plain quasi-exact-match on emobench is Emotional Application; the emotion and cause labels are separate measurements.", "paper": "https://aclanthology.org/2024.acl-long.326/"}'
+  review_status: draft
+- id: emobench-cause-quasi-exact-match
+  display_name: EmoBench Cause Quasi-Exact Match
+  scoped_aliases: {openeval: ['cause_quasi_exact_match', 'openeval.emobench.cause-quasi-exact-match']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Quasi-exact match of the predicted emotion cause on EmoBench Emotional Understanding items.", "note": "Plain quasi-exact-match on emobench is Emotional Application; the emotion and cause labels are separate measurements.", "paper": "https://aclanthology.org/2024.acl-long.326/"}'
+  review_status: draft
+- id: opentom-fine-postfix-exact-match
+  display_name: OpenToM Fine Postfix Exact Match
+  scoped_aliases: {openeval: ['fine_postfix_exact_match', 'openeval.opentom.fine-postfix-exact-match']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "low", "note": "One of two question subsets (fine / coarse) in an older OpenEval export; the separating rule is unverified.", "paper": "https://aclanthology.org/2024.acl-long.466/"}'
+  review_status: draft
+- id: opentom-coarse-postfix-exact-match
+  display_name: OpenToM Coarse Postfix Exact Match
+  scoped_aliases: {openeval: ['coarse_postfix_exact_match', 'openeval.opentom.coarse-postfix-exact-match']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "low", "note": "One of two question subsets (fine / coarse) in an older OpenEval export; the separating rule is unverified.", "paper": "https://aclanthology.org/2024.acl-long.466/"}'
+  review_status: draft
+- id: do-not-answer-action-class
+  display_name: Do-Not-Answer Action Class (mean)
+  scoped_aliases: {openeval: ['do-not-answer_annotation', 'openeval.do-not-answer.do-not-answer-annotation']}
+  score_type: continuous
+  lower_is_better: null
+  min_score: 0.0
+  max_score: 6.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Mean of a judge''s categorical action-class index per response (0 refuses .. 6 directly follows the instruction).", "note": "An average of a category index, not a score; distinct from the longformer classifier channel (fulfillment-rate).", "role": "diagnostic", "paper": "https://aclanthology.org/2024.findings-eacl.61/"}'
+  review_status: draft
+- id: all-rules-pass-rate
+  display_name: All-Rules Pass Rate
+  scoped_aliases: {openeval: ['openeval.last-translation-benchmark.passes-all-rules', 'passes_all_rules'], benchpress: ['strict task pass rate (%)', '% all-pass accuracy', 'all-pass rate (%)']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Share of outputs where an LLM judge marks every item-specific verification rule satisfied.", "note": "Not IFEval strict accuracy."}'
+  review_status: draft
+- id: heuristic-accuracy
+  display_name: Heuristic Accuracy
+  scoped_aliases: {openeval: ['openeval.dochop.heuristic-accuracy', 'heuristic_accuracy']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Rule-based answer match: case-insensitive equality plus about 1% numeric tolerance.", "note": "Not plain accuracy."}'
+  review_status: draft
+
+# Artificial Analysis operational measurements (source_config artificial-analysis-llms).
+# Direction and unit are the adapter's own declaration per field.
+- id: price-per-1m-input-tokens
+  display_name: Price per 1M Input Tokens
+  aliases: ["price_1m_input_tokens"]
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"role": "diagnostic", "unit": "usd_per_1m_tokens", "definition": "Price per 1M input tokens in USD (Artificial Analysis)."}'
+  review_status: draft
+- id: price-per-1m-output-tokens
+  display_name: Price per 1M Output Tokens
+  aliases: ["price_1m_output_tokens"]
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"role": "diagnostic", "unit": "usd_per_1m_tokens", "definition": "Price per 1M output tokens in USD (Artificial Analysis)."}'
+  review_status: draft
+- id: blended-price-per-1m-tokens
+  display_name: "Price per 1M Tokens (blended 3:1)"
+  aliases: ["price_1m_blended_3_to_1"]
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"role": "diagnostic", "unit": "usd_per_1m_tokens", "definition": "Blended price per 1M tokens using a 3:1 input-to-output ratio (Artificial Analysis)."}'
+  review_status: draft
+- id: median-output-tokens-per-second
+  display_name: Median Output Tokens per Second
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"role": "diagnostic", "unit": "tokens_per_second", "definition": "Median output generation speed reported by Artificial Analysis."}'
+  review_status: draft
+- id: median-time-to-first-token
+  display_name: Median Time to First Token
+  aliases: ["median_time_to_first_token_seconds"]
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"role": "diagnostic", "unit": "seconds", "definition": "Median time to first token reported by Artificial Analysis."}'
+  review_status: draft
+- id: median-time-to-first-answer-token
+  display_name: Median Time to First Answer Token
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"role": "diagnostic", "unit": "seconds", "definition": "Median time to first answer token (after any reasoning) reported by Artificial Analysis.", "note": "Not median-time-to-first-token."}'
+  review_status: draft
+
+# Papers with Code stated names that used to land on the catch-all `score`.
+# Direction is PwC's own declaration (pwc_metric_direction). Bounds are the
+# scale PwC states for the metric (0-100 or 0-1); rates that share a definition
+# with an existing [0,1] family (recall@k, mAP@k, IoU) follow that family.
+- id: mmteb-rerank-score
+  display_name: MMTEB Rerank Score
+  scoped_aliases: {paperswithcode: ['Rerank']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "MMTEB v2 reranking task-category score (PwC: MTEB Rerank Score).", "note": "Must not share an id with mmteb-retrieval-score or mmteb-score."}'
+  review_status: draft
+- id: mmteb-retrieval-score
+  display_name: MMTEB Retrieval Score
+  scoped_aliases: {paperswithcode: ['Retrieval']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "MMTEB v2 retrieval task-category score (PwC: MMTEB v2 Retrieval Score)."}'
+  review_status: draft
+- id: parsebench-overall
+  display_name: ParseBench Overall
+  aliases: ["Overall (ParseBench)", "ParseBench Overall Score"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Mean of the five ParseBench dimension scores (Tables, Charts, Content Faithfulness, Semantic Formatting, Visual Grounding)."}'
+  review_status: draft
+- id: parsebench-tables
+  display_name: ParseBench Tables
+  aliases: ["ParseBench Tables Score"]
+  scoped_aliases: {paperswithcode: ['Tables']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Table structure fidelity (GriTS + TableRecordMatch) over 503 pages."}'
+  review_status: draft
+- id: parsebench-charts
+  display_name: ParseBench Charts
+  aliases: ["ParseBench Charts Score"]
+  scoped_aliases: {paperswithcode: ['Charts']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Chart data-point match rate over 568 pages."}'
+  review_status: draft
+- id: parsebench-content-faithfulness
+  display_name: ParseBench Content Faithfulness
+  aliases: ["ParseBench Content Faithfulness Score"]
+  scoped_aliases: {paperswithcode: ['Content Faithfulness']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Rule pass rate for omissions, hallucinations and reading-order violations over 506 text pages."}'
+  review_status: draft
+- id: parsebench-semantic-formatting
+  display_name: ParseBench Semantic Formatting
+  aliases: ["ParseBench Semantic Formatting Score"]
+  scoped_aliases: {paperswithcode: ['Semantic Formatting']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Rule pass rate for meaning-carrying formatting over 476 text pages."}'
+  review_status: draft
+- id: parsebench-visual-grounding
+  display_name: ParseBench Visual Grounding
+  aliases: ["ParseBench Visual Grounding Score"]
+  scoped_aliases: {paperswithcode: ['Visual Grounding']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Element pass rate for tracing extracted elements to their source location on 500 layout pages."}'
+  review_status: draft
+- id: omniparsebench-overall
+  display_name: OmniParseBench Overall
+  aliases: ["Overall (OmniParseBench)"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Mean of the text, tables and layout family pass rates."}'
+  review_status: draft
+- id: omniparsebench-text
+  display_name: OmniParseBench Text Pass Rate
+  aliases: ["Text (OmniParseBench)"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Share of text-family tests passed."}'
+  review_status: draft
+- id: omniparsebench-tables
+  display_name: OmniParseBench Tables Pass Rate
+  aliases: ["Tables (OmniParseBench)"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Share of table-cell tests passed."}'
+  review_status: draft
+- id: omniparsebench-layout
+  display_name: OmniParseBench Layout Pass Rate
+  aliases: ["Layout (OmniParseBench)"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Share of layout-kind tests passed."}'
+  review_status: draft
+- id: average-test-pass-rate
+  display_name: Average Test Pass Rate
+  scoped_aliases: {benchpress: ['macro-average behavioral tests passed (%)']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Average share of hidden behavioral tests passed across tasks (ProgramBench).", "note": "Test-level, not the task-level resolved rate. Sources publish it as a percentage."}'
+  review_status: draft
+- id: almost-resolved-rate
+  display_name: Almost Resolved Rate
+  scoped_aliases: {paperswithcode: ['Almost Resolved'], benchpress: ['tasks with at least 95% pass rate (%)']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Share of ProgramBench tasks whose program passes at least 95% of hidden behavioral tests.", "note": "Not resolution-rate (every test). Sources publish it as a percentage."}'
+  review_status: draft
+- id: bank-balance
+  display_name: Bank Balance (USD)
+  aliases: ["Bank Balance ($)"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: -.inf
+  max_score: .inf
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Money balance in US dollars at the end of the run (Vending-Bench); can be negative.", "unit": "usd"}'
+  review_status: draft
+- id: delta-avg
+  display_name: δ_avg (Average Position Accuracy)
+  aliases: ["delta_avg"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Average fraction of evaluated trajectory positions within the localization thresholds (TAP-Vid)."}'
+  review_status: draft
+- id: average-jaccard
+  display_name: Average Jaccard
+  scoped_aliases: {paperswithcode: ['AJ']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Average Jaccard: joint point localization and visibility prediction across distance thresholds (TAP-Vid)."}'
+  review_status: draft
+- id: apd3d
+  display_name: APD3D
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Average Percentage of Points within 3D Distance."}'
+  review_status: draft
+- id: epe3d
+  display_name: EPE3D
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "3D End-Point Error.", "note": "Not epe (2D optical flow)."}'
+  review_status: draft
+- id: blueprint-bench-similarity-score
+  display_name: Blueprint-Bench Similarity Score
+  scoped_aliases: {paperswithcode: ['Similarity Score']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: null
+  max_score: 1.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "Floor-plan connectivity similarity to ground truth, normalized so random = 0 and perfect = 1.", "note": "Lower bound not stated (worse than random is negative)."}'
+  review_status: draft
+- id: der
+  display_name: DER
+  aliases: ["Diarization Error Rate"]
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Diarization Error Rate.", "note": "Can exceed 100% (false alarms), same convention as wer."}'
+  review_status: draft
+- id: eer
+  display_name: EER
+  aliases: ["Equal Error Rate"]
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: null
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Equal Error Rate: operating point where false-accept and false-reject rates are equal.", "note": "PwC publishes it as a percentage, usually below 2. No upper bound is curated: a [0,100] bound makes consumers read a group of sub-1 percentages as fractions."}'
+  review_status: draft
+- id: word-grounding-f1
+  display_name: Word Grounding F1
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "ExtractBench word-level grounding F1.", "note": "Must not share an id with page-grounding-f1 or f1."}'
+  review_status: draft
+- id: page-grounding-f1
+  display_name: Page Grounding F1
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "ExtractBench page-level grounding F1.", "note": "Must not share an id with word-grounding-f1 or f1."}'
+  review_status: draft
+- id: partial-credit-score
+  display_name: Partial-Credit Score
+  scoped_aliases: {paperswithcode: ['Partial']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Mean normalized task score with equal task weighting, as a percentage (OSWorld 2.x partial credit).", "note": "Not task-success-rate (full credit only)."}'
+  review_status: draft
+- id: skill-score
+  display_name: Skill Score
+  aliases: ["Skill Score (%)"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: null
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Forecasting skill score as a percentage (fev-bench).", "note": "Lower bound not stated by the source."}'
+  review_status: draft
+- id: balanced-accuracy
+  display_name: Balanced Accuracy
+  aliases: ["Unweighted Average Recall (UAR)", "UAR", "Unweighted Accuracy (UA/UAR)", "mAcc", "Mean Class Accuracy"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Mean of per-class recalls.", "note": "Possibly the same measurement as macro-accuracy; not merged because that entry''s only rows (MS-CXR-T) do not say whether their macro is over classes or over subsets."}'
+  review_status: draft
+- id: physics-iq-verified-score-i2v
+  display_name: Physics-IQ Verified Score (I2V)
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "Physics-IQ Verified score, image-to-video setting."}'
+  review_status: draft
+- id: physics-iq-verified-score-v2v
+  display_name: Physics-IQ Verified Score (V2V)
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "Physics-IQ Verified score, video-to-video setting."}'
+  review_status: draft
+- id: vbench-total-score
+  display_name: VBench Total Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "VBench Total Score (normalized)."}'
+  review_status: draft
+- id: vbench-quality-score
+  display_name: VBench Quality Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "VBench Quality Score (normalized)."}'
+  review_status: draft
+- id: vbench-semantic-score
+  display_name: VBench Semantic Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "VBench Semantic Score (normalized)."}'
+  review_status: draft
+- id: consistent-detection
+  display_name: Consistent Detection
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Fraction of gold identifier clusters whose every mention is detected across the conversation (PII-TRACE)."}'
+  review_status: draft
+- id: speecheditbench-content-joint-success
+  display_name: SpeechEditBench Content Joint Success
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "low", "note": "One of seven edit categories published in one cell; the source states the name and a 0-100 scale, no definition."}'
+  review_status: draft
+- id: speecheditbench-acoustic-joint-success
+  display_name: SpeechEditBench Acoustic Joint Success
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "low", "note": "One of seven edit categories published in one cell; the source states the name and a 0-100 scale, no definition."}'
+  review_status: draft
+- id: speecheditbench-paralinguistic-joint-success
+  display_name: SpeechEditBench Paralinguistic Joint Success
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "low", "note": "One of seven edit categories published in one cell; the source states the name and a 0-100 scale, no definition."}'
+  review_status: draft
+- id: speecheditbench-emotion-joint-success
+  display_name: SpeechEditBench Emotion Joint Success
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "low", "note": "One of seven edit categories published in one cell; the source states the name and a 0-100 scale, no definition."}'
+  review_status: draft
+- id: speecheditbench-prosody-joint-success
+  display_name: SpeechEditBench Prosody Joint Success
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "low", "note": "One of seven edit categories published in one cell; the source states the name and a 0-100 scale, no definition."}'
+  review_status: draft
+- id: speecheditbench-compositional-joint-success
+  display_name: SpeechEditBench Compositional Joint Success
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "low", "note": "One of seven edit categories published in one cell; the source states the name and a 0-100 scale, no definition."}'
+  review_status: draft
+- id: speecheditbench-style-joint-success
+  display_name: SpeechEditBench Style Joint Success
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "low", "note": "One of seven edit categories published in one cell; the source states the name and a 0-100 scale, no definition."}'
+  review_status: draft
+
+# Papers with Code names with under five rows each.
+- id: bd-psnr
+  display_name: BD-PSNR
+  score_type: continuous
+  lower_is_better: false
+  min_score: -.inf
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Bjontegaard-delta PSNR: average PSNR difference between two rate-distortion curves.", "note": "A signed delta against a reference codec; not the bd-rate family (a bitrate delta)."}'
+  review_status: draft
+- id: bd-ssim
+  display_name: BD-SSIM
+  score_type: continuous
+  lower_is_better: false
+  min_score: -.inf
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Bjontegaard-delta SSIM: average SSIM difference between two rate-distortion curves.", "note": "A signed delta against a reference codec; not the bd-rate family (a bitrate delta)."}'
+  review_status: draft
+- id: bd-lpips
+  display_name: BD-LPIPS
+  score_type: continuous
+  lower_is_better: true
+  min_score: -.inf
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Bjontegaard-delta LPIPS: average LPIPS difference between two rate-distortion curves.", "note": "A signed delta against a reference codec; not the bd-rate family (a bitrate delta)."}'
+  review_status: draft
+- id: bd-dists
+  display_name: BD-DISTS
+  score_type: continuous
+  lower_is_better: true
+  min_score: -.inf
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Bjontegaard-delta DISTS: average DISTS difference between two rate-distortion curves.", "note": "A signed delta against a reference codec; not the bd-rate family (a bitrate delta)."}'
+  review_status: draft
+- id: bd-niqe
+  display_name: BD-NIQE
+  score_type: continuous
+  lower_is_better: true
+  min_score: -.inf
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Bjontegaard-delta NIQE: average NIQE difference between two rate-distortion curves.", "note": "A signed delta against a reference codec; not the bd-rate family (a bitrate delta)."}'
+  review_status: draft
+- id: vbench-2-0-total-score
+  display_name: VBench-2.0 Total Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "VBench-2.0 Total Score."}'
+  review_status: draft
+- id: vbench-2-0-creativity-score
+  display_name: VBench-2.0 Creativity Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "VBench-2.0 Creativity Score."}'
+  review_status: draft
+- id: vbench-2-0-commonsense-score
+  display_name: VBench-2.0 Commonsense Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "VBench-2.0 Commonsense Score."}'
+  review_status: draft
+- id: vbench-2-0-controllability-score
+  display_name: VBench-2.0 Controllability Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "VBench-2.0 Controllability Score."}'
+  review_status: draft
+- id: vbench-2-0-human-fidelity-score
+  display_name: VBench-2.0 Human Fidelity Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "VBench-2.0 Human Fidelity Score."}'
+  review_status: draft
+- id: vbench-2-0-physics-score
+  display_name: VBench-2.0 Physics Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "VBench-2.0 Physics Score."}'
+  review_status: draft
+- id: dnsmos-ovrl
+  display_name: DNSMOS-OVRL
+  score_type: continuous
+  lower_is_better: false
+  min_score: 1.0
+  max_score: 5.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "DNSMOS P.835 overall quality.", "note": "One of the three P.835 components; the plain dnsmos entry does not say which it is."}'
+  review_status: draft
+- id: dnsmos-sig
+  display_name: DNSMOS-SIG
+  score_type: continuous
+  lower_is_better: false
+  min_score: 1.0
+  max_score: 5.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "DNSMOS P.835 speech quality.", "note": "One of the three P.835 components; the plain dnsmos entry does not say which it is."}'
+  review_status: draft
+- id: dnsmos-bak
+  display_name: DNSMOS-BAK
+  score_type: continuous
+  lower_is_better: false
+  min_score: 1.0
+  max_score: 5.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "DNSMOS P.835 background quality.", "note": "One of the three P.835 components; the plain dnsmos entry does not say which it is."}'
+  review_status: draft
+- id: map-at-5
+  display_name: mAP@5
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Mean Average Precision at 5."}'
+  review_status: draft
+- id: map-at-25
+  display_name: mAP@25
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Mean Average Precision at 25."}'
+  review_status: draft
+- id: recall-at-50
+  display_name: Recall@50
+  aliases: ["Recall@50 (%)"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Recall at 50."}'
+  review_status: draft
+- id: spl
+  display_name: SPL
+  aliases: ["Success weighted by Path Length"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Success weighted by Path Length: episode success times the ratio of shortest-path distance to distance travelled."}'
+  review_status: draft
+- id: median-trajectory-error
+  display_name: Median Trajectory Error
+  scoped_aliases: {paperswithcode: ['MTE']}
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Median Euclidean distance between predicted and ground-truth 2D positions per track, averaged over tracks (PointOdyssey)."}'
+  review_status: draft
+- id: estoi
+  display_name: ESTOI
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Extended Short-Time Objective Intelligibility.", "note": "Not stoi."}'
+  review_status: draft
+- id: survival-rate
+  display_name: Survival Rate
+  scoped_aliases: {paperswithcode: ['Survival']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Average fraction of the video elapsed before the first tracking failure (PointOdyssey; failure threshold 50 px)."}'
+  review_status: draft
+- id: mean-hm-cf
+  display_name: Mean HM-CF
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "Mean harmonic mean of coarse- and fine-grained semantic similarity (CLIP-CC-Bench)."}'
+  review_status: draft
+- id: f-score-at-0-2
+  display_name: F-Score@0.2
+  aliases: ["F-Score@0.2 (16K points)"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Surface F-Score at distance threshold 0.2."}'
+  review_status: draft
+- id: imagebind-score
+  display_name: ImageBind Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: null
+  max_score: null
+  metadata: '{"kind": "real", "confidence": "low", "definition": "ImageBind audio-video similarity score.", "note": "The source states no scale; published values sit on two scales (0.3 and 33-35)."}'
+  review_status: draft
+- id: ccc
+  display_name: CCC
+  aliases: ["Concordance correlation coefficient (CCC)", "Concordance correlation coefficient"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: -1.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Concordance correlation coefficient."}'
+  review_status: draft
+- id: average-pairwise-distance
+  display_name: Average Pairwise Distance
+  scoped_aliases: {paperswithcode: ['APD']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Average pairwise distance between generated samples (a diversity measure; HUMANISE).", "note": "PwC declares higher is better."}'
+  review_status: draft
+- id: navigation-error
+  display_name: Navigation Error
+  scoped_aliases: {paperswithcode: ['NE']}
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Distance in meters between the agent''s stopping point and the goal.", "unit": "meters"}'
+  review_status: draft
+- id: rank-1-identification
+  display_name: Rank-1 Identification
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Rank-1 identification accuracy."}'
+  review_status: draft
+- id: rank-5-identification
+  display_name: Rank-5 Identification
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Rank-5 identification accuracy."}'
+  review_status: draft
+- id: nisqa
+  display_name: NISQA
+  score_type: continuous
+  lower_is_better: false
+  min_score: 1.0
+  max_score: 5.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Non-Intrusive Speech Quality Assessment (predicted MOS)."}'
+  review_status: draft
+- id: pickscore
+  display_name: PickScore
+  score_type: continuous
+  lower_is_better: false
+  min_score: null
+  max_score: null
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "PickScore preference score.", "note": "The source states the scale only as native."}'
+  review_status: draft
+- id: ap50-novel
+  display_name: AP50 (novel categories)
+  aliases: ["AP50^n"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Novel-category AP at IoU=0.50 (open-vocabulary detection).", "note": "Not ap50 (all categories)."}'
+  review_status: draft
+- id: contact-rate
+  display_name: Contact Rate
+  scoped_aliases: {paperswithcode: ['Contact']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Contact Rate (HUMANISE)."}'
+  review_status: draft
+- id: llm-match
+  display_name: LLM-Match
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "LLM-Match: LLM-judged answer correctness mapped to 0-100 (OpenEQA)."}'
+  review_status: draft
+- id: chair-s
+  display_name: CHAIRs
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "CHAIR sentence-level hallucination rate, as a percentage."}'
+  review_status: draft
+- id: chair-i
+  display_name: CHAIRi
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "CHAIR instance-level hallucination rate, as a percentage."}'
+  review_status: draft
+- id: goal-distance
+  display_name: Goal Distance
+  scoped_aliases: {paperswithcode: ['Goal Dist']}
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Goal Distance in meters (HUMANISE).", "unit": "meters"}'
+  review_status: draft
+- id: giou
+  display_name: gIoU
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Global Intersection over Union (PwC full name), as used by ReasonSeg and InstructPart.", "note": "Not generalized IoU."}'
+  review_status: draft
+- id: fd-dinov2
+  display_name: FD (DINOv2)
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Frechet Distance over DINOv2 features."}'
+  review_status: draft
+- id: fd-pointnet
+  display_name: FD (PointNet++)
+  aliases: ["FD (PointNet++, 4K FPS points)"]
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Frechet Distance over PointNet++ features (4K farthest-sampled points)."}'
+  review_status: draft
+- id: kd-inception-v3
+  display_name: KD (Inception-v3)
+  aliases: ["KD (Inception-v3, ×100)"]
+  score_type: continuous
+  lower_is_better: true
+  min_score: -.inf
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Kernel Distance over Inception-v3 features, published x100."}'
+  review_status: draft
+- id: kd-dinov2
+  display_name: KD (DINOv2)
+  aliases: ["KD (DINOv2, ×100)"]
+  score_type: continuous
+  lower_is_better: true
+  min_score: -.inf
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Kernel Distance over DINOv2 features, published x100."}'
+  review_status: draft
+- id: ed-at-20-noun
+  display_name: ED@20 Noun
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Edit distance at Z=20 (noun), Ego4D long-term anticipation."}'
+  review_status: draft
+- id: ed-at-20-verb
+  display_name: ED@20 Verb
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Edit distance at Z=20 (verb), Ego4D long-term anticipation."}'
+  review_status: draft
+- id: ed-at-20-action
+  display_name: ED@20 Action
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "dataset_specific", "confidence": "high", "definition": "Edit distance at Z=20 (action), Ego4D long-term anticipation."}'
+  review_status: draft
+- id: ap70
+  display_name: AP@0.7
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Average Precision at IoU 0.7."}'
+  review_status: draft
+- id: class-miou
+  display_name: Class mIoU
+  aliases: ["cls. mIoU"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Class mean Intersection over Union."}'
+  review_status: draft
+- id: instance-miou
+  display_name: Instance mIoU
+  aliases: ["Ins. mIoU"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Instance mean Intersection over Union."}'
+  review_status: draft
+- id: delta2
+  display_name: delta2
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of pixels with depth ratio below 1.25^2."}'
+  review_status: draft
+- id: cmae
+  display_name: cMAE
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "Continuous Mean Absolute Error (OVCamo)."}'
+  review_status: draft
+- id: csm
+  display_name: cSm
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "Continuous Structure Measure (OVCamo)."}'
+  review_status: draft
+- id: s-measure
+  display_name: S-measure
+  aliases: ["S_m", "Structure-measure"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Structure-measure."}'
+  review_status: draft
+- id: weighted-f-measure
+  display_name: Weighted F-measure
+  aliases: ["F_beta^w"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Weighted F-measure."}'
+  review_status: draft
+- id: ndtw
+  display_name: nDTW
+  aliases: ["Normalized Dynamic Time Warping"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Normalized Dynamic Time Warping."}'
+  review_status: draft
+- id: nmi
+  display_name: NMI
+  aliases: ["Normalized Mutual Information"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Normalized Mutual Information."}'
+  review_status: draft
+- id: videophy-physical-commonsense
+  display_name: VideoPhy Physical Commonsense
+  scoped_aliases: {paperswithcode: ['PC']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "VideoPhy Physical Commonsense (PC), as a percentage."}'
+  review_status: draft
+- id: videophy-semantic-adherence
+  display_name: VideoPhy Semantic Adherence
+  scoped_aliases: {paperswithcode: ['SA']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "VideoPhy Semantic Adherence (SA), as a percentage."}'
+  review_status: draft
+- id: sql-average-win-rate
+  display_name: SQL Avg. Win Rate
+  aliases: ["SQL Avg. Win Rate (%)"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "Average win rate under Scaled Quantile Loss (fev-bench), as a percentage."}'
+  review_status: draft
+- id: interpolation-error
+  display_name: Interpolation Error
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Interpolation Error (Middlebury video frame interpolation)."}'
+  review_status: draft
+- id: cumulative-success-rate
+  display_name: Cumulative Success Rate
+  aliases: ["Cumulative Success Rate (CSR)"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "Cumulative Success Rate (RoboMemArena)."}'
+  review_status: draft
+- id: clip-image-prompt-similarity
+  display_name: CLIP Image-Prompt Similarity
+  aliases: ["CLIP Image-Prompt Similarity (×100)"]
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "CLIP similarity between the generated result and the image prompt, published x100."}'
+  review_status: draft
+- id: qwen-image-bench-quality
+  display_name: Qwen-Image-Bench Quality Score
+  scoped_aliases: {paperswithcode: ['Quality']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "Qwen-Image-Bench Quality Score."}'
+  review_status: draft
+- id: qwen-image-bench-aesthetics
+  display_name: Qwen-Image-Bench Aesthetics
+  scoped_aliases: {paperswithcode: ['Aesthetics']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "Qwen-Image-Bench Aesthetics score."}'
+  review_status: draft
+- id: geneval2-score
+  display_name: GenEval2 Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "GenEval 2 Soft-TIFA Score."}'
+  review_status: draft
+- id: ivebench-total-score
+  display_name: IVEBench Total Score
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "IVEBench Total Score."}'
+  review_status: draft
+- id: bertscore
+  display_name: BERTScore
+  score_type: continuous
+  lower_is_better: false
+  min_score: null
+  max_score: null
+  metadata: '{"kind": "real", "confidence": "low", "definition": "BERTScore where the source does not say which component (precision, recall or F1) it reports.", "note": "Not bertscore-f1: that equivalence is not stated by the source."}'
+  review_status: draft
+- id: rouge
+  display_name: ROUGE
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "low", "definition": "ROUGE where the source does not say which variant (1, 2, L) it reports."}'
+  review_status: draft
+
+# BenchPress stated names (free-text `metric` field). Every alias is scoped to
+# `benchpress`: after normalisation most are bare words. BenchPress publishes
+# percentages; bounds are that stated scale.
+- id: judge-rubric-score
+  display_name: Judge Rubric Score
+  scoped_aliases: {benchpress: ['rubric score (%)', 'weighted rubric compliance score (%)', '% weighted rubric score', 'weighted rubric score (%)'], paperswithcode: ['Rubric Score (%)']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Judge-assessed rubric score as a percentage of the maximum; weighting is per benchmark.", "note": "Scoped aliases only: a bare Rubric Score alias would claim other sources'' raw rubric fields (see polistemics.adherence)."}'
+  review_status: draft
+- id: rubric-criteria-pass-rate
+  display_name: Rubric Criteria Pass Rate
+  scoped_aliases: {benchpress: ['% rubric criteria passed', 'mean criteria pass rate (%)']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Share of individual rubric criteria passed, as a percentage.", "note": "Not all-rules-pass-rate (all-or-nothing per task)."}'
+  review_status: draft
+- id: healthbench-length-adjusted-score
+  display_name: HealthBench Length-Adjusted Score
+  scoped_aliases: {benchpress: ['length-adjusted score']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: null
+  max_score: null
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "note": "llm-stats states the raw HealthBench score is distinct from the length-adjusted one. Bounds not stated by the source."}'
+  review_status: draft
+- id: non-hallucination-rate
+  display_name: Non-Hallucination Rate
+  scoped_aliases: {benchpress: ['% non-hallucination', '1 - hallucination rate (%)']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Share of responses without a hallucination (1 - hallucination rate), as a percentage."}'
+  review_status: draft
+- id: hallucination-rate
+  display_name: Hallucination Rate
+  score_type: continuous
+  lower_is_better: true
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Share of responses containing a hallucination, as a percentage (Vectara: summaries judged by HHEM to contain factual inconsistencies or unsupported claims)."}'
+  review_status: draft
+- id: clear-pushback-rate
+  display_name: Clear Pushback Rate
+  scoped_aliases: {benchpress: ['% clear pushback']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "dataset_specific", "confidence": "medium", "definition": "Share of nonsense prompts the model clearly pushes back on (bullshit-pushback), as a percentage."}'
+  review_status: draft
+- id: mean-reward
+  display_name: Mean Reward
+  scoped_aliases: {benchpress: ['reward (%)', '% reward']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "low", "definition": "Mean task reward as a percentage of the maximum.", "note": "Reward definition is per benchmark."}'
+  review_status: draft
+- id: speedup
+  display_name: Speedup (x)
+  scoped_aliases: {benchpress: ['average speedup ratio']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Runtime of the baseline divided by runtime of the produced solution.", "note": "Direction by kind: a larger ratio means faster. BenchPress records declare higher is better."}'
+  review_status: draft
+
+# Vectara hallucination leaderboard: the four stated measurements.
+- id: answer-rate
+  display_name: Answer Rate
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Percentage of documents for which the model produced a summary rather than refusing or being blocked by a content filter."}'
+  review_status: draft
+- id: factual-consistency-rate
+  display_name: Factual Consistency Rate
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 100.0
+  metadata: '{"kind": "real", "confidence": "medium", "definition": "Percentage of generated summaries judged factually consistent; the source reports it as 100 minus the hallucination rate."}'
+  review_status: draft
+- id: average-summary-length
+  display_name: Average Summary Length
+  score_type: continuous
+  lower_is_better: null
+  min_score: 0.0
+  max_score: .inf
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Mean generated summary length in words.", "unit": "words", "role": "diagnostic"}'
+  review_status: draft
+
+# Terminal-Bench pass@k for k = 2..5. Scoped to the configs that publish them:
+# a bare "Pass@k" normalises like tau-bench's "Pass^k" (all k trials), a
+# different quantity, so neither form is a global alias.
+- id: pass-at-2
+  display_name: Pass@2 (any of 2 trials)
+  scoped_aliases: {terminal-bench-2.1: ['Pass@2'], terminal-bench-4.0: ['Pass@2']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of tasks solved in at least one of 2 trials; not pass^2 (all 2 trials)."}'
+  review_status: draft
+- id: pass-at-3
+  display_name: Pass@3 (any of 3 trials)
+  scoped_aliases: {terminal-bench-2.1: ['Pass@3'], terminal-bench-4.0: ['Pass@3']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of tasks solved in at least one of 3 trials; not pass^3 (all 3 trials)."}'
+  review_status: draft
+- id: pass-at-4
+  display_name: Pass@4 (any of 4 trials)
+  scoped_aliases: {terminal-bench-2.1: ['Pass@4'], terminal-bench-4.0: ['Pass@4']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of tasks solved in at least one of 4 trials; not pass^4 (all 4 trials)."}'
+  review_status: draft
+- id: pass-at-5
+  display_name: Pass@5 (any of 5 trials)
+  scoped_aliases: {terminal-bench-2.1: ['Pass@5'], terminal-bench-4.0: ['Pass@5']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "real", "confidence": "high", "definition": "Share of tasks solved in at least one of 5 trials; not pass^5 (all 5 trials)."}'
+  review_status: draft
+
+- id: catalog-coverage
+  display_name: Catalog Coverage
+  scoped_aliases: {paperswithcode: ['Coverage']}
+  score_type: continuous
+  lower_is_better: false
+  min_score: 0.0
+  max_score: 1.0
+  metadata: '{"kind": "dataset_specific", "confidence": "low", "definition": "ExploitBench catalog coverage, as Papers with Code names it (metric Coverage, description \"Catalog coverage.\", scale 0-1).", "note": "The source gives no fuller definition. Some records publish it as a percentage; the [0,1] bound lets consumers convert those.", "paper": "https://arxiv.org/abs/2605.14153"}'
+  review_status: draft
+
 
 # --- SMB Bench (dataset oro-agents/smb-bench) ---
 # Both are US-dollar amounts for one simulated 90-day quarter, so they are

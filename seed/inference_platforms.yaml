@@ -184,6 +184,7 @@
   aliases:
   - Databricks
   - databricks/
+  canonical_org: databricks
   homepage: https://docs.databricks.com/aws/en/machine-learning/foundation-models/
 - id: deepinfra
   display_name: Deep Infra
@@ -241,6 +242,7 @@
   - Fireworks AI
   - fireworks/
   - -fireworks
+  canonical_org: fireworks
   homepage: https://fireworks.ai/docs/
 - id: friendli
   display_name: Friendli
@@ -303,6 +305,7 @@
   aliases:
   - Groq
   - groq/
+  canonical_org: Groq
   homepage: https://console.groq.com/docs/models
 - id: helicone
   display_name: Helicone
@@ -322,6 +325,7 @@
   aliases:
   - Hugging Face
   - huggingface/
+  canonical_org: huggingface
   homepage: https://huggingface.co/docs/inference-providers
 - id: iflowcn
   display_name: iFlow
@@ -745,6 +749,7 @@
   - Together AI
   - together/
   - -together
+  canonical_org: togethercomputer
   homepage: https://docs.together.ai/docs/serverless-models
 - id: umans-ai-coding-plan
   display_name: Umans AI Coding Plan

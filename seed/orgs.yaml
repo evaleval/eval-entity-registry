@@ -128,6 +128,15 @@
   metadata: '{}'
   review_status: reviewed
 
+- id: cloudflare
+  display_name: Cloudflare
+  website: https://www.cloudflare.com
+  hf_org: Cloudflare
+  tags: '["lab"]'
+  kind: lab
+  metadata: '{}'
+  review_status: reviewed
+
 - id: microsoft
   display_name: Microsoft
   website: https://www.microsoft.com/research

@@ -21,6 +21,7 @@ _TABLES = {
     "org": "canonical_orgs",
     "family": "canonical_families",
     "composite": "canonical_composites",
+    "inference_platform": "canonical_inference_platforms",
 }
 
 # Scalar parent column for non-model types; models carry a typed `parents`
@@ -44,6 +45,11 @@ def _is_na(value) -> bool:
 
 def _na_to_none(value: Any) -> Any:
     return None if _is_na(value) else value
+
+
+def _is_list_like(value: Any) -> bool:
+    """A list or a pyarrow/numpy array of values, not a scalar or a string."""
+    return hasattr(value, "__iter__") and not isinstance(value, (str, bytes, dict))
 
 
 def _safe_json_load(s: str, default: Any = None) -> Any:
@@ -115,6 +121,51 @@ def variant_parent_id(parents: list[dict]) -> Optional[str]:
     return None
 
 
+# Hub pipeline tags of a model whose output is generated text.
+_TEXT_GENERATING_PIPELINES = frozenset({
+    "text-generation", "text2text-generation", "image-text-to-text",
+    "video-text-to-text", "audio-text-to-text", "image-to-text", "any-to-any",
+})
+# Hub pipeline tags of a model whose output is an image, a video, audio or a
+# 3D asset. Every other tag says nothing either way: a chat model can carry
+# `feature-extraction`, `translation` or `question-answering` on the Hub, and
+# `audio-to-audio` covers speech-to-speech language models.
+_NON_TEXT_PIPELINES = frozenset({
+    "text-to-image", "image-to-image", "image-text-to-image",
+    "unconditional-image-generation",
+    "text-to-video", "image-to-video", "image-text-to-video", "video-to-video",
+    "text-to-speech", "text-to-audio",
+    "text-to-3d", "image-to-3d",
+})
+# Curated tags of a model whose output is an image.
+_NON_TEXT_TAGS = frozenset({"image-gen", "diffusion"})
+
+
+def _json_field(entity: dict, key: str) -> Any:
+    """A JSON-encoded column decoded, or None; a pre-decoded value as is."""
+    value = entity.get(key)
+    return _safe_json_load(value) if isinstance(value, str) else value
+
+
+def _row_generates_text(entity: dict) -> Optional[bool]:
+    """Whether one canonical model row says its model generates text, or
+    None when the row does not say. Most specific statement first: the
+    output modalities, then the Hub pipeline tag, then the curated tags."""
+    modalities = _json_field(entity, "output_modalities")
+    if _is_list_like(modalities) and len(modalities):
+        return "text" in list(modalities)
+    metadata = _json_field(entity, "metadata")
+    pipeline_tag = metadata.get("pipeline_tag") if isinstance(metadata, dict) else None
+    if pipeline_tag in _TEXT_GENERATING_PIPELINES:
+        return True
+    if pipeline_tag in _NON_TEXT_PIPELINES:
+        return False
+    tags = _json_field(entity, "tags")
+    if _is_list_like(tags) and _NON_TEXT_TAGS.intersection(tags):
+        return False
+    return None
+
+
 def _kwarg_for(entity_type: str) -> str:
     """Constructor kwarg for an entity_type (English plurals, so no `<type>s_df`
     rule: `harnesses_df`, `families_df`)."""
@@ -126,6 +177,7 @@ def _kwarg_for(entity_type: str) -> str:
         "org": "orgs_df",
         "family": "families_df",
         "composite": "composites_df",
+        "inference_platform": "inference_platforms_df",
     }[entity_type]
 
 
@@ -146,6 +198,7 @@ class CanonicalStore:
         orgs_df: Optional[pd.DataFrame] = None,
         families_df: Optional[pd.DataFrame] = None,
         composites_df: Optional[pd.DataFrame] = None,
+        inference_platforms_df: Optional[pd.DataFrame] = None,
     ) -> None:
         self._tables: dict[str, pd.DataFrame] = {
             "model": models_df if models_df is not None else pd.DataFrame(),
@@ -155,7 +208,11 @@ class CanonicalStore:
             "org": orgs_df if orgs_df is not None else pd.DataFrame(),
             "family": families_df if families_df is not None else pd.DataFrame(),
             "composite": composites_df if composites_df is not None else pd.DataFrame(),
+            "inference_platform": (
+                inference_platforms_df if inference_platforms_df is not None else pd.DataFrame()
+            ),
         }
+        self._host_token_platforms: Optional[dict[str, str]] = None
         self._index: dict[str, dict[str, dict]] = {}
         # benchmark_id → family_id, built lazily from canonical_families.
         self._benchmark_to_family: Optional[dict[str, str]] = None
@@ -249,6 +306,43 @@ class CanonicalStore:
         if not canonical_id:
             return None
         return self._ensure_index(entity_type).get(canonical_id)
+
+    def host_token_platforms(self) -> dict[str, str]:
+        """Lowercased host-token spelling (`together/`, `-bedrock`) →
+        `canonical_inference_platforms.id`, inverted from the table's
+        `aliases`. Empty when the store carries no platform table."""
+        if self._host_token_platforms is None:
+            mapping: dict[str, str] = {}
+            for platform_id, row in self._ensure_index("inference_platform").items():
+                aliases = row.get("aliases")
+                if isinstance(aliases, str):
+                    aliases = _safe_json_load(aliases, default=[])
+                if _is_list_like(aliases):
+                    for alias in aliases:
+                        if isinstance(alias, str) and alias:
+                            mapping[alias.lower()] = platform_id
+            self._host_token_platforms = mapping
+        return self._host_token_platforms
+
+    def platform_developer_org(self, platform_id: str) -> Optional[str]:
+        """The developer org that operates `platform_id`, from the platform
+        row's `canonical_org`, or None for a platform that only serves other
+        developers' models. A platform and a developer are separate entities;
+        this column is the one declared link between them."""
+        row = self._ensure_index("inference_platform").get(platform_id) or {}
+        org = _na_to_none(row.get("canonical_org"))
+        return org if isinstance(org, str) and org else None
+
+    def require_host_token_platforms(self, origin: str) -> None:
+        """Refuse a registry snapshot that cannot attribute any host token.
+        Without this every `inference_platform` resolves to None and nothing
+        downstream can tell that from a model served by no platform."""
+        if not self.host_token_platforms():
+            raise ValueError(
+                f"registry snapshot at {origin} has no host tokens in "
+                "canonical_inference_platforms (table missing, empty, or "
+                "without aliases); inference_platform cannot be resolved"
+            )
 
     def eval_name_layout(self, source_config: str) -> Optional[int]:
         """The declared dotted-`evaluation_name` layout of `source_config`,
@@ -504,6 +598,22 @@ class CanonicalStore:
             return None
         return _na_to_none(entity.get(field))
 
+    def model_generates_text(self, entity: Optional[dict]) -> Optional[bool]:
+        """Whether the registry says this model generates text: True, False,
+        or None when it does not say. Read off the model's own row, then off
+        its group root, which is the same model in another version,
+        precision or mode."""
+        if not entity:
+            return None
+        own = _row_generates_text(entity)
+        if own is not None:
+            return own
+        group_id = _na_to_none(entity.get("model_group_id"))
+        if not group_id or group_id == entity.get("id"):
+            return None
+        root = self.lookup("model", group_id)
+        return _row_generates_text(root) if root else None
+
     def model_metadata_fields(
         self, matched_canonical_id: str, matched_entity: Optional[dict]
     ) -> dict:
@@ -526,7 +636,6 @@ class CanonicalStore:
                 "model_family_id": None,
                 "lineage_origin_model_id": None,
                 "lineage_origin_model_org_id": None,
-                "inference_platform": None,
                 "resolution_source": None,
                 "resolution_granularity": None,
                 "parents": None,
@@ -552,7 +661,6 @@ class CanonicalStore:
             "model_family_id": leaf_family,
             "lineage_origin_model_id": leaf_lineage_model,
             "lineage_origin_model_org_id": leaf_lineage_org,
-            "inference_platform": None,
             "resolution_source": _na_to_none(matched_entity.get("resolution_source")),
             "resolution_granularity": _na_to_none(matched_entity.get("resolution_granularity")),
             "parents": parents_decoded,

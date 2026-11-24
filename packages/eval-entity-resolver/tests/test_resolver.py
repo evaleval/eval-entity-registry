@@ -1497,3 +1497,130 @@ class TestDeclaredEvalNameLayout:
         assert _parse_eval_name_layout("source.a.b.benchmark") == 2
         for bad in ("benchmark", "category.benchmark", "source.category", "source..benchmark", 1, None):
             assert _parse_eval_name_layout(bad) is None
+
+
+class TestBenchmarkInDataset:
+    """A row's name read inside the dataset the row states. RewardBench and
+    RewardBench 2 both have a `Safety` part, and one folder holds both."""
+
+    def _resolver(self, extra_benchmarks=(), extra_aliases=()):
+        from eval_entity_resolver.canonical_store import CanonicalStore
+
+        rows = [
+            ("rewardbench", "RewardBench", None),
+            ("rewardbench-safety", "RewardBench Safety", "rewardbench"),
+            ("rewardbench-2", "RewardBench 2", None),
+            # No alias at all: only the display name says it is `Ties`.
+            ("rewardbench-2-ties", "RewardBench 2 Ties", "rewardbench-2"),
+            ("rewardbench-2-safety", "RewardBench 2 Safety", "rewardbench-2"),
+            ("mmlu", "MMLU", None),
+            ("mmlu-anatomy", "MMLU Anatomy", "mmlu"),
+            ("mmlu-pro", "MMLU-Pro", None),
+            ("terminal-bench-2", "Terminal-Bench 2.0", None),
+            ("terminal-bench-2-1", "Terminal-Bench 2.1", None),
+            *extra_benchmarks,
+        ]
+        benchmarks = pd.DataFrame(
+            [{"id": i, "display_name": d, "parent_benchmark_id": p} for i, d, p in rows]
+        )
+        return Resolver(
+            _store_with_aliases(
+                ("RewardBench", "benchmark", "rewardbench", None, "confirmed"),
+                ("RewardBench 2", "benchmark", "rewardbench-2", None, "confirmed"),
+                ("Safety", "benchmark", "rewardbench-safety", None, "confirmed"),
+                ("Safety", "benchmark", "rewardbench-2-safety", "reward-bench-2", "confirmed"),
+                ("MMLU", "benchmark", "mmlu", None, "confirmed"),
+                ("MMLU Anatomy", "benchmark", "mmlu-anatomy", None, "confirmed"),
+                ("MMLU-Pro", "benchmark", "mmlu-pro", None, "confirmed"),
+                ("Terminal-Bench 2", "benchmark", "terminal-bench-2", None, "confirmed"),
+                ("Terminal-Bench 2.1", "benchmark", "terminal-bench-2-1", None, "confirmed"),
+                *extra_aliases,
+            ),
+            canonical_store=CanonicalStore(benchmarks_df=benchmarks),
+        )
+
+    def test_part_resolves_inside_the_stated_dataset_in_any_folder(self):
+        r = self._resolver()
+        assert r.resolve("Safety", "benchmark", "reward-bench").canonical_id == "rewardbench-safety"
+        m = r.match_benchmark_in_dataset("Safety", "RewardBench 2", "reward-bench")
+        assert (m.canonical_id, m.dataset_id, m.evidence) == (
+            "rewardbench-2-safety", "rewardbench-2", "name_exact")
+        assert r.resolve_benchmark_in_dataset("Safety", "RewardBench", "reward-bench") == "rewardbench-safety"
+
+    def test_part_found_by_display_name_without_an_alias(self):
+        m = self._resolver().match_benchmark_in_dataset("ties", "RewardBench 2")
+        assert (m.canonical_id, m.evidence) == ("rewardbench-2-ties", "name_normalized")
+
+    def test_alias_scoped_to_another_source_is_not_read(self):
+        # `MMLU -> suite-score` was stated for adapter-a only.
+        r = self._resolver(
+            extra_benchmarks=[("suite", "Suite", None), ("suite-score", "Suite Score", "suite")],
+            extra_aliases=[
+                ("Suite", "benchmark", "suite", None, "confirmed"),
+                ("MMLU", "benchmark", "suite-score", "adapter-a", "confirmed"),
+            ],
+        )
+        assert r.resolve_benchmark_in_dataset("MMLU", "Suite", "adapter-b") is None
+        assert r.resolve_benchmark_in_dataset("MMLU", "Suite", "adapter-a") == "suite-score"
+
+    def test_ambiguous_descendant_is_no_opinion(self):
+        r = self._resolver(
+            extra_benchmarks=[
+                ("suite", "Suite", None),
+                ("suite-a-easy", "Suite Easy", "suite"),
+                ("suite-b-easy", "Suite B Easy", "suite"),
+            ],
+            extra_aliases=[
+                ("Suite", "benchmark", "suite", None, "confirmed"),
+                ("Easy", "benchmark", "suite-b-easy", None, "confirmed"),
+            ],
+        )
+        assert r.resolve_benchmark_in_dataset("Easy", "Suite") is None
+
+    def test_total_placed_by_its_own_description(self):
+        r = self._resolver()
+        desc = "Overall RewardBench 2 Score (mean of all metrics)"
+        m = r.match_benchmark_in_dataset("RewardBench", "RewardBench 2", "reward-bench", desc)
+        assert (m.canonical_id, m.evidence) == ("rewardbench-2", "description")
+        # The bare name and dataset are not enough.
+        assert r.resolve_benchmark_in_dataset("RewardBench", "RewardBench 2", "reward-bench") is None
+        assert r.resolve_benchmark_in_dataset(
+            "RewardBench", "RewardBench 2", "reward-bench", "Overall RewardBench Score") is None
+
+    def test_description_naming_only_the_dataset_is_no_opinion(self):
+        # An aggregator's name beside its own index says nothing about the row.
+        r = self._resolver(
+            extra_benchmarks=[("agg", "Agg LLM API", None), ("agg-index", "Agg Index", None)],
+            extra_aliases=[
+                ("Agg LLM API", "benchmark", "agg", None, "confirmed"),
+                ("Agg", "benchmark", "agg", None, "confirmed"),
+                ("agg index", "benchmark", "agg-index", None, "confirmed"),
+            ],
+        )
+        assert r.resolve_benchmark_in_dataset(
+            "agg index", "Agg LLM API", None, "Agg composite intelligence score") is None
+
+    def test_version_and_variant_counterexamples(self):
+        r = self._resolver()
+        # MMLU in an MMLU-Pro dataset stays MMLU's call.
+        assert r.resolve_benchmark_in_dataset("MMLU", "MMLU-Pro", None, "MMLU accuracy") is None
+        assert r.resolve_benchmark_in_dataset("MMLU", "MMLU-Pro") is None
+        # Terminal-Bench 2 in a Terminal-Bench 2.1 dataset likewise.
+        assert r.resolve_benchmark_in_dataset(
+            "Terminal-Bench 2", "Terminal-Bench 2.1", None, "Terminal-Bench 2 accuracy") is None
+        assert r.resolve_benchmark_in_dataset("Terminal-Bench 2", "Terminal-Bench 2.1") is None
+
+    def test_parent_named_inside_its_childs_dataset_is_no_opinion(self):
+        r = self._resolver()
+        # The dataset resolves (alias `MMLU Anatomy`), so this reaches the tree test.
+        assert r.resolve("MMLU Anatomy", "benchmark").canonical_id == "mmlu-anatomy"
+        assert r.resolve_benchmark_in_dataset("MMLU", "MMLU Anatomy") is None
+        assert r.resolve_benchmark_in_dataset("MMLU", "MMLU Anatomy", None, "MMLU accuracy") is None
+
+    def test_no_opinion_inputs(self):
+        r = self._resolver()
+        assert r.resolve_benchmark_in_dataset("MMLU Anatomy", "RewardBench 2") is None
+        assert r.resolve_benchmark_in_dataset("Safety", "Some Leaderboard") is None
+        assert r.resolve_benchmark_in_dataset(None, "RewardBench 2") is None
+        assert r.resolve_benchmark_in_dataset("Safety", None) is None
+        assert Resolver(_store_with_aliases()).resolve_benchmark_in_dataset("Safety", "RewardBench 2") is None

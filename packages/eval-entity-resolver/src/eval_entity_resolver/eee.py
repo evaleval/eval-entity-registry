@@ -98,7 +98,6 @@ _METRIC_KEYWORDS: list[tuple[str, str]] = [
     (r"latency.*(?:std|standard)",        "latency-stddev"),
     (r"max[\s_-]*delta",                 "max-delta"),
     (r"benchmark\s+evaluation",          "score"),
-    (r"outperform",                      "rank"),
     # Compound accuracy types, before generic accuracy.
     (r"ast[\s_-]*accuracy",              "AST Accuracy"),
     (r"ifeval[\s_-]*strict",             "IFEval Strict Acc"),

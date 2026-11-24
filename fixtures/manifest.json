@@ -1,21 +1,23 @@
 {
-  "content_hash": "9f31e800918a363630850a017c6e557bd02c5fa210962d4bd115ef9c5216d39d",
-  "generated_at": "2026-09-13T19:09:49+00:00",
+  "content_hash": "5d6f8dcca3b4650d772f1a97d419d3258eeed723d2219c63492718e1deedab9e",
+  "generated_at": "2026-11-16T20:59:45+00:00",
+  "resolver_tree_sha": "cc6fad520a63fcf2da7e944528f2bdc29fb822b9",
   "row_counts": {
-    "aliases": 32143,
-    "benchmark_metric_folds": 43,
-    "canonical_benchmarks": 2625,
-    "canonical_composites": 46,
+    "aliases": 34871,
+    "benchmark_metric_folds": 48,
+    "canonical_benchmarks": 2813,
+    "canonical_composites": 50,
     "canonical_families": 34,
     "canonical_inference_platforms": 138,
-    "canonical_metrics": 455,
-    "canonical_models": 7878,
-    "canonical_orgs": 971,
+    "canonical_metrics": 458,
+    "canonical_models": 8266,
+    "canonical_orgs": 1006,
     "eval_harnesses": 15,
     "eval_results": 0,
     "resolution_log": 0,
     "sync_runs": 0
   },
   "schema_version": "registry.3.3",
-  "seed_git_sha": "91e85b5a4c15bf1fce4e3cae925873ad32a51e89"
+  "seed_git_sha": "e8d65763a457a949f394ec0fa88684e7e158e251",
+  "seed_tree_sha": "ef98d6657b75e432859abc99d51ae227bb8070403b49fb28196e95eaeba6fa58"
 }

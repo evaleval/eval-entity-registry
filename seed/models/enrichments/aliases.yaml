@@ -963,6 +963,7 @@
   - nova-pro-v1-0
 - id: anthropic/claude-sonnet-3.7
   aliases:
+  - anthropic/claude-3.7
   - Claude 3.7 Sonnet
   - anthropic.claude-3-7-sonnet-20250219-v1:0
   - anthropic/claude-3-7-sonnet-latest
@@ -1024,6 +1025,7 @@
   - claude35-sonnet-june-24
 - id: anthropic/claude-3.7-sonnet-thinking
   aliases:
+  - anthropic/claude-3.7-thinking
   - Claude 3.7 Sonnet Thinking
   - claude-3.7-thinking
   - unknown/claude-3-7-sonnet-thinking
@@ -1081,6 +1083,7 @@
   - claude-4-opus-thinking
 - id: anthropic/claude-opus-4.1
   aliases:
+  - anthropic/Opus 4.1
   - anthropic/claude-opus-41
   - claude-4-1-opus
   - claude-opus-4-1-thinking
@@ -1095,6 +1098,7 @@
   - Claude Opus 4.1 (2025-08-05)
 - id: anthropic/claude-opus-4.5
   aliases:
+  - anthropic/Opus 4.5
   - Opus 4.5
   - anthropic--claude-4.5-opus
   - claude-4-5-opus
@@ -1103,6 +1107,7 @@
   - Claude Opus 4.5 (2025-11-01)
 - id: anthropic/claude-opus-4.6
   aliases:
+  - anthropic/Opus 4.6
   - Opus-4.6
   - anthropic-claude-4.6-opus
   - au.anthropic.claude-opus-4-6-v1
@@ -1146,6 +1151,7 @@
   - unknown/claude-sonnet-4-thinking
 - id: anthropic/claude-sonnet-4.5
   aliases:
+  - anthropic/Sonnet 4.5
   - claude-4.5-sonnet
   - sonnet-4
   - unknown/claudesonnet4
@@ -1457,6 +1463,7 @@
   aliases:
   - DeepSeek-V3.2-chat
   - deepseek-3.2
+  - fireworks/deepseek-v3p2
   - deepseek-ai/deepseek-v3.2-maas
   - deepseek-v3-2-251201
   - deepseek-v3-2-maas
@@ -1520,6 +1527,7 @@
   - deepseek-v3-1-maas
   - deepseek/deepseek-v3-1-maas
   - fireworks-ai/deepseek-v3p1
+  - fireworks/deepseek-v3p1
   - deepseek-3.1
   - DeepSeek V3.1
   - TEE/deepseek-v3.1
@@ -1540,6 +1548,7 @@
   aliases:
   - DeepSeek V3.2 Reasoning
   - deepseek/deepseek-v3.2-thinking
+  - fireworks/deepseek-v3p2-thinking
   - DeepSeek-V3.2-reasoner
 - id: deepseek/deepseek-v3-2-reasoning-0925
   aliases:
@@ -2013,6 +2022,9 @@
   aliases:
   - llama4-maverick
   - meta/llama4-maverick
+- id: meta-llama/Llama-4-Maverick-17B-128E-Instruct
+  aliases:
+  - fireworks/llama4-maverick-instruct-basic
 - id: meta-llama/Llama-4-Scout-17B-16E
   aliases:
   - llama4-scout
@@ -2833,6 +2845,7 @@
   - unknown/openai-o1
 - id: openai/o3
   aliases:
+  - openai/gpt-o3
   - gpt-o3
   - openai/o3-mini-deep-research-agentic
   - unknown/gpt-o3
@@ -3077,13 +3090,35 @@
   - unknown/falcon-mamba-7b-instruct
   - unknown/falcon7b-instruct
   - tiiuae/Falcon-Instruct-7B
-- id: together/redpajama-incite-7b
+# `together/` is the prefix HELM-style ids put on Together's own models; the
+# canonical ids are the Hugging Face repos under `togethercomputer/`.
+- id: togethercomputer/redpajama-incite-7b
+  aliases:
+  - together/redpajama-incite-7b
+# HELM's 7B names. HELM lists them unversioned with release date 2023-05-05,
+# the date of the v0.1 preview; its 3B names say v1. The final 7B models are
+# separate entities, and these are linked to them by version.
+- id: togethercomputer/RedPajama-INCITE-Base-7B-v0.1
   aliases:
   - redpajama-incite-base-7b
+  - together/redpajama-incite-base-7b
+- id: togethercomputer/RedPajama-INCITE-Instruct-7B-v0.1
+  aliases:
   - redpajama-incite-instruct-7b
+  - together/redpajama-incite-instruct-7b
 - id: togethercomputer/RedPajama-INCITE-7B-Instruct
   aliases:
   - unknown/redpajama-instruct-7b
+- id: togethercomputer/RedPajama-INCITE-Base-3B-v1
+  aliases:
+  - together/RedPajama-INCITE-Base-v1-3B
+- id: togethercomputer/RedPajama-INCITE-Instruct-3B-v1
+  aliases:
+  - together/RedPajama-INCITE-Instruct-v1-3B
+  - together/redpajama-incite-3b-instruct
+- id: togethercomputer/RedPajama-INCITE-Chat-3B-v1
+  aliases:
+  - together/redpajama-incite-3b-chat
 - id: uiuc-oumi/coalm-70b
   aliases:
   - CoALM 70B
@@ -3469,3 +3504,23 @@
   aliases:
   - kimi/kimi-k2-0905
   - moonshotai/kimi-k2-0905
+# Neuralwatt's product names for models it serves (the nw-* mints are dropped
+# in core.yaml skip_source_ids).
+- id: Qwen/Qwen3.8-27B
+  aliases:
+  - nw-small
+- id: alibaba/qwen-3-8-27b-flex
+  aliases:
+  - nw-small-flex
+- id: deepseek-ai/DeepSeek-V4.1-Flash
+  aliases:
+  - nw-flash
+- id: deepseek/deepseek-v4-1-flash-flex
+  aliases:
+  - nw-flash-flex
+- id: moonshotai/Kimi-K3.1-Pro
+  aliases:
+  - nw-large
+- id: moonshotai/kimi-k3-1-pro-flex
+  aliases:
+  - nw-large-flex

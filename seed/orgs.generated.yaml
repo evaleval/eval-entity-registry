@@ -6427,3 +6427,45 @@
   tags: '[]'
   metadata: '{}'
   review_status: reviewed
+- id: hyperresearch
+  display_name: hyperresearch
+  hf_org: hyperresearch
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
+- id: jcartu
+  display_name: jcartu
+  hf_org: jcartu
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
+- id: jiunsong
+  display_name: jiunsong
+  hf_org: jiunsong
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
+- id: lyber
+  display_name: lyber
+  hf_org: lyber
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
+- id: radixark
+  display_name: radixark
+  hf_org: radixark
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed
+- id: meituan-longcat
+  display_name: meituan-longcat
+  hf_org: meituan-longcat
+  kind: community
+  tags: '[]'
+  metadata: '{}'
+  review_status: reviewed

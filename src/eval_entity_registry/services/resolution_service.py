@@ -90,6 +90,7 @@ def _build_canonical_store(registry_store: RegistryStore) -> CanonicalStore:
         orgs_df=_table_with_pending(registry_store, "canonical_orgs") if registry_store.has_table("canonical_orgs") else None,
         families_df=registry_store.table("canonical_families") if registry_store.has_table("canonical_families") else None,
         composites_df=registry_store.table("canonical_composites") if registry_store.has_table("canonical_composites") else None,
+        inference_platforms_df=registry_store.table("canonical_inference_platforms") if registry_store.has_table("canonical_inference_platforms") else None,
     )
 
 
@@ -101,6 +102,7 @@ _RESPONSE_FIELDS = (
     # `model_group_id` / `lineage_origin_model_org_id`, kept for older consumers.
     "model_group_id", "model_family_id", "lineage_origin_model_id",
     "lineage_origin_model_org_id", "inference_platform",
+    "reasoning_effort", "reasoning_tokens",
     "resolution_source", "resolution_granularity",
     "parents", "open_weights",
     "release_date", "params_billions",

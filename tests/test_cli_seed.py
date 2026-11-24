@@ -750,12 +750,6 @@ def test_metric_folds_loaded_and_validated(fresh_seed_env):
     out = _seed_expect_fail(seed_dir)
     assert "require source_config" in out
 
-    (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump([
-        {"benchmark": "foo-bench", "from_metric": "score", "to_metric": "accuracy",
-         "source_config": "openeval"},
-    ]))
-    out = _seed_expect_fail(seed_dir)
-    assert "scoped row" in out and "unscoped" in out
 
     # A scoped row with an invalid config name is a typo, not a scope.
     (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump([
@@ -796,6 +790,61 @@ def test_metric_folds_loaded_and_validated(fresh_seed_env):
     ]))
     out = _seed_expect_fail(seed_dir)
     assert "chained" in out
+
+
+def test_metric_folds_source_scoped_rename(fresh_seed_env):
+    """A scoped rename may stand alone: one source's `score` is a rubric
+    another source's `score` is not. Chains are refused within a scope and
+    across a benchmark-wide row, not between two different sources; a scoped
+    self-row with no conversion is refused."""
+    import pandas as pd
+    seed_dir, fixtures_dir = fresh_seed_env
+    (seed_dir / "metrics.yaml").write_text(yaml.safe_dump([
+        {"id": m, "display_name": m, "score_type": "continuous",
+         "lower_is_better": False, "min_score": 0.0, "max_score": 1.0,
+         "metadata": "{}", "review_status": "reviewed"}
+        for m in ("accuracy", "score", "f1")
+    ]))
+    _write_benchmarks(seed_dir, [
+        {"id": "foo-bench", "display_name": "Foo Bench", "metadata": "{}",
+         "tags": "[]", "review_status": "reviewed"},
+    ])
+
+    (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump([
+        {"benchmark": "foo-bench", "from_metric": "score", "to_metric": "accuracy",
+         "source_config": "openeval"},
+        {"benchmark": "foo-bench", "from_metric": "score", "to_metric": "accuracy",
+         "source_config": "helm_safety"},
+        # Another source renames `accuracy`: no row applies to both.
+        {"benchmark": "foo-bench", "from_metric": "accuracy", "to_metric": "f1",
+         "source_config": "other_source"},
+    ]))
+    _seed(seed_dir)
+    df = pd.read_parquet(fixtures_dir / "benchmark_metric_folds.parquet")
+    assert sorted(df["source_config"]) == ["helm_safety", "openeval", "other_source"]
+    assert df["source_config"].notna().all()
+
+    for rows in (
+        # chained within one source
+        [{"benchmark": "foo-bench", "from_metric": "score", "to_metric": "accuracy",
+          "source_config": "openeval"},
+         {"benchmark": "foo-bench", "from_metric": "accuracy", "to_metric": "f1",
+          "source_config": "openeval"}],
+        # chained through a benchmark-wide row
+        [{"benchmark": "foo-bench", "from_metric": "score", "to_metric": "accuracy",
+          "source_config": "openeval"},
+         {"benchmark": "foo-bench", "from_metric": "accuracy", "to_metric": "f1"}],
+    ):
+        (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump(rows))
+        out = _seed_expect_fail(seed_dir)
+        assert "chained" in out
+
+    (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump([
+        {"benchmark": "foo-bench", "from_metric": "score", "to_metric": "score",
+         "source_config": "openeval"},
+    ]))
+    out = _seed_expect_fail(seed_dir)
+    assert "renames nothing" in out
 
 
 def test_metric_folds_pure_published_scale_conversion(fresh_seed_env):
@@ -845,7 +894,7 @@ def test_metric_folds_pure_published_scale_conversion(fresh_seed_env):
          "source_config": "openeval"},
     ]))
     out = _seed_expect_fail(seed_dir)
-    assert "pure published-scale conversion" in out
+    assert "renames nothing and converts nothing" in out
 
     # Still rejected: a scoped row may not contradict the benchmark-wide row.
     (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump([
@@ -1156,3 +1205,54 @@ def test_derived_alias_id_falls_back_when_a_rejected_row_holds_it(fresh_seed_env
     assert sorted(rows["status"]) == ["confirmed", "rejected"]
     assert rows["id"].nunique() == 2
     assert derived in set(rows["id"])
+
+
+def test_metric_folds_benchmark_direction(fresh_seed_env):
+    """A fold row may state the benchmark's own direction for `to_metric`,
+    on a rename or on a self-row that carries nothing else. It must be a
+    boolean, and rows naming one (benchmark, metric, scope) may not
+    disagree."""
+    import pandas as pd
+    seed_dir, fixtures_dir = fresh_seed_env
+    (seed_dir / "metrics.yaml").write_text(yaml.safe_dump([
+        {"id": m, "display_name": m, "score_type": "continuous",
+         "lower_is_better": None, "min_score": 0.0, "max_score": 1.0,
+         "metadata": "{}", "review_status": "reviewed"}
+        for m in ("refusal-rate", "over-refusal-rate", "score")
+    ]))
+    _write_benchmarks(seed_dir, [
+        {"id": b, "display_name": b, "metadata": "{}", "tags": "[]", "review_status": "reviewed"}
+        for b in ("foo-bench", "bar-bench")
+    ])
+    (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump([
+        {"benchmark": "foo-bench", "from_metric": "refusal-rate",
+         "to_metric": "over-refusal-rate", "lower_is_better": True},
+        {"benchmark": "bar-bench", "from_metric": "refusal-rate",
+         "to_metric": "refusal-rate", "lower_is_better": False},
+    ]))
+    _seed(seed_dir)
+    df = pd.read_parquet(fixtures_dir / "benchmark_metric_folds.parquet").set_index("benchmark_id")
+    assert bool(df.loc["foo-bench", "lower_is_better"]) is True
+    assert bool(df.loc["bar-bench", "lower_is_better"]) is False
+
+    (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump([
+        {"benchmark": "foo-bench", "from_metric": "refusal-rate",
+         "to_metric": "over-refusal-rate", "lower_is_better": "yes"},
+    ]))
+    out = _seed_expect_fail(seed_dir)
+    assert "lower_is_better must be true or" in out
+
+    (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump([
+        {"benchmark": "foo-bench", "from_metric": "refusal-rate",
+         "to_metric": "over-refusal-rate", "lower_is_better": True},
+        {"benchmark": "foo-bench", "from_metric": "score",
+         "to_metric": "over-refusal-rate", "lower_is_better": False},
+    ]))
+    out = _seed_expect_fail(seed_dir)
+    assert "conflicting" in out and "lower_is_better" in out
+
+    (seed_dir / "metric_folds.yaml").write_text(yaml.safe_dump([
+        {"benchmark": "bar-bench", "from_metric": "refusal-rate", "to_metric": "refusal-rate"},
+    ]))
+    out = _seed_expect_fail(seed_dir)
+    assert "self-fold" in out

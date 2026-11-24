@@ -297,6 +297,7 @@ aixamine:
   composite_keys:
     - aixamine-adversarial-robustness
     - aixamine-code-security
+    - aixamine-cybersecurity-knowledge
     - aixamine-fairness-bias
     - aixamine-hallucination
     - aixamine-jailbreak
