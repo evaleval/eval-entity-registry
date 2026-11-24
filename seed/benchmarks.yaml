@@ -28522,7 +28522,7 @@
   dataset_repo: oro-agents/smb-bench
   parent_benchmark_id: null
   tags: '["agentic", "domain-specific"]'
-  metadata: '{"doi": "https://doi.org/10.57967/hf/11641", "report": "https://oroagents.com/benchmarks/smb-bench", "code_repo": "https://github.com/ORO-AI/smb-bench"}'
+  metadata: '{"doi": "https://doi.org/10.57967/hf/11641", "paper": "https://arxiv.org/abs/2611.28158", "report": "https://oroagents.com/benchmarks/smb-bench", "code_repo": "https://github.com/ORO-AI/smb-bench"}'
   review_status: draft
   aliases:
     - SMB Bench
