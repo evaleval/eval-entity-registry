@@ -2671,7 +2671,7 @@ def reconcile_generated_against_existing(
     )
 
     def _fold_target(e: dict) -> str | None:
-        if e.get("id") in _non_lineage_bases():
+        if e.get("id") in _protected_roots():
             return None
         f = decide_fold(e, _hf_ids, _alias_to_hf, _by_org_name, hf_to_dev)
         if f is None:

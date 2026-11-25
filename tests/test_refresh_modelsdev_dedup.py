@@ -2534,3 +2534,60 @@ def test_carry_forward_preserves_reviewed_status_on_full_entries(cf_mod):
     assert {e["id"]: e.get("review_status") for e in again} == {
         e["id"]: e.get("review_status") for e in batch
     }
+
+
+def test_reconciliation_does_not_fold_protected_multi_child_root_onto_hf_child(tmp_path):
+    """A committed multi-child family root in `_protected_roots()` must never be
+    folded onto one of its HF children by `decide_fold`, even when a fresh mint
+    carries an alias already owned by that child; survivor hygiene strips the
+    colliding alias while keeping the root canonical alive."""
+    m = load_script_module("refresh_from_modelsdev", "refresh_modelsdev_protected_root")
+    parents_yaml = tmp_path / "parents.yaml"
+    parents_yaml.write_text(
+        yaml.safe_dump([
+            {
+                "id": "Qwen/Zeta-Next-80B-Instruct",
+                "parents": [{"id": "alibaba/zeta-next-80b", "relationship": "variant", "axis": "training_stage"}],
+            },
+            {
+                "id": "Qwen/Zeta-Next-80B-Thinking",
+                "parents": [{"id": "alibaba/zeta-next-80b", "relationship": "variant", "axis": "mode"}],
+            },
+        ])
+    )
+    m.PARENTS_ENRICH_PATH = parents_yaml
+    m._PROTECTED_ROOTS = None
+    assert "alibaba/zeta-next-80b" in m._protected_roots()
+
+    existing_hf = tmp_path / "hub_stats.yaml"
+    existing_hf.write_text(
+        yaml.safe_dump([
+            {
+                "id": "Qwen/Zeta-Next-80B-Thinking",
+                "display_name": "Zeta Next 80B Thinking",
+                "org_id": "alibaba",
+                "aliases": ["qwen.zeta-next-80b"],
+                "metadata": json.dumps({"hf_id": "Qwen/Zeta-Next-80B-Thinking"}),
+                "resolution_source": "hf",
+            },
+        ])
+    )
+    generated = [
+        {
+            "id": "alibaba/zeta-next-80b",
+            "display_name": "Zeta Next 80B",
+            "org_id": "alibaba",
+            "aliases": ["qwen.zeta-next-80b", "zeta-next-80b"],
+            "metadata": "{}",
+            "review_status": "reviewed",
+        }
+    ]
+    out = m.reconcile_generated_against_existing(generated, sources=(existing_hf,))
+    by_id = {e["id"]: e for e in out}
+    assert "alibaba/zeta-next-80b" in by_id
+    assert "display_name" in by_id["alibaba/zeta-next-80b"]
+    assert "qwen.zeta-next-80b" not in (by_id["alibaba/zeta-next-80b"].get("aliases") or [])
+    assert "zeta-next-80b" in (by_id["alibaba/zeta-next-80b"].get("aliases") or [])
+    assert "alibaba/zeta-next-80b" not in (
+        by_id.get("Qwen/Zeta-Next-80B-Thinking", {}).get("aliases") or []
+    )
