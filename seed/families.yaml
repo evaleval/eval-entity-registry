@@ -290,21 +290,13 @@ naturalquestions:
   benchmarks: [naturalquestions, nq-open]
   primary_benchmark_key: naturalquestions
 
-# aiXamine (QCRI) — 9 trust-evaluation service leaderboards.
+# aiXamine (QCRI) — one trust-evaluation service; its category leaderboards are the
+# source_configs of the single `aixamine` composite.
 aixamine:
   display: aiXamine
   category: safety
   composite_keys:
-    - aixamine-adversarial-robustness
-    - aixamine-code-security
-    - aixamine-cybersecurity-knowledge
-    - aixamine-fairness-bias
-    - aixamine-hallucination
-    - aixamine-jailbreak
-    - aixamine-model-data-privacy
-    - aixamine-ood-robustness
-    - aixamine-over-refusal
-    - aixamine-safety-alignment
+    - aixamine
   review_status: draft
 
 # LEXam's two published sub-tasks are separately reported datasets (own HF
