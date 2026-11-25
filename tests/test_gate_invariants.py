@@ -949,6 +949,27 @@ _ORACLE_EDGE_EXEMPT: frozenset = frozenset({
     ("openai/gpt-5.2-pro-2025-12-11", "openai/gpt-5.2-pro"),
     ("openai/gpt-5.4-2026-03-05", "openai/gpt-5.4"),
     ("openai/gpt-5.4-pro-2026-03-05", "openai/gpt-5.4-pro"),
+    # Pretrained -base models re-typed variant/mode -> variant/training_stage
+    # so base weights never collapse into an instruct/chat model_group_id.
+    ("01-ai/yi-coder-9b-base", "01-ai/yi-coder-9b"),
+    ("alibaba/qwen2.5-coder-1.5b-base", "Qwen/Qwen2.5-Coder-1.5B"),
+    ("alibaba/qwen2.5-coder-32b-base", "Qwen/Qwen2.5-Coder-32B"),
+    ("alibaba/qwen2.5-coder-7b-base", "Qwen/Qwen2.5-Coder-7B"),
+    ("alibaba/qwen3-30b-a3b-base", "Qwen/Qwen3-30B-A3B"),
+    ("alibaba/qwen3-4b-base", "qwen/qwen3-4b"),
+    ("alibaba/qwen3-8b-base", "Qwen/Qwen3-8B"),
+    ("baichuan-inc/Baichuan2-13B-Base", "baichuan/baichuan2-13b"),
+    ("baichuan-inc/Baichuan2-7B-Base", "baichuan-inc/baichuan2-7b"),
+    ("databricks/dbrx-base", "databricks/dbrx"),
+    ("deepseek-ai/deepseek-llm-67b-base", "deepseek/deepseek-llm-67b"),
+    ("google/codegemma-2b-base", "google/codegemma-2b"),
+    ("google/codegemma-7b-base", "google/codegemma-7b"),
+    ("ibm-granite/granite-3.3-8b-base", "ibm-granite/granite-3.3-8b"),
+    ("mistralai/ministral-3-8b-base", "mistral/ministral-3-8b"),
+    ("mistralai/mistral-nemo-base", "mistral-ai/mistral-nemo"),
+    ("moonshotai/Kimi-K2-Base", "moonshot/kimi-k2"),
+    ("thudm/chatglm2-6b-base", "thudm/chatglm2-6b"),
+    ("togethercomputer/RedPajama-INCITE-7B-Base", "togethercomputer/redpajama-incite-7b"),
 })
 
 
@@ -1126,6 +1147,28 @@ _ORACLE_LINEAGE_EXEMPT: frozenset = frozenset({
     # "reasoning" IS the real Thinking repo (core.yaml skip_source_ids fold), not
     # a finetune of a base; no base Qwen3-Omni-30B-A3B canonical exists.
     ("lineage_origin_model_id", "alibaba/qwen3-omni-30b-a3b-reasoning"),
+    # Pretrained -base models re-typed variant/mode -> variant/training_stage
+    # (see _ORACLE_EDGE_EXEMPT): each keeps its own model_group_id while staying
+    # in the same model_family_id.
+    ("model_group_id", "01-ai/yi-coder-9b-base"),
+    ("model_group_id", "alibaba/qwen2.5-coder-1.5b-base"),
+    ("model_group_id", "alibaba/qwen2.5-coder-32b-base"),
+    ("model_group_id", "alibaba/qwen2.5-coder-7b-base"),
+    ("model_group_id", "alibaba/qwen3-30b-a3b-base"),
+    ("model_group_id", "alibaba/qwen3-4b-base"),
+    ("model_group_id", "alibaba/qwen3-8b-base"),
+    ("model_group_id", "baichuan-inc/Baichuan2-13B-Base"),
+    ("model_group_id", "baichuan-inc/Baichuan2-7B-Base"),
+    ("model_group_id", "databricks/dbrx-base"),
+    ("model_group_id", "deepseek-ai/deepseek-llm-67b-base"),
+    ("model_group_id", "google/codegemma-2b-base"),
+    ("model_group_id", "google/codegemma-7b-base"),
+    ("model_group_id", "ibm-granite/granite-3.3-8b-base"),
+    ("model_group_id", "mistralai/ministral-3-8b-base"),
+    ("model_group_id", "mistralai/mistral-nemo-base"),
+    ("model_group_id", "moonshotai/Kimi-K2-Base"),
+    ("model_group_id", "thudm/chatglm2-6b-base"),
+    ("model_group_id", "togethercomputer/RedPajama-INCITE-7B-Base"),
 })
 
 
@@ -2102,3 +2145,100 @@ def test_run_condition_follows_the_entity_not_the_spelling(resolver, raw, canoni
     result = resolver.resolve(raw, "model")
     assert result.canonical_id == canonical_id
     assert result.reasoning_effort == effort
+
+
+# ---------------------------------------------------------------------------
+# Training-stage models never carry `axis: mode`
+# ---------------------------------------------------------------------------
+# `axis: mode` collapses child and parent into one `model_group_id` (same
+# weights served in a different runtime mode, e.g. thinking/effort). A model
+# differentiated by a training-stage token (base/instruct/chat/it/sft/pt/dpo/
+# rlhf) has distinct weights and must use `axis: training_stage`, never `mode`.
+_TRAINING_STAGE_TOKENS: frozenset[str] = frozenset({
+    "base", "instruct", "chat", "it", "sft", "pt", "dpo", "rlhf",
+})
+
+
+def _leaf_tokens(cid: str) -> set[str]:
+    leaf = cid.split("/", 1)[-1].lower()
+    return {t for t in re.split(r"[-_.\s]+", leaf) if t}
+
+
+def training_stage_mode_axis_violations(
+    models_df: pd.DataFrame,
+) -> list[tuple[str, str, list[str]]]:
+    """`(id, parent_id, stage_tokens)` for every `variant` edge with
+    `axis == 'mode'` whose child introduces a training-stage token absent from
+    the parent."""
+    bad: list[tuple[str, str, list[str]]] = []
+    for cid, parents in zip(models_df["id"], models_df["parents"]):
+        cid_s = str(cid)
+        c_tokens = _leaf_tokens(cid_s)
+        for edge in _parse_parents(parents):
+            if edge.get("relationship") != "variant" or edge.get("axis") != "mode":
+                continue
+            pid = edge.get("id")
+            if not isinstance(pid, str) or not pid:
+                continue
+            stage_delta = sorted((c_tokens - _leaf_tokens(pid)) & _TRAINING_STAGE_TOKENS)
+            if stage_delta:
+                bad.append((cid_s, pid, stage_delta))
+    return bad
+
+
+def test_no_training_stage_model_has_mode_axis(models_df):
+    """Training-stage siblings (`-base`, `-instruct`, `-chat`, `-it`, `-sft`,
+    `-pt`, `-dpo`, `-rlhf`) must carry `axis: training_stage`, never `mode`."""
+    bad = training_stage_mode_axis_violations(models_df)
+    assert bad == [], (
+        f"{len(bad)} training-stage model(s) carry variant/mode instead of "
+        f"variant/training_stage (which collapses distinct weights into one "
+        f"model_group_id): {bad[:15]}"
+    )
+
+
+def test_training_stage_mode_axis_gate_refuses_bad_input():
+    """Bad input: training-stage children tagged `axis: mode` are caught,
+    while legitimate `axis: mode` and `axis: training_stage` edges pass."""
+    bad_df = pd.DataFrame([
+        {
+            "id": "acme/alpha-7b-base",
+            "parents": json.dumps([{"id": "acme/alpha-7b", "relationship": "variant", "axis": "mode"}]),
+        },
+        {
+            "id": "acme/alpha-7b-instruct",
+            "parents": json.dumps([{"id": "acme/alpha-7b", "relationship": "variant", "axis": "mode"}]),
+        },
+        {
+            "id": "acme/alpha-7b-chat",
+            "parents": json.dumps([{"id": "acme/alpha-7b", "relationship": "variant", "axis": "mode"}]),
+        },
+        {
+            "id": "acme/alpha-7b-it",
+            "parents": json.dumps([{"id": "acme/alpha-7b", "relationship": "variant", "axis": "mode"}]),
+        },
+        {
+            "id": "acme/alpha-7b-sft",
+            "parents": json.dumps([{"id": "acme/alpha-7b", "relationship": "variant", "axis": "mode"}]),
+        },
+        # Controls: same stage on both sides, reasoning off instruct, or training_stage axis.
+        {
+            "id": "acme/alpha-7b-instruct-thinking",
+            "parents": json.dumps([{"id": "acme/alpha-7b-instruct", "relationship": "variant", "axis": "mode"}]),
+        },
+        {
+            "id": "acme/alpha-7b-reasoning",
+            "parents": json.dumps([{"id": "acme/alpha-7b-instruct", "relationship": "variant", "axis": "mode"}]),
+        },
+        {
+            "id": "acme/beta-7b-base",
+            "parents": json.dumps([{"id": "acme/beta-7b", "relationship": "variant", "axis": "training_stage"}]),
+        },
+    ])
+    assert training_stage_mode_axis_violations(bad_df) == [
+        ("acme/alpha-7b-base", "acme/alpha-7b", ["base"]),
+        ("acme/alpha-7b-instruct", "acme/alpha-7b", ["instruct"]),
+        ("acme/alpha-7b-chat", "acme/alpha-7b", ["chat"]),
+        ("acme/alpha-7b-it", "acme/alpha-7b", ["it"]),
+        ("acme/alpha-7b-sft", "acme/alpha-7b", ["sft"]),
+    ]

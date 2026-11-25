@@ -47,7 +47,7 @@
   parents:
   - id: 01-ai/yi-coder-9b
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: 3rd-Degree-Burn/Llama-3.1-8B-Squareroot
   parents:
   - id: meta-llama/Llama-3.1-8B
@@ -5518,7 +5518,7 @@
   parents:
   - id: Qwen/Qwen2.5-Coder-1.5B
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: alibaba/qwen2.5-coder-1.5b-instruct
   parents:
   - id: Qwen/Qwen2.5-Coder-1.5B
@@ -5528,7 +5528,7 @@
   parents:
   - id: Qwen/Qwen2.5-Coder-32B
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: alibaba/qwen2.5-coder-3b-instruct
   parents:
   - id: Qwen/Qwen2.5-Coder-3B
@@ -5538,7 +5538,7 @@
   parents:
   - id: Qwen/Qwen2.5-Coder-7B
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: alibaba/qwen2.5-math-prm-7b
   parents:
   - id: Qwen/Qwen2.5-Math-7B
@@ -5665,7 +5665,7 @@
   parents:
   - id: Qwen/Qwen3-30B-A3B
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: alibaba/qwen3-30b-a3b-instruct
   parents:
   - id: Qwen/Qwen3-30B-A3B
@@ -5740,7 +5740,7 @@
   parents:
   - id: Qwen/Qwen3-4B
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: alibaba/qwen3-4b-instruct-reasoning
   parents:
   - id: qwen/qwen3-4b-instruct
@@ -5810,7 +5810,7 @@
   parents:
   - id: Qwen/Qwen3-8B
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: alibaba/qwen3-8b-instruct
   parents:
   - id: Qwen/Qwen3-8B
@@ -6700,7 +6700,7 @@
   parents:
   - id: baichuan/baichuan2-13b
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: baichuan-inc/Baichuan2-13B-Chat
   parents:
   - id: baichuan/baichuan2-13b
@@ -6710,7 +6710,7 @@
   parents:
   - id: baichuan-inc/baichuan2-7b
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: baichuan-inc/Baichuan2-7B-Chat
   parents:
   - id: baichuan-inc/baichuan2-7b
@@ -7613,7 +7613,7 @@
   parents:
   - id: databricks/dbrx
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: databricks/dbrx-instruct
   parents:
   - id: databricks/dbrx
@@ -7648,7 +7648,7 @@
   parents:
   - id: deepseek/deepseek-llm-67b
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: deepseek-ai/deepseek-llm-67b-chat
   parents:
   - id: deepseek/deepseek-llm-67b
@@ -8468,12 +8468,12 @@
   parents:
   - id: google/codegemma-2b
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: google/codegemma-7b-base
   parents:
   - id: google/codegemma-7b
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: google/codegemma-7b-instruct
   parents:
   - id: google/codegemma-7b
@@ -9353,7 +9353,7 @@
   parents:
   - id: ibm-granite/granite-3.3-8b
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: ibm/granite-3.3-8b-instruct
   parents:
   - id: ibm/granite-3.3-8b-base
@@ -12090,7 +12090,7 @@
   parents:
   - id: mistralai/ministral-3-8b
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: mistralai/Ministral-3-8B-Instruct-2512
   parents:
   - id: mistralai/ministral-3-8b
@@ -12144,7 +12144,7 @@
   parents:
   - id: mistralai/mistral-nemo
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: mistralai/mistral-nemo-instruct
   parents:
   - id: mistralai/mistral-nemo
@@ -12293,7 +12293,7 @@
   parents:
   - id: moonshotai/kimi-k2
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: moonshotai/Kimi-K2-Instruct
   parents:
   - id: moonshotai/kimi-k2
@@ -14988,7 +14988,7 @@
   parents:
   - id: thudm/chatglm2-6b
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: thudm/cogagent-chat
   parents:
   - id: thudm/cogagent
@@ -15052,7 +15052,7 @@
   parents:
   - id: togethercomputer/redpajama-incite-7b
     relationship: variant
-    axis: mode
+    axis: training_stage
 - id: togethercomputer/RedPajama-INCITE-7B-Chat
   parents:
   - id: togethercomputer/redpajama-incite-7b

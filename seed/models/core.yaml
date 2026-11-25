@@ -789,7 +789,7 @@ entries:
   parents:
   - id: 01-ai/yi-coder-9b
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: null
   input_modalities: null
@@ -3532,7 +3532,7 @@ entries:
   parents:
   - id: Qwen/Qwen2.5-Coder-1.5B
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: null
   input_modalities: null
@@ -3570,7 +3570,7 @@ entries:
   parents:
   - id: Qwen/Qwen2.5-Coder-32B
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: null
   input_modalities: null
@@ -3608,7 +3608,7 @@ entries:
   parents:
   - id: Qwen/Qwen2.5-Coder-7B
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: null
   input_modalities: null
@@ -4076,7 +4076,7 @@ entries:
   parents:
   - id: Qwen/Qwen3-4B
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: null
   input_modalities: null
@@ -4189,7 +4189,7 @@ entries:
   parents:
   - id: Qwen/Qwen3-8B
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: null
   input_modalities: null
@@ -5196,7 +5196,7 @@ entries:
   parents:
   - id: baichuan/baichuan2-13b
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: '2023-08-30'
   input_modalities: null
@@ -5247,7 +5247,7 @@ entries:
   parents:
   - id: baichuan-inc/baichuan2-7b
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: '2023-08-30'
   input_modalities: null
@@ -6463,7 +6463,7 @@ entries:
   parents:
   - id: deepseek/deepseek-llm-67b
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: '2023-11-29'
   input_modalities: null
@@ -7227,7 +7227,7 @@ entries:
   parents:
   - id: google/codegemma-2b
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: null
   input_modalities: null
@@ -7270,7 +7270,7 @@ entries:
   parents:
   - id: google/codegemma-7b
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: null
   input_modalities: null
@@ -10099,7 +10099,7 @@ entries:
   parents:
   - id: mistralai/ministral-3-8b
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: null
   release_date: null
   input_modalities: null
@@ -10212,7 +10212,7 @@ entries:
   parents:
   - id: mistralai/mistral-nemo
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: null
   input_modalities: null
@@ -12434,7 +12434,7 @@ entries:
   parents:
   - id: thudm/chatglm2-6b
     relationship: variant
-    axis: mode
+    axis: training_stage
   open_weights: true
   release_date: null
   input_modalities: null
