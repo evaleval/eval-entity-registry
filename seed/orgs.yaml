@@ -226,6 +226,16 @@
   metadata: '{}'
   review_status: reviewed
 
+- id: thinkingmachines
+  display_name: Thinking Machines Lab
+  website: https://thinkingmachines.ai
+  hf_org: thinkingmachines
+  aliases: ["thinking-machines", "thinking-machines-lab", "Thinking Machines"]
+  tags: '["lab"]'
+  kind: lab
+  metadata: '{}'
+  review_status: draft
+
 - id: stepfun
   display_name: StepFun
   website: https://www.stepfun.com
