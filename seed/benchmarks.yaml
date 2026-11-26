@@ -28658,3 +28658,63 @@
   review_status: draft
   aliases:
     - legal-agent-benchmark-harvey-held-out
+
+
+# --- SMB Bench (ORO AI; dataset oro-agents/smb-bench, doi:10.57967/hf/11641) ---
+# Minted for the pending EEE_datastore submission of the smb-bench-v1 runs;
+# review_status draft -> maintainer promotes after review. The datastore's
+# per-kind cuts (smb-bench-v1.normal-quarters, .customer-quarters,
+# .supplier-quarters) are the three children below; they partition its tasks.
+- id: smb-bench
+  preferred_metric: smb-bench.mean-profit-usd
+  display_name: SMB Bench
+  description: "SMB Bench (Small-to-Midsize Business Bench) by ORO AI: an agentic benchmark in which a model runs the buying desk of a simulated produce wholesaler for a 90-day quarter and is scored on the business's profit in US dollars. Six businesses are each played as a normal quarter, a customer quarter and a supplier quarter (18 tasks), 3 runs per task."
+  dataset_repo: oro-agents/smb-bench
+  parent_benchmark_id: null
+  tags: '["agentic", "domain-specific"]'
+  metadata: '{"doi": "https://doi.org/10.57967/hf/11641", "paper": "https://arxiv.org/abs/2611.28158", "report": "https://oroagents.com/benchmarks/smb-bench", "code_repo": "https://github.com/ORO-AI/smb-bench"}'
+  review_status: draft
+  aliases:
+    - SMB Bench
+    - SMB Bench v1.0
+    - Small-to-Midsize Business Bench
+    - smb-bench
+    - smb_bench
+    - smb-bench-v1
+    - oro-agents/smb-bench
+
+- id: smb-bench-normal-quarters
+  display_name: SMB Bench Normal Quarters
+  description: "SMB Bench subset: the six normal quarters, where nothing unusual happens."
+  dataset_repo: oro-agents/smb-bench
+  parent_benchmark_id: smb-bench
+  tags: '["agentic", "domain-specific"]'
+  metadata: '{}'
+  review_status: draft
+  aliases:
+    - smb-bench-normal-quarters
+    - smb-bench-v1.normal-quarters
+
+- id: smb-bench-customer-quarters
+  display_name: SMB Bench Customer Quarters
+  description: "SMB Bench subset: the six customer quarters, where accounts that are delivered short quietly cut their orders."
+  dataset_repo: oro-agents/smb-bench
+  parent_benchmark_id: smb-bench
+  tags: '["agentic", "domain-specific"]'
+  metadata: '{}'
+  review_status: draft
+  aliases:
+    - smb-bench-customer-quarters
+    - smb-bench-v1.customer-quarters
+
+- id: smb-bench-supplier-quarters
+  display_name: SMB Bench Supplier Quarters
+  description: "SMB Bench subset: the six supplier quarters, where shorted accounts cut their orders and the cheapest supplier also starts arriving late and short."
+  dataset_repo: oro-agents/smb-bench
+  parent_benchmark_id: smb-bench
+  tags: '["agentic", "domain-specific"]'
+  metadata: '{}'
+  review_status: draft
+  aliases:
+    - smb-bench-supplier-quarters
+    - smb-bench-v1.supplier-quarters
